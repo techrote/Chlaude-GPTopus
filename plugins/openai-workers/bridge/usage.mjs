@@ -192,7 +192,13 @@ function prune(doc, day) {
   const date = new Date(`${day}T00:00:00Z`); date.setUTCDate(date.getUTCDate() - 62);
   const oldest = utcDay(date);
   for (const key of Object.keys(doc.days)) if (key < oldest) delete doc.days[key];
-  // Monthly aggregates, response tombstones, request IDs and unresolved
+  // Release tombstones are audit records of a request that was proved never to
+  // have started. Nothing reads them, they are the only unbounded write-only
+  // growth in the file (every failed request adds one and every transaction
+  // rewrites the whole ledger), and dropping one cannot turn usage into zero:
+  // the reservation is already gone and the request ID stays in `requests`.
+  for (const [ticket, release] of Object.entries(doc.releases ?? {})) if (!object(release) || typeof release.day !== 'string' || release.day < oldest) delete doc.releases[ticket];
+  // Monthly aggregates, processed-response tombstones, request IDs and unresolved
   // reservations are intentionally retained. Age never proves zero usage.
 }
 function ownerAt(path) { try { return JSON.parse(readFileSync(join(path, 'owner.json'), 'utf8')); } catch { return null; } }

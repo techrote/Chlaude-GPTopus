@@ -1,3 +1,4 @@
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs';
