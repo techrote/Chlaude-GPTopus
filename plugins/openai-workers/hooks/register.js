@@ -2,6 +2,7 @@ import { WORKER_TYPES as TYPES, effortPolicy, selectWorkerEffort, effortGuidance
 import { OPENAI_TOOLS } from './tools.js';
 import { newRun, nextInput, responseStep, stopStep, finalStep } from './step.js';
 import { ULTRA_NATIVE_SPECS, NATIVE_PREFIX, nativeWorker, isPrivateBridgeTool, hostVersionSupported } from './ultra.js';
+import { signRequest, parseChannelKey, modKeyPath, CHANNEL_STALE, SESSION_CLOSED, CHANNEL_DENIED, CHANNEL_HELLO, HELLO_EPOCH } from './channel.js';
 
 const PLUGIN = 'openai-workers';
 const SERVER = 'plugin:openai-workers:bridge';
@@ -13,10 +14,69 @@ const envSuffix = (type) => type.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 const errorText = err => String(err?.message ?? err).slice(0, 800);
 const nativeMarker = /^\[ULTRA_BIND:([A-Za-z0-9_-]+):([A-Za-z0-9_.:-]+):([a-f0-9]{64})\]\n/;
 
+// Every private request is signed with the OWNER CHANNEL KEY, which this closure
+// reads once from the owner's private file and never sends anywhere: only an HMAC
+// bound to the bridge process epoch, a single-use nonce and the exact arguments
+// leaves the mod. The bridge refuses anything else, so neither a model-origin
+// call, another mod, a second process nor a replayed or leaked request is
+// authority. (Other mods that can read the owner file are inside the trust
+// boundary; see docs/ULTRA_HOSTS.md.) The key is never put in $.state, prompts,
+// diagnostics or errors.
+async function signedBridge($, channel, name, args) {
+  return bridge($, name, await signRequest({ keyHex: channel.key, epoch: channel.epoch, name, args }));
+}
+async function readChannelKey($, info) {
+  const path = modKeyPath({ file: await $.env.get('OPENAI_ULTRA_CHANNEL_KEY_FILE'), state: await $.env.get('OPENAI_ULTRA_STATE_DIR'),
+    localAppData: await $.env.get('LOCALAPPDATA'), userProfile: await $.env.get('USERPROFILE'), xdgState: await $.env.get('XDG_STATE_HOME'),
+    home: await $.env.get('HOME'), windows: info.platform === 'windows' });
+  if (!path) throw new Error('The ULTRA owner channel key location cannot be determined; set OPENAI_ULTRA_STATE_DIR or OPENAI_ULTRA_CHANNEL_KEY_FILE');
+  let text;
+  try { text = await $.fs.read(path); }
+  catch { throw new Error('The ULTRA owner channel key is not readable; run plugins/openai-workers/scripts/provision-ultra-channel.mjs, then restart Claude Code'); }
+  const key = parseChannelKey(typeof text === 'string' ? text : '');
+  if (!key) throw new Error('The ULTRA owner channel key file is malformed; re-provision it');
+  return key;
+}
+/**
+ * Open (or reopen) the native session over the authenticated channel. `known` holds the capabilities
+ * of sessions this mod instance opened, so switching back to a live session proves its current
+ * capability instead of being refused as a second opener.
+ */
+async function establishChannel($, previous, known) {
+  const version = await $.session.version(), info = await $.session.info(), sessionId = await $.session.id();
+  if (!hostVersionSupported(version.version)) throw new Error('Protected native ULTRA requires Claude Code 2.1.326 or later');
+  const key = await readChannelKey($, info);
+  const hello = await signedBridge($, { key, epoch: HELLO_EPOCH }, CHANNEL_HELLO, {});
+  if (typeof hello?.epoch !== 'string') throw new Error('The ULTRA bridge did not offer an authenticated channel');
+  const fresh = { sessionId, key, epoch: hello.epoch, known, effectiveModel: previous?.sessionId === sessionId ? previous.effectiveModel : undefined, refreshing: null };
+  // Presenting the current capability lets a live mod rotate its own open session; a mod that lost it
+  // (restart) or a restarted bridge is authorised by the owner-key proof alone.
+  // Host-reported surfaces (terminal/desktop/...) select the owner's per-surface capability ceiling. An unavailable or
+  // failing report is empty, which the controller treats as an unknown, think-only surface. Sent inside the signed args.
+  const surfaces = await Promise.resolve().then(() => $.session.surfaces()).then(list => Array.isArray(list) ? list.filter(item => typeof item === 'string').slice(0, 8) : [], () => []);
+  const initialized = await signedBridge($, fresh, 'ultra_native_init', { sessionId, version: version.version, model: await $.session.model(),
+    platform: info.platform, isHosted: info.isHosted, surfaces, ...(known.has(sessionId) && { currentCapability: known.get(sessionId) }) });
+  known.delete(sessionId); known.set(sessionId, initialized.capability);
+  if (known.size > 16) known.delete(known.keys().next().value);
+  return { ...fresh, capability: initialized.capability, missionId: initialized.missionId };
+}
+function refreshChannel($, channel) {
+  channel.refreshing ??= establishChannel($, channel, channel.known).then(fresh => { Object.assign(channel, fresh, { refreshing: null }); },
+    error => { channel.refreshing = null; throw error; });
+  return channel.refreshing;
+}
 async function nativeBridge($, channel, name, args = {}) {
   if (!channel?.capability) throw new Error('ULTRA native mediation is not initialized. Inspect /ultra.');
-  return bridge($, `ultra_native_${name}`, { ...args, primaryModel: await $.session.model(), effectivePrimaryModel: channel.effectiveModel,
+  const send = async () => signedBridge($, channel, `ultra_native_${name}`, { ...args, primaryModel: await $.session.model(), effectivePrimaryModel: channel.effectiveModel,
     sessionId: channel.sessionId, capability: channel.capability });
+  try { return await send(); }
+  catch (error) {
+    // A refused-before-effect signal that the bridge process changed: reopen once and retry. Replays,
+    // clock rejections and authentication failures are never retried or "healed".
+    if (!String(error?.message).includes(CHANNEL_STALE) && !String(error?.message).includes(SESSION_CLOSED)) throw error;
+    await refreshChannel($, channel);
+    return send();
+  }
 }
 async function nativeManaged($, agentId) {
   if (!agentId) return false;
@@ -142,6 +202,7 @@ export function register(on) {
   let ultraEnabled = true; // Unknown bootstrap is restricted, never legacy.
   let bootstrapObserved = false;
   let nativeChannel = null;
+  const knownCapabilities = new Map();
   let nativeError = '';
   // Code Mode's own entry points do not reach wildcard tool hooks. The host
   // declarations require a complete literal matcher for the script tool.
@@ -157,18 +218,12 @@ export function register(on) {
     ultraEnabled = await $.env.get('OPENAI_ULTRA_ENABLED') === '1';
     if (ultraEnabled) {
       try {
-        const version = await $.session.version();
-        if (!hostVersionSupported(version.version)) throw new Error('Protected native ULTRA requires Claude Code 2.1.326 or later');
-        const info = await $.session.info();
-        const sessionId = await $.session.id();
-        // Host-reported surfaces (terminal/desktop/...) select the owner's per-surface capability ceiling.
-        // An unavailable or failing report is empty, which the controller treats as an unknown, think-only surface.
-        const surfaces = await Promise.resolve().then(() => $.session.surfaces()).then(list => Array.isArray(list) ? list.filter(item => typeof item === 'string').slice(0, 8) : [], () => []);
-        const initialized = await bridge($, 'ultra_native_init', { sessionId, version: version.version, model: await $.session.model(),
-          platform: info.platform, isHosted: info.isHosted, surfaces });
-        nativeChannel = { sessionId, capability: initialized.capability, missionId: initialized.missionId };
+        nativeChannel = await establishChannel($, nativeChannel, knownCapabilities);
         nativeError = '';
-      } catch (error) { nativeChannel = null; nativeError = errorText(error); }
+      } catch (error) {
+        nativeChannel = null; nativeError = errorText(error);
+        if (nativeError.includes(CHANNEL_DENIED)) nativeError += ' The owner channel key may be missing, rotated or unreadable by the bridge; see docs/ULTRA_HOSTS.md.';
+      }
       for (const [name, spec] of Object.entries(ULTRA_NATIVE_SPECS)) if (name !== 'Agent') {
         await $.tool.register({ name: name.slice(NATIVE_PREFIX.length), description: spec.description,
           inputSchema: { type: 'object', properties: spec.properties, required: spec.required, additionalProperties: false }, isDeferred: false });

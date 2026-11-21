@@ -1,6 +1,6 @@
 # Install this local plugin marketplace for Claude Code (Windows PowerShell).
 # Run from an extracted zip with: powershell -ExecutionPolicy Bypass -File .\install.ps1
-param([switch]$NoKeyPrompt)
+param([switch]$NoKeyPrompt, [switch]$ProvisionUltraChannel)
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $plugin = Join-Path $root 'plugins\openai-workers'
@@ -36,6 +36,16 @@ if (-not $NoKeyPrompt) {
       & (Join-Path $plugin 'scripts\set-openai-key.ps1') -Profile $profile.Name
       if (-not $?) { throw "$($profile.Name) API key setup did not complete." }
     }
+  }
+}
+if ($ProvisionUltraChannel) {
+  # Opt-in owner setup for native ULTRA only. This enables nothing; without the key the bridge refuses every private request.
+  $channelKey = ((& node (Join-Path $plugin 'scripts\provision-ultra-channel.mjs') '--print-path') | Out-String).Trim()
+  if (Test-Path -LiteralPath $channelKey) {
+    Write-Host 'Existing ULTRA channel key found; not replacing it.'
+  } else {
+    & (Join-Path $plugin 'scripts\set-ultra-channel.ps1')
+    if (-not $?) { throw 'ULTRA channel key setup did not complete.' }
   }
 }
 Write-Host 'Registering local marketplace...'

@@ -9,6 +9,7 @@ import { NativeController } from '../ultra/native-controller.mjs';
 import { ExecutionStore } from '../ultra/store.mjs';
 import { RecruitmentBroker } from '../ultra/broker.mjs';
 import { UltraRuntime } from '../ultra/runtime.mjs';
+import { nativeTransport } from './native-host.mjs';
 
 const risk = { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95, rationale: 'Deterministic bounded offline fixture.' };
 const prompt = (task = 'Synthetic bounded work', extra = {}) => JSON.stringify({ task, ultra: { role: 'exploration', risk, budget: { tokens: 40000, usd: 4 }, ...extra } });
@@ -29,6 +30,8 @@ async function fixture(t, { config = {}, model = 'opus', version = '2.1.326', en
   backend.offline = true;
   const runtime = new UltraRuntime(broker, { backend });
   const controller = new NativeController(broker, { backend, supervisorTick: missionId => runtime.tick(missionId, { maxAgents: 1 }) });
+  // The mod reaches the controller only through the production owner-key authenticator.
+  const transport = nativeTransport(controller);
   const handlers = new Map(), catches = new Map(), agents = [], states = new Map(), messages = new Map(), registeredAgents = [], registeredTools = [];
   const keyOf = (event, filter) => `${event}${event === 'command.run' && filter?.command ? `:${filter.command}` : filter?.tool ? `:${filter.tool}` : ''}`;
   register((event, filter, fn) => {
@@ -41,17 +44,17 @@ async function fixture(t, { config = {}, model = 'opus', version = '2.1.326', en
     agent: { register: async x => registeredAgents.push(x), list: async () => structuredClone(agents) },
     tool: { register: async x => { registeredTools.push(x); return { tool: `${NATIVE_PREFIX}${x.name}` }; } },
     command: { register: async () => {} },
-    env: { get: async name => name === 'OPENAI_ULTRA_ENABLED' ? enabled ? '1' : undefined : undefined },
+    env: { get: async name => name === 'OPENAI_ULTRA_ENABLED' ? enabled ? '1' : undefined : transport.env(name) },
     session: { version: async () => ({ version }), id: async () => 'synthetic-native-session', model: async () => hostModel,
       surfaces: async () => structuredClone(surfaces),
       info: async () => ({ platform: 'linux', isHosted: false, dataRules: [], ...info }),
       messages: async args => args.as === 'api' ? [] : structuredClone(messages.get(args.agentId) ?? []), cwd: async () => directory },
     state: { get: async ref => ({ value: states.get(ref.id) }), set: async (ref, value) => states.set(ref.id, structuredClone(value)) },
-    fs: { read: async () => '' },
+    fs: { read: async path => path === transport.keyPath ? transport.read(path) : '' },
     mcp: { call: async (_server, name, args) => {
       bridgeCalls.push({ name, args: structuredClone(args) });
       if (bindFailure && name === 'ultra_native_bind') throw new Error('Synthetic bind transport failure');
-      const value = name.startsWith('ultra_native_') ? await controller.handle(name, args, { trustedHostChannel: true }) : await backend(name, args);
+      const value = name.startsWith('ultra_native_') ? await transport.call(name, args) : await backend(name, args);
       return { content: [{ type: 'text', text: JSON.stringify(value) }] };
     } },
   };
@@ -111,7 +114,7 @@ async function fixture(t, { config = {}, model = 'opus', version = '2.1.326', en
   const snapshot = async () => {
     const state = await store.snapshot(); return Object.values(state.missions).find(m => m.surface === 'native');
   };
-  return { directory, store, broker, runtime, controller, context, handlers, catches, registeredAgents, registeredTools, calls, bridgeCalls,
+  return { directory, store, broker, runtime, controller, transport, context, handlers, catches, registeredAgents, registeredTools, calls, bridgeCalls,
     run, spawn, step, execute, finish, snapshot, agents, states, initialized,
     setModel: async value => {
       hostModel = value;
@@ -141,6 +144,8 @@ test('native opt-in registers recursive Agent and scoped tools while legacy mode
 test('native controller requires mediated transport and private model calls are denied for every actor', async t => {
   const f = await fixture(t);
   await assert.rejects(() => f.controller.handle('ultra_native_init', { sessionId: 'forgery', model: 'opus', version: '2.1.326' }), /mediated/);
+  // The production controller is bound to its authenticator: the old boolean assertion no longer opens it.
+  await assert.rejects(() => f.controller.handle('ultra_native_init', { sessionId: 'forgery', model: 'opus', version: '2.1.326' }, { trustedHostChannel: true }), /mediated/);
   for (const agentId of [undefined, 'unknown-worker']) for (const name of ['mcp__openai-workers__ultra_native_init', 'mcp__plugin_openai-workers_bridge__create']) {
     let runs = 0;
     const check = await f.run('tool.check', { agentId, tool: name, input: { model: 'opus' } }, async () => { runs++; return { decision: 'allow' }; });
@@ -240,9 +245,13 @@ test('native policy preserves host deny/ask and actual B/C scoped bridge boundar
 
 test('native restart invalidates the old capability and holds bound work without replaying API POST', async t => {
   const f = await fixture(t); const a = await f.spawn('luna'); await f.step(a.agentId);
-  const firstChannel = f.bridgeCalls.find(c => c.name === 'ultra_native_context').args;
-  await f.controller.handle('ultra_native_init', { sessionId: firstChannel.sessionId, model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false }, { trustedHostChannel: true });
-  await assert.rejects(() => f.controller.handle('ultra_native_context', firstChannel, { trustedHostChannel: true }), /capability/);
+  const { channel: previousEnvelope, ...firstChannel } = f.bridgeCalls.find(c => c.name === 'ultra_native_context').args;
+  assert.ok(previousEnvelope.mac, 'the mod signed the request');
+  // A restarted bridge is a new process: new controller, new epoch, same durable ledger and owner key.
+  const restarted = nativeTransport(new NativeController(f.broker, { backend: f.controller.backend }), { keyHex: f.transport.keyHex });
+  assert.notEqual(restarted.channel.epoch, f.transport.channel.epoch);
+  await restarted.signed('ultra_native_init', { sessionId: firstChannel.sessionId, model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false });
+  await assert.rejects(() => restarted.signed('ultra_native_context', firstChannel), /capability/);
   const m = await f.snapshot(), n = m.nodes[m.native.bindings[a.agentId]];
   assert.equal(n.status, 'blocked'); assert.equal(n.usage.tokens, 50); assert.equal(n.native.steps[`turn_${a.agentId}_0`].response.text, 'Synthetic work complete.');
   assert.equal(f.calls.length, 1);
@@ -385,7 +394,7 @@ test('native cancellation revokes local authority first and retains verified rem
   const a = await f.spawn('luna');
   const channel = f.bridgeCalls.find(c => c.name === 'ultra_native_bind').args;
   const common = { sessionId: channel.sessionId, capability: channel.capability };
-  await f.controller.handle('ultra_native_create', { ...common, hostAgentId: a.agentId, input: 'bounded', requestKey: 'cancelled-step', max_output_tokens: 1000 }, { trustedHostChannel: true });
+  await f.transport.signed('ultra_native_create', { ...common, hostAgentId: a.agentId, input: 'bounded', requestKey: 'cancelled-step', max_output_tokens: 1000 });
   await f.run('command.run', { command: 'ultra', args: 'cancel', origin: { kind: 'composer' } });
   const m = await f.snapshot(), n = m.nodes[m.native.bindings[a.agentId]];
   assert.equal(n.status, 'cancelled'); assert.equal(n.usage.tokens, 99); assert.equal(n.usage.usd, 5);

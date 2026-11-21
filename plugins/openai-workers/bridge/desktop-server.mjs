@@ -72,11 +72,18 @@ function formatReply(response, worker, effortSelection = null) {
     ...(response.status === 'in_progress' && { next_step: `Call poll_openai_worker with worker="${worker}" and response_id="${response.id}" until completed.` }),
   };
 }
+// Desktop Chat has no private channel at all: not authenticated, not a degraded
+// form of it. Refuse the whole namespace in any spelling BEFORE anything else
+// (including reading policy) and before any backend can be named. The later
+// dispatch is exact-match, so a spelling that slips this filter still cannot
+// reach the Code-only controller, which additionally demands the owner-key proof.
+const privateNamespace = name => typeof name === 'string'
+  && /ultra[\s_.-]*native/i.test(name.normalize('NFKC').replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2060\ufeff]/g, ''));
 export async function invoke(name, args = {}, backend = dispatch, env = process.env) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Tool arguments must be an object.');
+  if (privateNamespace(name)) throw new Error('Private native control operations are not available in Desktop Chat');
   const policy = await readOwnerConfig(env);
-  if (name?.startsWith('ultra_native_')) throw new Error('Private native control operations are not available in Desktop Chat');
-  if (name?.startsWith('ultra_')) {
+  if (typeof name === 'string' && name.startsWith('ultra_')) {
     if (!publicDefinitions.some(d => d.name === name)) throw new Error('Unknown public ULTRA operation');
     if (!policy.enabled && name !== 'ultra_diagnostics') throw new Error('ULTRA is disabled in owner policy');
     return backend(name, args);

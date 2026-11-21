@@ -45,8 +45,14 @@ export function trustedClaudeFamily(model) {
   const found = /^claude-(opus|fable|sonnet|haiku)-[0-9]+(?:[.-][0-9]+)*(?:\[1m\])?$/.exec(model);
   return found?.[1] ?? 'unknown';
 }
+// Defence in depth ONLY. The bridge authenticates every private request with the
+// owner channel key and does not rely on this name filter (or on tools/list
+// hiding) for authority. Matching is normalised so a case, width, separator or
+// zero-width spelling of the namespace is not a way around the host-side deny.
 export function isPrivateBridgeTool(name) {
-  return typeof name === 'string' && (name.includes('ultra_native_') || /^mcp__.*(?:openai|bridge).*__(?:create|poll|cancel|page)$/.test(name));
+  if (typeof name !== 'string') return false;
+  const plain = name.normalize('NFKC').replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2060\ufeff]/g, '').toLowerCase();
+  return /ultra[\s_.-]native/.test(plain) || /^mcp__.*(?:openai|bridge).*__(?:create|poll|cancel|page)$/.test(plain);
 }
 export function nativeWorker(type) {
   const match = /^openai-workers:(sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree)$/.exec(String(type ?? ''));

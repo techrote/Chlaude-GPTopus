@@ -10,6 +10,7 @@ const PAGESIZE = 22000;
 const cache = new Map(); // only large, completed, redacted responses, never keys
 const ultraServices = new Map();
 const nativeControllers = new Map();
+const nativeChannels = new Map(); // owner key file -> { keyId, gateway }; one bridge process, one epoch per key
 async function ultraService(options = {}) {
   const { createService, readOwnerConfig, ownerPaths } = await import('../ultra/service.mjs');
   const { policyHash } = await import('../ultra/config.mjs');
@@ -73,20 +74,27 @@ function checkedCreate(args, env) {
 /** options are trusted in-process adapter configuration, never MCP arguments. */
 export async function dispatch(name, args = {}, options = {}) {
   if (typeof name === 'string' && name.startsWith('ultra_native_')) {
+    // Reaching this dispatcher is NOT authority: stdio carries no caller identity,
+    // so the model, a hook, another mod or another process look exactly like the
+    // ULTRA mod. The request must prove possession of the owner channel key
+    // (bridge/native-channel.mjs); nothing below runs, and no ULTRA service is
+    // even constructed, for an unauthenticated caller. Hiding the names from
+    // tools/list or denying them in mod hooks is defence in depth, not the control.
     const env = options.env ?? process.env;
-    if (env.OPENAI_ULTRA_ENABLED !== '1') throw new Error('Native ULTRA controller is disabled');
-    const { key, service } = await ultraService(options);
-    if (!service.config.enabled) throw new Error('Owner ULTRA policy is disabled');
-    if (!nativeControllers.has(key)) {
-      const { NativeController } = await import('../ultra/native-controller.mjs');
-      const { ownerPaths } = await import('../ultra/service.mjs');
-      const paths = ownerPaths(env);
-      nativeControllers.set(key, new NativeController(service.broker, { backend: service.backend, env, live: env.OPENAI_ULTRA_ALLOW_API === '1', protectedPaths: [paths.base, paths.config], supervisorTick: missionId => service.runtime.tick(missionId, { maxAgents: 1 }) }));
-    }
-    // Only this native stdio facade admits the private control protocol. The mod
-    // denies EVERY model-origin request to these names before host execution;
-    // Desktop's public facade rejects the prefix, including direct tools/call.
-    return nativeControllers.get(key).handle(name, args, { trustedHostChannel: true });
+    const { openNativeChannel, keyFilePath } = await import('./native-channel.mjs');
+    const gateway = await openNativeChannel(env, nativeChannels);
+    return gateway.call(name, args, async channel => {
+      const { key, service } = await ultraService(options);
+      if (!service.config.enabled) throw new Error('Owner ULTRA policy is disabled');
+      const slot = `${key}:${channel.epoch}`; // a new owner key or bridge epoch never inherits a controller
+      if (!nativeControllers.has(slot)) {
+        const { NativeController } = await import('../ultra/native-controller.mjs');
+        const { ownerPaths } = await import('../ultra/service.mjs');
+        const paths = ownerPaths(env);
+        nativeControllers.set(slot, new NativeController(service.broker, { backend: service.backend, env, live: env.OPENAI_ULTRA_ALLOW_API === '1', protectedPaths: [paths.base, paths.config, keyFilePath(env)], supervisorTick: missionId => service.runtime.tick(missionId, { maxAgents: 1 }) }));
+      }
+      return nativeControllers.get(slot);
+    });
   }
   if (typeof name === 'string' && name.startsWith('ultra_')) return (await ultraService(options)).service.invoke(name, args);
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Bridge arguments must be an object.');
@@ -164,25 +172,31 @@ export async function dispatch(name, args = {}, options = {}) {
   }
 }
 function send(message) { process.stdout.write(`${JSON.stringify(message)}\n`); }
-export async function handle(message) {
-  if (!has(message, 'id')) return; // ignore notifications
+// tools/call is not restricted by what tools/list advertises in MCP, so this
+// transport restricts it itself: the advertised legacy tools, plus the private
+// native namespace, which authenticates every request on its own (see dispatch).
+const advertised = new Set(defs.map(d => d.name));
+export async function handle(message, write = send) {
+  if (!has(message, 'id')) return; // ignore notifications and unsupported batch envelopes
   const id = message.id;
-  if (message.method === 'initialize') return send({ jsonrpc: '2.0', id, result: {
+  if (message.method === 'initialize') return write({ jsonrpc: '2.0', id, result: {
     protocolVersion: message.params?.protocolVersion ?? '2025-06-18',
     capabilities: { tools: { listChanged: false } },
     serverInfo: { name: 'openai-workers-bridge', version: '0.8.0' },
   } });
-  if (message.method === 'ping') return send({ jsonrpc: '2.0', id, result: {} });
-  if (message.method === 'tools/list') return send({ jsonrpc: '2.0', id, result: { tools: defs } });
+  if (message.method === 'ping') return write({ jsonrpc: '2.0', id, result: {} });
+  if (message.method === 'tools/list') return write({ jsonrpc: '2.0', id, result: { tools: defs } });
   if (message.method === 'tools/call') {
     try {
-      const value = await dispatch(message.params?.name, message.params?.arguments ?? {});
-      return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(value) }] } });
+      const name = message.params?.name;
+      if (typeof name !== 'string' || !(advertised.has(name) || name.startsWith('ultra_native_'))) throw new Error('Unknown bridge tool');
+      const value = await dispatch(name, message.params?.arguments ?? {});
+      return write({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(value) }] } });
     } catch (err) {
-      return send({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: String(err?.message ?? 'Unknown error').slice(0, 500) }] } });
+      return write({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: String(err?.message ?? 'Unknown error').slice(0, 500) }] } });
     }
   }
-  send({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } });
+  write({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found' } });
 }
 if (process.argv[1] && basename(process.argv[1]) === 'server.mjs') {
   const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });

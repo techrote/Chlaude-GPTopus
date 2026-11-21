@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { clone, digest, invariant } from './store.mjs';
 import { PermissionBoundary } from './permissions.mjs';
@@ -13,12 +13,33 @@ import { hostVersionSupported, trustedClaudeFamily, nativeProposal, nativeOpenAI
 const terminal = new Set(['completed', 'failed', 'cancelled', 'blocked']);
 const id = value => typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,200}$/.test(value);
 const opaque = () => randomBytes(32).toString('hex');
+/** Constant-time check that a caller-supplied capability hashes to the stored hash. */
+const capabilityMatches = (supplied, storedHash) => typeof supplied === 'string' && supplied.length === 64 && typeof storedHash === 'string' && storedHash.length === 64
+  && timingSafeEqual(Buffer.from(digest(supplied), 'hex'), Buffer.from(storedHash, 'hex'));
+const channels = new WeakMap(); // controller -> the NativeChannel that authenticates its transport
+/**
+ * Reopening an existing native session is never free. The mission must belong to
+ * the current owner channel key. A session still open in THIS bridge process can
+ * be rotated only by presenting its current capability. After a bridge restart
+ * the previous process's capability cannot be demanded of a mod that may have
+ * lost it, so the owner-key proof carried by the transport authorises the reopen
+ * (which also blocks any running native work; see initialize()).
+ */
+function authoriseReopen(prior, args, ctx) {
+  if (!prior) return;
+  invariant(prior.channelKeyId === ctx.keyId, 'Native session was opened under a different owner channel key; start a new host session');
+  if (prior.epoch === ctx.epoch) invariant(capabilityMatches(args.currentCapability, prior.capabilityHash), 'Native session is already open on this channel; rotating it requires its current capability');
+}
 
 /**
- * Native-only control plane. The stdio transport and installed mod are trusted.
- * Bootstrap is NOT an MCP model attestation: host tool hooks MUST reject every
- * model-origin ultra_native_* invocation, including root calls. Desktop Chat
- * must never route this namespace. Tokens stay in the mod closure, not prompts.
+ * Native-only control plane. Authority is NOT established by reaching this
+ * object, by a flag, or by a caller-supplied model: the production bridge binds
+ * a NativeChannel (bridge/native-channel.mjs) and every request must carry the
+ * single-use token that channel minted after verifying the owner-key signature.
+ * Direct in-process construction without a channel (unit tests, embedding) keeps
+ * the boolean `trustedHostChannel` seam; the bridge never builds one that way.
+ * Host tool hooks additionally deny model-origin ultra_native_* names, but that
+ * is defence in depth only. Desktop Chat never routes this namespace.
  */
 export class NativeController {
   constructor(broker, { backend, live = false, env = process.env, supervisorTick, boundaryFactory, protectedPaths = [], now = () => Date.now() } = {}) {
@@ -27,14 +48,29 @@ export class NativeController {
     this.reviews = new ReviewController(broker);
     this.actions = new ActionGate(broker);
   }
+  /** Attach the authenticator once. After this, no boolean or lookalike object can open the controller. */
+  bindChannel(channel) {
+    invariant(channel && typeof channel.admit === 'function', 'A native channel authenticator is required');
+    const bound = channels.get(this);
+    invariant(!bound || bound === channel, 'Native controller is already bound to another channel');
+    channels.set(this, channel); return this;
+  }
+  admitTransport(name, args, transport) {
+    const channel = channels.get(this);
+    if (channel) { const verified = channel.admit(transport?.verified, name, args); return { bound: true, epoch: verified.epoch, keyId: verified.keyId }; }
+    invariant(transport?.trustedHostChannel === true, 'Native controller is available only on the mediated native host channel');
+    return { bound: false, epoch: null, keyId: null };
+  }
   async handle(name, args = {}, transport = {}) {
-    invariant(transport.trustedHostChannel === true, 'Native controller is available only on the mediated native host channel');
+    const ctx = this.admitTransport(name, args, transport);
     invariant(args && typeof args === 'object' && !Array.isArray(args), 'Invalid native request');
     invariant(id(args.sessionId), 'Invalid native session identity');
-    if (name === 'ultra_native_init') return this.initialize(args);
+    if (name === 'ultra_native_init') return this.initialize(args, ctx);
     const missionId = `native-${digest(args.sessionId).slice(0, 32)}`;
     let m = await this.store.snapshot(missionId);
-    invariant(typeof args.capability === 'string' && args.capability.length === 64 && digest(args.capability) === m.native?.capabilityHash, 'Native channel capability is missing or invalid');
+    invariant(capabilityMatches(args.capability, m.native?.capabilityHash), 'Native channel capability is missing or invalid');
+    // Authority is bound to the bridge process (epoch) and owner key that opened the session.
+    if (ctx.bound) invariant(m.native.epoch === ctx.epoch && m.native.channelKeyId === ctx.keyId, 'ULTRA_SESSION_CLOSED: the native session is not open on this bridge process; reopen it');
     invariant(m.native.sessionId === args.sessionId && m.status === 'active', 'Native session is not active');
     // A configured /model label must not override a pinned effective fallback.
     // Descendant host models are Claude placeholders, not the root identity.
@@ -88,7 +124,7 @@ export class NativeController {
       default: throw new Error('Unknown native controller operation');
     }
   }
-  async initialize(args) {
+  async initialize(args, ctx = { bound: false, epoch: null, keyId: null }) {
     invariant(this.broker.config.enabled, 'ULTRA is disabled in owner configuration');
     invariant(hostVersionSupported(args.version), 'Native protected mode requires Claude Code 2.1.326 or later');
     // Trusted mod facts only. An unreported/unrecognised/mixed surface resolves to 'unknown' (think-only ceiling).
@@ -98,12 +134,16 @@ export class NativeController {
     invariant(args.isHosted !== true, 'Hosted native ULTRA requires separate qualification');
     const model = trustedClaudeFamily(args.model), capability = opaque();
     const missionId = `native-${digest(args.sessionId).slice(0, 32)}`;
+    // Refuse an unauthorised reopen BEFORE any write; the transaction below re-checks atomically.
+    if (ctx.bound) authoriseReopen((await this.store.read()).missions[missionId]?.native, args, ctx);
     await this.broker.createMission({ id: missionId, surface: 'native', task: `Native ULTRA session ${args.sessionId}`, orchestrator: { model, trusted: model !== 'unknown', source: 'native-host' } });
     await this.store.transaction((state, event) => {
       const m = state.missions[missionId];
       invariant(m.status === 'active', 'This native mission ended; start a new host session');
       const prior = m.native;
+      if (ctx.bound) authoriseReopen(prior, args, ctx);
       m.native = { ...prior, sessionId: args.sessionId, capabilityHash: digest(capability), version: args.version, platform: args.platform ?? 'unknown',
+        ...(ctx.bound && { epoch: ctx.epoch, channelKeyId: ctx.keyId }),
         bindings: prior?.bindings ?? {}, intents: prior?.intents ?? {}, sourceModel: args.model, surface, hostSurfaces };
       m.orchestrator = { model, trusted: model !== 'unknown', source: 'native-host' };
       m.nodes.root.model = model;
@@ -111,10 +151,11 @@ export class NativeController {
       for (const n of Object.values(m.nodes)) if (n.adapter === 'native' && ['running', 'waiting'].includes(n.status)) {
         n.status = 'blocked'; n.lease = null; n.recoveryReason = 'Native host restarted; preserved work requires explicit reconciliation.';
       }
-      event('native.channel', m.id, { version: args.version, platform: m.native.platform, model, reopened: Boolean(prior), surface });
+      event('native.channel', m.id, { version: args.version, platform: m.native.platform, model, reopened: Boolean(prior), authenticated: ctx.bound, surface,
+        ...(ctx.bound && { epoch: ctx.epoch, previousEpoch: prior?.epoch ?? null }) });
     });
     return { missionId, capability, orchestrator: { model, trusted: model !== 'unknown' }, profile: surfaceCeiling(this.broker.config, surface).profile, surface,
-      note: 'Native controller bootstrap relies on host mediation; caller model strings on public MCP tools convey no authority.' };
+      note: 'Native session opened over the owner-key authenticated channel; caller model strings on public MCP tools convey no authority.' };
   }
   /** Capability ceiling of the host surface recorded at init; never Desktop Chat's profile. */
   ceiling(m) { return surfaceCeiling(m.config, m.native?.surface); }

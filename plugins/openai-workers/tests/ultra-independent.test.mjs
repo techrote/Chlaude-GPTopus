@@ -2,7 +2,7 @@
 // these tests did not implement those modules. All work is deterministic/local.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, realpath } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, realpath, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ExecutionStore } from '../ultra/store.mjs';
@@ -14,8 +14,10 @@ import { UltraRuntime } from '../ultra/runtime.mjs';
 import { UltraService, writeOwnerConfig } from '../ultra/service.mjs';
 import { NativeController } from '../ultra/native-controller.mjs';
 import { invoke as invokeDesktop, handleMessage as handleDesktopMessage } from '../bridge/desktop-server.mjs';
-import { dispatch as dispatchNative } from '../bridge/server.mjs';
+import { dispatch } from '../bridge/server.mjs';
 import { register } from '../hooks/register.js';
+import { provisionChannelKey } from '../bridge/native-channel.mjs';
+import { nativeTransport, signedDispatcher } from './native-host.mjs';
 
 const risk = { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95, reversibility: 'reversible', testsAvailable: true };
 const proposal = (worker = 'luna', extra = {}) => ({ worker, task: 'Bounded synthetic engineering task', risk, budget: { tokens: 1000, usd: 0.05 }, ...extra });
@@ -373,14 +375,16 @@ test('independent: native project reads protect configured owner policy outside 
   const env = { OPENAI_ULTRA_ENABLED: '1', OPENAI_ULTRA_STATE_DIR: join(directory, 'state'), OPENAI_ULTRA_CONFIG: join(directory, 'owner-policy.json') };
   await writeOwnerConfig(resolveConfig({ enabled: true, surfaces: { codeCli: { profile: 'B' } }, permissions: { roots: [directory], tools: ['read_file'] } }), env);
   const options = { env };
-  const initialized = await dispatchNative('ultra_native_init', { sessionId: 'control-path-test', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] }, options);
+  const keyFile = await provisionChannelKey(env), keyHex = (await readFile(keyFile.path, 'utf8')).trim();
+  const dispatchNative = signedDispatcher(dispatch, options, keyHex);
+  const initialized = await dispatchNative('ultra_native_init', { sessionId: 'control-path-test', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] });
   const common = { sessionId: 'control-path-test', capability: initialized.capability };
   const admitted = await dispatchNative('ultra_native_admit', { ...common, toolUseId: 'control-spawn', primaryModel: 'opus', subagentType: 'openai-workers:luna',
-    prompt: JSON.stringify({ task: 'Synthetic read-only project inspection', ultra: { risk, budget: { tokens: 1000, usd: 0.05 } } }) }, options);
+    prompt: JSON.stringify({ task: 'Synthetic read-only project inspection', ultra: { risk, budget: { tokens: 1000, usd: 0.05 } } }) });
   assert.equal(admitted.allowed, true);
-  await dispatchNative('ultra_native_bind', { ...common, hostAgentId: 'control-agent', nodeId: admitted.nodeId, toolUseId: 'control-spawn' }, options);
+  await dispatchNative('ultra_native_bind', { ...common, hostAgentId: 'control-agent', nodeId: admitted.nodeId, toolUseId: 'control-spawn' });
   await assert.rejects(() => dispatchNative('ultra_native_tool', { ...common, hostAgentId: 'control-agent', toolUseId: 'control-read',
-    tool: 'mcp__openai-workers__ultra_read_file', input: { rootId: '0', path: 'owner-policy.json' } }, options), /control|protect|secret/i);
+    tool: 'mcp__openai-workers__ultra_read_file', input: { rootId: '0', path: 'owner-policy.json' } }), /control|protect|secret/i);
 });
 
 test('independent: supervisory command respects fresh host organization data restrictions', async () => {
@@ -391,15 +395,18 @@ test('independent: supervisory command respects fresh host organization data res
   });
   let restrictions = [];
   const context = {
-    env: { get: async name => name === 'OPENAI_ULTRA_ENABLED' ? '1' : undefined },
+    env: { get: async name => name === 'OPENAI_ULTRA_ENABLED' ? '1' : name === 'OPENAI_ULTRA_CHANNEL_KEY_FILE' ? '/synthetic/ultra-channel.key' : undefined },
+    fs: { read: async () => `${'0123456789abcdef'.repeat(4)}
+` },
     session: { version: async () => ({ version: '2.1.326' }), model: async () => 'opus', id: async () => 'supervisory-restriction-test',
       info: async () => ({ platform: 'linux', isHosted: false, dataRules: restrictions }) },
     tool: { register: async () => {} }, agent: { register: async () => {} }, command: { register: async () => {} },
-    mcp: { call: async (_server, name) => { calls.push(name); return { content: [{ type: 'text', text: JSON.stringify(name === 'ultra_native_init' ? { capability: 'a'.repeat(64), missionId: 'synthetic-mission' } : { status: 'synthetic-complete' }) }] }; } },
+    mcp: { call: async (_server, name) => { calls.push(name); return { content: [{ type: 'text', text: JSON.stringify(name === 'ultra_native_hello' ? { epoch: 'e'.repeat(32) } : name === 'ultra_native_init' ? { capability: 'a'.repeat(64), missionId: 'synthetic-mission' } : { status: 'synthetic-complete' }) }] }; } },
   };
   await handlers.get('session.start')(context, {}, async value => value);
   restrictions = ['zdr'];
   await handlers.get('command.run:ultra')(context, { args: 'supervise', origin: { kind: 'composer' } });
+  assert.ok(calls.includes('ultra_native_init'), 'the mod opened its session, so the guard below is the data-rule check and not a missing channel');
   assert.equal(calls.includes('ultra_native_supervise'), false, 'an explicit owner command cannot override active host organization data rules');
 });
 
@@ -415,14 +422,14 @@ test('independent: runtime refuses substituted provider models while preserving 
 });
 
 test('independent: protected native primary cannot use shell or an unrestricted Claude intermediary', async t => {
-  const f = await fixture(t), controller = new NativeController(f.broker);
+  const f = await fixture(t), controller = new NativeController(f.broker), transport = nativeTransport(controller);
   const handlers = new Map();
   register((name, filter, handler) => { if (!filter?.tool) handlers.set(name, typeof filter === 'function' ? filter : handler); return { catch() { return this; } }; });
   const context = {
-    env: { get: async name => name === 'OPENAI_ULTRA_ENABLED' ? '1' : undefined },
+    env: { get: async name => name === 'OPENAI_ULTRA_ENABLED' ? '1' : transport.env(name) }, fs: { read: transport.read },
     session: { version: async () => ({ version: '2.1.326' }), model: async () => 'haiku', id: async () => 'primary-guard-test', info: async () => ({ platform: 'linux', isHosted: false, dataRules: [] }) },
     agent: { register: async () => {}, list: async () => [] }, tool: { register: async () => {} }, command: { register: async () => {} },
-    mcp: { call: async (_server, name, args) => ({ content: [{ type: 'text', text: JSON.stringify(await controller.handle(name, args, { trustedHostChannel: true })) }] }) },
+    mcp: { call: async (_server, name, args) => ({ content: [{ type: 'text', text: JSON.stringify(await transport.call(name, args)) }] }) },
   };
   await handlers.get('session.start')(context, {}, async value => value);
   for (const tool of ['Bash', 'Read', 'Edit', 'Write', 'mcp__other__execute']) {
