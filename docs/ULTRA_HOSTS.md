@@ -28,6 +28,7 @@ and [mods reference](https://code.claude.com/docs/en/plugins/mods/reference).
 |---|---|---|
 | Primary Claude identity | Main-loop `turn.step.model`, root `agent.spawn.parentModel`, and `$.session.model()` | Use the effective step/fallback and pinned root parent identity ahead of the configured `/model` label. A descendant's inherited Claude placeholder must not upgrade root authority. |
 | Host compatibility | `$.session.version()`, `$.session.info()` | Record runtime version, platform and hosting. Refuse unsupported protected mode. |
+| Host surface | `$.session.surfaces()` (documented as every surface the session draws on: `terminal` first, then attached remote ones) | Forwarded at init and recorded in the mission. `terminal` selects `surfaces.codeCli`, `desktop` selects `surfaces.desktopCode`; empty, other or mixed values are an unknown surface with the think-only ceiling. |
 | Spawn gate | `agent.spawn` hook | `parentModel` and `parentAgentId` are pinned host facts. A hook may return `{ deny }` before `next`. |
 | Child identity | Result of `next(e)` at `agent.spawn` | Successful result carries `agentId`; bind that host ID to the durable ULTRA job. |
 | Native recursive spawning | `$.agent.spawn({ prompt, subagentType, parentAgentId, ... })`, or the native `Agent` tool | Preserve the parent ID and the host's own restrictions. An omitted parent creates a main-level child, so adapters must never omit a known parent. |
@@ -208,7 +209,7 @@ Use these native operations:
 | `/ultra supervise` | One bounded shared runtime tick for configured approvals, reviews, rework or adjudication; fresh host organization data rules are checked before the send. |
 | `/ultra review <native-author-id>` | Start review from the preserved result of a completed native implementation author. |
 | `/ultra cancel` | Revoke the native mission's authority before best-effort cancellation of known remote responses; preserve incurred usage and uncertain reservations. |
-| `ultra_read_file` | Root or worker scoped read, subject to its actual permissions and A/B/C profile. |
+| `ultra_read_file` | Root or worker scoped read, subject to its actual permissions and the A/B/C ceiling of the host surface (`surfaces.codeCli` / `surfaces.desktopCode`), not Desktop Chat's profile. |
 | `ultra_create_stage`, `ultra_stage_read`, `ultra_stage_write`, `ultra_stage_patch` | Core author/reworker private-stage operations in explicitly enabled C. |
 | `ultra_start_review` | Root starts the actual review controller for a completed bound author; may supply an explicitly labelled immutable source snapshot. |
 | `ultra_recruitment_decide` | Root provides only a configured `trusted-orchestrator` vote, bound to the exact recruitment input hash. It cannot supply a user or HELICOP vote. |

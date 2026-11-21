@@ -101,9 +101,15 @@ This partial owner document resolves against Lite defaults. The numbers are loca
     "maxOutstanding": 12,
     "maxJobs": 24
   },
-  "desktop": { "profile": "A", "enableExecutionBridge": false, "roots": [] }
+  "desktop": { "profile": "A", "enableExecutionBridge": false, "roots": [] },
+  "surfaces": {
+    "codeCli": { "profile": "A", "enableExecutionBridge": false },
+    "desktopCode": { "profile": "A", "enableExecutionBridge": false }
+  }
 }
 ```
+
+`desktop` is the Desktop **Chat** ceiling only; `surfaces.codeCli` (Claude Code CLI) and `surfaces.desktopCode` (Desktop Code local sessions) are the native Code ceilings. See [Capability ceilings per surface](#capability-ceilings-per-surface).
 
 Preset mission token, dollar and wall-clock limits are `null` until explicitly configured. Population limits alone are not a dollar budget. Include review, rework and supervisory reservations when choosing limits. An allocation omitted from a recruitment proposal defaults to 40,000 tokens and $4 in local reservation capacity; actual verified usage is accounted separately.
 
@@ -391,7 +397,7 @@ Use `--help` to inspect the installed command surface. JSON filenames are local 
 | `show` | Show paths and resolved policy. |
 | `validate [policy.json]` | Validate current/candidate policy and print its hash; do not install a candidate. |
 | `set FIELD JSON_VALUE` | Change an existing dotted owner field, validate and write it. |
-| `project-add ABS_ROOT [B\|C]` | Add a selected root and read capability; C also opts into private-stage editing. Does not enable ULTRA itself. |
+| `project-add ABS_ROOT [B\|C] --surface codeCli\|desktopCode\|chat` | Add a selected root and read capability and set the capability ceiling of **only** the named surface (`--surface` is mandatory; no other surface changes); C also opts into private-stage editing. `chat` also records the root in `desktop.roots`. Does not enable ULTRA itself. |
 | `start "TASK"` | Create a mission through the restricted public service; no API call occurs here. |
 | `status [MISSION_ID]` | Show configuration or a mission's tree, fleets, pending work and evidence. |
 | `recruit MISSION_ID proposal.json REQUEST_KEY` | Request a root child using an idempotency key. |
@@ -516,6 +522,27 @@ The installed mod, host and bridge form the trusted channel. The mod keeps its p
 
 Desktop Code local sessions have their own bundled runtime; record its `/status` version and qualify it separately. The official Desktop documentation inspected for this implementation says Desktop Code WSL sessions do not support plugins. Standalone CLI inside WSL is a different environment and needs its own validation and credentials. Local Desktop plugins do not imply cloud-session availability. These distinctions and the inspected declarations are documented in [host qualification](ULTRA_HOSTS.md), with sources in the official [mods reference](https://code.claude.com/docs/en/plugins/mods/reference), [event reference](https://code.claude.com/docs/en/plugins/mods/events), [subagent guide](https://code.claude.com/docs/en/sub-agents) and [Desktop reference](https://code.claude.com/docs/en/desktop).
 
+### Capability ceilings per surface
+
+ULTRA has one policy engine and three independently configured project-access surfaces:
+
+| Surface | Owner setting | Host fact used |
+|---|---|---|
+| Claude Code CLI (native mod) | `surfaces.codeCli` | the mod reports `terminal` from `$.session.surfaces()` |
+| Claude Desktop Code, local session (native mod) | `surfaces.desktopCode` | the mod reports `desktop` |
+| Claude Desktop Chat (public MCP extension) | `desktop` | not native; never reaches the native controller |
+
+Each ceiling has `profile` A/B/C (same meanings as the Chat table below) and `enableExecutionBridge` (C requires `true`, as for Chat). **All default to A** (think-only), so enabling ULTRA never grants file tools by itself. A native Code worker's effective capability is the *intersection* of what the owner granted it (`permissions.tools`, `permissions.roots`, worker permissions, scoped promotions) and its surface's ceiling: a ceiling can only remove tools, never create a tool, root or permission. Consequences that are tested:
+
+- Authorising a Code worker with `read_file`/`stage_write` and roots, and setting that Code surface to B/C, is enough; Desktop Chat may stay think-only.
+- Enabling Chat B/C never adds anything for Code; enabling a Code ceiling never changes Chat or the other Code surface. The CLI and Desktop Code ceilings are independent too.
+- The surface is resolved once at native initialisation from the mod's host facts and stored in the mission (`native.surface`). Anything unreported, unrecognised (for example `vscode`, `mobile`), malformed, or mixed (terminal and desktop together) resolves to `unknown`, which receives A. `ultra_native_diagnostics` reports the resolved surface, the host facts and every configured ceiling.
+- A native mission's API-run nodes (reviewers etc.) use the same Code ceiling, not Chat's.
+- Changing any ceiling changes the policy hash. An existing native session cannot be silently re-authorised under a new ceiling; start a new host session.
+- Scoped (project/worker/mission/stage) layers cannot raise a ceiling or enable a bridge flag without explicit owner authorisation.
+
+**Upgrade note.** Earlier candidates used `desktop.profile` for native Code too. After this change that setting affects Chat only, so an owner who relied on it must opt Code in explicitly, for example `project-add C:/Projects/Synthetic B --surface codeCli` (or `set surfaces.codeCli.profile '"B"'`). Chat B/C does not need to be changed. `permissions.tools` and `permissions.roots` remain shared owner grants; a Chat-visible read still additionally requires the Chat profile and `desktop.roots`.
+
 ### Desktop Chat A, B and C
 
 The public local MCP extension uses the same policy, broker, runtime, review and usage modules. It has a different, narrower host surface:
@@ -523,8 +550,8 @@ The public local MCP extension uses the same policy, broker, runtime, review and
 | Profile | Implemented access | How to enable |
 |---|---|---|
 | A — Think-only | Supplied task text and governed orchestration; no project filesystem tools. | Default. |
-| B — Read-only | Bounded reads inside explicitly selected roots, with canonical-path and secret protections. | `project-add ABS_ROOT B`, then deliberate policy/live opt-ins as applicable. |
-| C — Private staged edits | B reads plus Core author/reworker private snapshots and source-bound patches. Live project remains unchanged. | `project-add ABS_ROOT C`, which sets the separate bridge flag; still disabled until owner policy is enabled. |
+| B — Read-only | Bounded reads inside explicitly selected roots, with canonical-path and secret protections. | `project-add ABS_ROOT B --surface chat`, then deliberate policy/live opt-ins as applicable. |
+| C — Private staged edits | B reads plus Core author/reworker private snapshots and source-bound patches. Live project remains unchanged. | `project-add ABS_ROOT C --surface chat`, which sets the separate bridge flag; still disabled until owner policy is enabled. |
 
 `ultra_start`, `ultra_recruit`, `ultra_step`, `ultra_cancel`, `ultra_read_project`, `ultra_review` and `ultra_diagnostics` are public service operations. Public callers cannot supply their own parent identity, privileged permissions, transport, user vote or native-host authority. Worker recursion obtains its actual node identity internally. A public Chat mission cannot reuse a native mission's authority.
 
