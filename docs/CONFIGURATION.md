@@ -162,3 +162,7 @@ The [desktop extension](DESKTOP.md) exposes **two masked API-key fields** at ins
 The Desktop MCP server and native Claude Code plugin load the **same worker model/tier environment-variable names** and **same quota settings**, although per-worker CLI mod configuration changes only apply to newly started sessions. Restart Claude Desktop after changing Windows user environment variables. The `.mcpb` cannot be configured to silently bypass a missing free key with the paid key.
 
 Regular Desktop Chat only has text-only MCP delegation; the Code tab uses native permission-gated file/shell tools.
+
+## ULTRA execution approvals
+
+ULTRA stays disabled by default. When enabled, owner configuration chooses who may approve a consequential action: `execution.consequentialAuthorities` (default `["user"]`), `execution.combination` (`AND`, `OR`, `veto`, `prioritised` or `escalation`; default `AND`), and optionally `execution.mandatoryAuthorities` / `execution.vetoAuthorities` (default empty; subsets of the authorities, strictly validated). The verdict does not depend on the order in which authorities answer; see [ULTRA policy](ULTRA_POLICY.md#approval-combinations) for the truth table and its limits. Project or stage layers cannot change these settings.

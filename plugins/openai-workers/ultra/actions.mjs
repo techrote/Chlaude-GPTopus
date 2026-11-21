@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { digest, clone, invariant } from './store.mjs';
-import { combineApprovals, orchestratorIdentity } from './policy.mjs';
+import { combineApprovals, executionRequirements, orchestratorIdentity } from './policy.mjs';
 import { assessRisk, assertWorkflowRisk } from './risk.mjs';
 const ACTION_CAPABILITY = Object.freeze({ test: 'run_test', command: 'run_command', write: 'stage_write', delete: 'delete', merge: 'merge', deploy: 'deploy', external: 'external' });
 
@@ -12,11 +12,17 @@ export class ActionGate {
     invariant(typeof action.description === 'string' && action.description.trim(), 'Actual proposed action and evidence are required');
     return this.store.transaction((state, event) => {
       const m = state.missions[missionId], n = m?.nodes[nodeId]; invariant(n, 'Unknown agent');
-      const hash = digest(action), prior = Object.values(m.actions).find(a => a.nodeId === nodeId && a.hash === hash && a.status === 'pending');
+      const hash = digest(action), now = this.broker.now();
+      // An expired proposal is never handed back: it can no longer be decided and its votes must not carry over.
+      for (const stale of Object.values(m.actions)) if (stale.status === 'pending' && stale.expiresAt <= now) { stale.status = 'expired'; event('action.expired', missionId, { actionId: stale.id }); }
+      const prior = Object.values(m.actions).find(a => a.nodeId === nodeId && a.hash === hash && a.status === 'pending');
       if (prior) return prior;
       if (action.workflowId) { const w = m.workflows[action.workflowId]; invariant(w?.status === 'code_approved' && w.approval?.sourceHash === action.sourceHash, 'Current source lacks independent code approval'); assertWorkflowRisk(m, w, this.broker.now()); }
       const authorities = clone(m.config.execution?.consequentialAuthorities ?? ['user']);
-      const a = { id: randomUUID(), nodeId, workflowId: action.workflowId ?? null, hash, action: clone(action), policyHash: m.policyHash, authorities,
+      // The approval policy is frozen into the action so a verdict never depends on who answers first or on later reads of configuration.
+      const combination = m.config.execution.combination;
+      const requirements = executionRequirements(authorities, combination, { mandatoryAuthorities: m.config.execution.mandatoryAuthorities ?? [], vetoAuthorities: m.config.execution.vetoAuthorities ?? [] });
+      const a = { id: randomUUID(), nodeId, workflowId: action.workflowId ?? null, hash, action: clone(action), policyHash: m.policyHash, authorities, combination, requirements,
         status: 'pending', votes: [], createdAt: this.broker.now(), expiresAt: this.broker.now() + 900000 };
       const risk = assessRisk(action.risk ?? {}, m.config.risk);
       if (m.config.execution.defaultApproval === 'risk-based' && action.kind === 'test' && action.isolated === true && n.permissions.tools.includes('run_test') && !risk.highImpact && !risk.uncertain && !risk.controls.executionApproval) {
@@ -39,9 +45,10 @@ export class ActionGate {
       invariant(decision.actionHash === a.hash && typeof decision.rationale === 'string', 'Decision must identify the exact action and evidence');
       invariant(!a.votes.some(v => v.authority === principal.authority), 'Authority already voted');
       a.votes.push({ principal: clone(principal), authority: principal.authority, approved: decision.approved === true, rationale: decision.rationale });
-      const combination = m.config.execution.combination;
-      const required = a.authorities.map((authority, i) => ({ authority, mandatory: combination === 'AND', veto: true, priority: a.authorities.length - i }));
-      const verdict = combineApprovals(required, a.votes.map(v => ({ authority: v.authority, decision: v.approved ? 'APPROVE' : 'REJECT' })), combination);
+      // Actions recorded before the policy was frozen fall back to the immutable mission configuration.
+      const combination = a.combination ?? m.config.execution.combination;
+      const requirements = a.requirements ?? executionRequirements(a.authorities, combination, { mandatoryAuthorities: m.config.execution.mandatoryAuthorities ?? [], vetoAuthorities: m.config.execution.vetoAuthorities ?? [] });
+      const verdict = combineApprovals(requirements, a.votes.map(v => ({ authority: v.authority, decision: v.approved ? 'APPROVE' : 'REJECT' })), combination);
       if (verdict.decision === 'REJECT') a.status = 'rejected';
       else if (verdict.decision === 'APPROVE') a.status = 'approved';
       else if (verdict.decision === 'ESCALATE') a.status = 'escalated';

@@ -273,8 +273,8 @@ export class RecruitmentBroker {
         principal: clone(principal), decision: decision.decision, rationale: String(decision.rationale ?? '').slice(0, 20000),
         modification: decision.modification ? clone(decision.modification) : null, scope: 'recruitment', createdAt: this.now(), expiresAt: this.now() + Math.min(3600000, positive(decision.ttlMs, 'approval TTL', 900000)), consumed: false };
       m.approvals[a.id] = a; r.approvals.push(a.id); event('approval.decided', missionId, a);
-      if (decision.decision === 'MODIFY' && !required.consultation) { r.status = 'modify'; return r; }
-      if (decision.decision === 'ESCALATE' && !required.consultation) { r.status = 'escalated'; return r; }
+      // MODIFY and ESCALATE are not terminal on their own: combineApprovals alone decides when the outcome is settled,
+      // so a verdict never depends on which authority happened to answer first.
       const votes = r.approvals.map(id => m.approvals[id]).filter(v => v.expiresAt > this.now());
       const freshParent = this.promotedParent(m, nodeOf(m, r.parentId), r.proposal);
       if (r.originId) freshParent.keyProfile = nodeOf(m, r.originId).keyProfile;

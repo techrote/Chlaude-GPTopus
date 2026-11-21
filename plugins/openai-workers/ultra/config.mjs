@@ -60,7 +60,7 @@ export const DEFAULT_CONFIG = freezeDeep({
     requireTests: true, repeatedDefectLimit: 2, noProgressLimit: 1, blindSecondOpinion: true,
   },
   freeToPaid: { policy: 'B', maxTokensWithoutApproval: 16000, maxUsdWithoutApproval: 0.25, authority: 'user' },
-  execution: { defaultApproval: 'risk-based', consequentialAuthorities: ['user'], combination: 'AND', requireFreshEvidence: true },
+  execution: { defaultApproval: 'risk-based', consequentialAuthorities: ['user'], combination: 'AND', mandatoryAuthorities: [], vetoAuthorities: [], requireFreshEvidence: true },
   desktop: { profile: 'A', enableExecutionBridge: false, roots: [] },
 });
 
@@ -196,6 +196,16 @@ export function validateConfig(config) {
   list(config.execution.consequentialAuthorities, 'execution.consequentialAuthorities', ['user', 'trusted-orchestrator', 'helicop-sol', 'helicop-astra']);
   if (!config.execution.consequentialAuthorities.length) throw new Error('Consequential actions require at least one approval authority.');
   en(config.execution.combination, ['AND', 'OR', 'veto', 'prioritised', 'escalation'], 'execution.combination'); bool(config.execution.requireFreshEvidence, 'execution.requireFreshEvidence');
+  // Optional so that a configuration persisted before these lists existed stays valid (absent means none).
+  for (const field of ['mandatoryAuthorities', 'vetoAuthorities']) if (own(config.execution, field)) {
+    list(config.execution[field], `execution.${field}`);
+    for (const authority of config.execution[field]) {
+      en(authority, ['user', 'trusted-orchestrator', 'helicop-sol', 'helicop-astra'], `execution.${field}`);
+      if (!config.execution.consequentialAuthorities.includes(authority)) throw new Error(`execution.${field} entry ${authority} must be listed in execution.consequentialAuthorities.`);
+    }
+  }
+  const overlap = (config.execution.mandatoryAuthorities ?? []).filter(a => (config.execution.vetoAuthorities ?? []).includes(a));
+  if (overlap.length) throw new Error(`Authority ${overlap[0]} cannot be both mandatory and veto; mandatory already makes its rejection terminal.`);
   if (!config.execution.requireFreshEvidence) throw new Error('Fresh execution evidence is an invariant; stale approval cannot be enabled by configuration.');
   keys(config.desktop, Object.keys(DEFAULT_CONFIG.desktop), 'desktop'); en(config.desktop.profile, ['A', 'B', 'C'], 'desktop.profile'); bool(config.desktop.enableExecutionBridge, 'desktop.enableExecutionBridge'); list(config.desktop.roots, 'desktop.roots');
   if (config.desktop.profile === 'C' && !config.desktop.enableExecutionBridge) throw new Error('Desktop C requires explicit enableExecutionBridge=true.');
