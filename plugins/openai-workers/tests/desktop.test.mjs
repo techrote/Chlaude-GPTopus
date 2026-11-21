@@ -208,7 +208,8 @@ test('Desktop MCPB builder generates a complete self-contained ZIP with the decl
     assert(buffer.includes(Buffer.from('scripts/read-openai-key.ps1')));
     const eocd = buffer.length - 22;
     assert.equal(buffer.readUInt32LE(eocd), 0x06054b50);
-    assert.equal(buffer.readUInt16LE(eocd + 10), 7);
+    assert(buffer.readUInt16LE(eocd + 10) >= 20, 'bundle contains the shared executable policy/runtime');
+    for (const required of ['ultra/service.mjs', 'ultra/runtime.mjs', 'ultra/permissions.mjs', 'bridge/workers.mjs', 'bridge/usage.mjs', 'hooks/ultra.js', 'package.json']) assert(buffer.includes(Buffer.from(required)), `missing ${required}`);
   } finally { rmSync(path, { recursive: true, force: true }); }
 });
 

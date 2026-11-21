@@ -2,9 +2,9 @@
   "manifest_version": "0.3",
   "name": "chlaude-gptopus-desktop",
   "display_name": "Chlaude-GPTopus \u2014 OpenAI Workers",
-  "version": "0.7.0",
-  "description": "Delegate text-only tasks from Claude Desktop Chat to six OpenAI workers, with two separate API keys and persistent daily-usage guardrails. Per-worker reasoning effort ranges and guidance.",
-  "long_description": "OpenAI worker tools for the regular Claude Desktop Chat tab. Uses the OpenAI Responses API, separate straight/free API key profiles, configurable Flex/Fast tiers and local Astra/Terra token-usage ledgers. For file and shell access, use the native Claude Code plugin in Desktop's Code tab instead.",
+  "version": "0.8.0",
+  "description": "Six OpenAI workers with separate API keys, durable accounting and opt-in ULTRA governed swarms. Think-only by default; explicit project scopes enable reads and private staged patches.",
+  "long_description": "Six OpenAI workers with standard/free key separation and shared durable usage estimates. Existing think-only delegation remains the default. Opt-in ULTRA adds recursive recruitment, protected review capacity and approval gates. Chat profile B reads owner-selected source roots; separately enabled C creates private staged patches. No general shell or live-project patch executor is supplied. Install and qualify the native plugin separately for supported local Code sessions.",
   "author": {
     "name": "Chlaude-GPTopus contributors",
     "url": "https://github.com/techrote/Chlaude-GPTopus"
@@ -47,11 +47,26 @@
       ],
       "env": {
         "OPENAI_API_KEY": "${user_config.straight_api_key}",
-        "OPENAI_FREE_API_KEY": "${user_config.free_api_key}"
+        "OPENAI_FREE_API_KEY": "${user_config.free_api_key}",
+        "OPENAI_ULTRA_CONFIG": "${user_config.ultra_config_path}",
+        "OPENAI_ULTRA_ALLOW_API": "${user_config.allow_ultra_api}"
       }
     }
   },
   "user_config": {
+    "ultra_config_path": {
+      "type": "string",
+      "title": "ULTRA owner policy file (optional)",
+      "description": "Absolute path to a policy created with the local ULTRA configuration command. Leave blank to use the shared default location. ULTRA remains disabled until the policy enables it.",
+      "required": false
+    },
+    "allow_ultra_api": {
+      "type": "boolean",
+      "title": "Allow governed ULTRA API requests",
+      "description": "After offline acceptance, authorise ULTRA model requests within your configured policy and budgets. This may spend API credits. Does not approve files, commands, deployments or merges.",
+      "default": false,
+      "required": false
+    },
     "straight_api_key": {
       "type": "string",
       "title": "Straight OpenAI API key",

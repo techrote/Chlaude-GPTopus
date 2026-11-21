@@ -161,4 +161,4 @@ The [desktop extension](DESKTOP.md) exposes **two masked API-key fields** at ins
 
 The Desktop MCP server and native Claude Code plugin load the **same worker model/tier environment-variable names** and **same quota settings**, although per-worker CLI mod configuration changes only apply to newly started sessions. Restart Claude Desktop after changing Windows user environment variables. The `.mcpb` cannot be configured to silently bypass a missing free key with the paid key.
 
-Regular Desktop Chat only has text-only MCP delegation; the Code tab uses native permission-gated file/shell tools.
+By default, regular Desktop Chat has text-only MCP delegation and the Code tab uses native permission-gated tools. Opt-in [ULTRA configuration](ULTRA.md) adds shared recruitment governance and Chat profiles A/B/C; C currently supports private stages, with general shell and live application held.

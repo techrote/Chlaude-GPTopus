@@ -6,7 +6,7 @@
  * is deterministic across supported Node versions and operating systems. CI
  * uses --check to prove the committed distributable matches reviewed source.
  */
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,6 +25,12 @@ const SOURCES = {
   'server/workers.mjs': 'plugins/openai-workers/bridge/workers.mjs',
   'scripts/read-openai-key.ps1': 'plugins/openai-workers/scripts/read-openai-key.ps1',
 };
+// Preserve source-relative imports for the shared policy/runtime used by both
+// facades. Mirrors are deterministic copies of the same canonical bridge files.
+for (const name of ['workers.mjs', 'usage.mjs', 'openai.mjs', 'server.mjs']) SOURCES[`bridge/${name}`] = `plugins/openai-workers/bridge/${name}`;
+for (const name of readdirSync(join(root, 'plugins/openai-workers/ultra')).filter(name => name.endsWith('.mjs')).sort()) SOURCES[`ultra/${name}`] = `plugins/openai-workers/ultra/${name}`;
+SOURCES['hooks/ultra.js'] = 'plugins/openai-workers/hooks/ultra.js';
+SOURCES['package.json'] = 'plugins/openai-workers/package.json';
 const manifest = JSON.parse(readFileSync(join(root, SOURCES['manifest.json']), 'utf8'));
 if (manifest.server.entry_point !== 'server/desktop-server.mjs' || manifest.manifest_version !== '0.3') {
   throw new Error('Unexpected MCPB manifest entry point or version.');

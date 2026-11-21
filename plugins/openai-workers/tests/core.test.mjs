@@ -131,6 +131,7 @@ function makeEngine(responses, agent = 'openai-workers:sol', config = {}) {
   register((event, filter, handler) => {
     if (typeof filter === 'function') handler = filter;
     handlers.set(event, handler);
+    return { catch() { return this; } };
   });
   let state = {};
   let messages = [{ role: 'user', text: 'Read /tmp/a and report' }];
@@ -200,8 +201,8 @@ test('unconfigured agent tier inherits global flex; invalid tier fails closed', 
 
 test('real mod routes OpenAI tool results back into next GPT step', async () => {
   const fake = makeEngine([
-    { id: 'resp_11111', status: 'completed', text: '', calls: [{ call_id: 'call_X', name: 'Read', args: { file_path: '/tmp/a' } }] },
-    { id: 'resp_22222', status: 'completed', text: 'Got it.' },
+    { id: 'resp_11111', status: 'completed', text: '', estimatedUsd: 0.00001, calls: [{ call_id: 'call_X', name: 'Read', args: { file_path: '/tmp/a' } }] },
+    { id: 'resp_22222', status: 'completed', text: 'Got it.', estimatedUsd: 0.00001 },
   ]);
   const noFallback = async function* () { throw new Error('Anthropic fallback'); };
   const hook = fake.handlers.get('turn.step');

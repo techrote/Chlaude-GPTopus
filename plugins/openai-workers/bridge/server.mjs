@@ -2,12 +2,30 @@
 import readline from 'node:readline';
 import { basename } from 'node:path';
 import { configuredKey, keyProfileForWorker, createTurn, pollTurn, cancelTurn, validateTurnArgs, mayHaveIncurredUsage } from './openai.mjs';
-import { workerSettings, selectWorkerEffort } from './workers.mjs';
+import { workerSettings, selectWorkerEffort, workerEnvSuffix } from './workers.mjs';
 import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot, quoteRequest,
   markRequestAmbiguous, responseRecord } from './usage.mjs';
 
 const PAGESIZE = 22000;
 const cache = new Map(); // only large, completed, redacted responses, never keys
+const ultraServices = new Map();
+const nativeControllers = new Map();
+async function ultraService(options = {}) {
+  const { createService, readOwnerConfig, ownerPaths } = await import('../ultra/service.mjs');
+  const { policyHash } = await import('../ultra/config.mjs');
+  const env = options.env ?? process.env, config = await readOwnerConfig(env);
+  const key = `${ownerPaths(env).config}:${policyHash(config)}:${['1', 'true'].includes(env.OPENAI_ULTRA_ALLOW_API)}`;
+  if (!ultraServices.has(key)) {
+    const backend = async (name, input) => {
+      const r = await dispatch(name, input, options); if (!r.paged) return r;
+      if (r.pages > 256 || r.length > 4000000) throw new Error('Response exceeds runtime paging bound');
+      let value = ''; for (let i = 0; i < r.pages; i++) value += (await dispatch('page', { id: r.id, page: i }, options)).chunk;
+      if (value.length !== r.length) throw new Error('Incomplete runtime response pages'); return JSON.parse(value);
+    };
+    ultraServices.set(key, await createService({ env, config, backend }));
+  }
+  return { key, service: ultraServices.get(key) };
+}
 const defs = [
   { name: 'health', description: 'Report whether the bridge has a configured API key (never returns it).', inputSchema: { type: 'object', properties: {} } },
   { name: 'create', description: 'Start a Responses API model step for the plugin.', inputSchema: { type: 'object', properties: {
@@ -48,10 +66,29 @@ function checkedCreate(args, env) {
   const effort = selectWorkerEffort(selected.name, args.effort, env, selected.model).effective;
   const effective = { ...args, model: selected.model, effort, service_tier: configuredTier ?? requestedTier };
   validateTurnArgs(effective); // All preflight failures occur before reservation.
+  const pricedGuard = selected.key_profile === 'standard' || Number(env[`OPENAI_WORKER_${workerEnvSuffix(selected.name)}_MAX_USD`]) > 0;
+  if (pricedGuard && quoteRequest(effective, { env }).reservationUsd === null) throw new Error('Unknown model prices cannot pass the worker spending guard. Configure a known-price model; no request was sent.');
   return { selected, effective };
 }
 /** options are trusted in-process adapter configuration, never MCP arguments. */
 export async function dispatch(name, args = {}, options = {}) {
+  if (typeof name === 'string' && name.startsWith('ultra_native_')) {
+    const env = options.env ?? process.env;
+    if (env.OPENAI_ULTRA_ENABLED !== '1') throw new Error('Native ULTRA controller is disabled');
+    const { key, service } = await ultraService(options);
+    if (!service.config.enabled) throw new Error('Owner ULTRA policy is disabled');
+    if (!nativeControllers.has(key)) {
+      const { NativeController } = await import('../ultra/native-controller.mjs');
+      const { ownerPaths } = await import('../ultra/service.mjs');
+      const paths = ownerPaths(env);
+      nativeControllers.set(key, new NativeController(service.broker, { backend: service.backend, env, live: env.OPENAI_ULTRA_ALLOW_API === '1', protectedPaths: [paths.base, paths.config], supervisorTick: missionId => service.runtime.tick(missionId, { maxAgents: 1 }) }));
+    }
+    // Only this native stdio facade admits the private control protocol. The mod
+    // denies EVERY model-origin request to these names before host execution;
+    // Desktop's public facade rejects the prefix, including direct tools/call.
+    return nativeControllers.get(key).handle(name, args, { trustedHostChannel: true });
+  }
+  if (typeof name === 'string' && name.startsWith('ultra_')) return (await ultraService(options)).service.invoke(name, args);
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Bridge arguments must be an object.');
   const env = options.env ?? process.env;
   const ledgerOptions = { ...options, env };
@@ -133,7 +170,7 @@ export async function handle(message) {
   if (message.method === 'initialize') return send({ jsonrpc: '2.0', id, result: {
     protocolVersion: message.params?.protocolVersion ?? '2025-06-18',
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: 'openai-workers-bridge', version: '0.7.0' },
+    serverInfo: { name: 'openai-workers-bridge', version: '0.8.0' },
   } });
   if (message.method === 'ping') return send({ jsonrpc: '2.0', id, result: {} });
   if (message.method === 'tools/list') return send({ jsonrpc: '2.0', id, result: { tools: defs } });

@@ -40,6 +40,20 @@ The installer prompts for your keys privately and saves them with Windows DPAPI.
 
 See the [Desktop setup guide](docs/DESKTOP.md) for the steps.
 
+## ULTRA: governed teams of workers
+
+**ULTRA is an opt-in candidate, held for owner acceptance.** The existing six-worker setup remains the default. ULTRA adds recursive SWARM, REPLICATOR, SKYNET and custom recruitment; separate implementation and review budgets; Sol/Astra supervisory decisions; and independent review, rework and coverage-gap inspection. A cheap author can receive expensive verification without gaining permission to execute its work.
+
+Start with the deterministic evaluator, which uses disposable projects and spends no API credits:
+
+```powershell
+& .\scripts\Run-ULTRA-Evaluator.cmd
+```
+
+Then follow the [ULTRA guide](docs/ULTRA.md), [Windows acceptance checklist](docs/ULTRA_ACCEPTANCE.md) and [engineering handoff](docs/ULTRA_HANDOFF.md). Configuration commands expose the profiles and limits without editing JavaScript. ULTRA means orchestration here; each worker retains its supported API reasoning-effort range.
+
+With ULTRA enabled, Desktop Chat can remain think-only (**A**), read explicitly selected project roots (**B**), or create private staged patches (**C**, separately enabled). General shell execution and applying patches to a live project remain held until a suitable execution layer is qualified. Native protected mode also constrains the primary orchestrator's tools; ordinary native permissions still apply. Actual installed-host and Desktop UI acceptance are separate from the automated tests.
+
 For a first try, ask Claude Code:
 
 > Have `daily-terrafree` look for repetitive code, ask `daily-astrafree` to check its findings, then tell me what you'd change. Don't edit anything yet.
@@ -47,7 +61,7 @@ For a first try, ask Claude Code:
 ## The small print that actually matters
 
 - **“Free” isn't a promise.** Those worker names refer to an intended OpenAI programme. Your account and keys must be eligible; actual billing belongs to OpenAI.
-- **The quota ledger is a guardrail, not a wall.** It tracks only this plugin's free-key calls, across sessions on the same machine. Defaults are **250k Astra tokens/day** and **2.5M Terra tokens/day**, with **10% headroom** and a reset at **00:00 UTC**. Large or simultaneous calls can still overshoot.
+- **The quota ledger is a local guardrail.** It records both key routes, with daily Astra/Terra limits for the free route and optional shared spending controls. Defaults are **250k Astra tokens/day** and **2.5M Terra tokens/day**, with **10% headroom** and a reset at **00:00 UTC**. Reservations reduce concurrent over-admission; upstream overrun and calls outside this plugin remain possible.
 - **Your $88 monthly credit reference is just a note.** The plugin can't read your real balance or guarantee a spending cap. Its cost estimates can undercount; check the [OpenAI usage dashboard](https://platform.openai.com/usage).
 - **Flex can be slow.** Some model/tier combinations aren't supported. The plugin reports an error rather than silently choosing a more expensive tier.
 - **Interrupted calls can leave reservations behind.** That's intentional: a request might have been accepted upstream even if your connection dropped. Check usage before clearing anything.

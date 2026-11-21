@@ -8,7 +8,7 @@ import { invoke } from '../bridge/desktop-server.mjs';
 import { register } from '../hooks/register.js';
 
 const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-const payload = { id: 'resp_abc1234', status: 'completed', text: 'Done', usage: { input: 10, output: 10, total: 20 } };
+const payload = { id: 'resp_abc1234', status: 'completed', text: 'Done', usage: { input: 10, output: 10, total: 20 }, estimatedUsd: 0.00001 };
 
 function mockedMod(worker, vars = {}) {
   const handlers = new Map();
@@ -17,6 +17,7 @@ function mockedMod(worker, vars = {}) {
   register((event, filter, handler) => {
     if (typeof filter === 'function') handler = filter;
     handlers.set(event, handler);
+    return { catch() { return this; } };
   });
   const context = {
     agent: { list: async () => [{ id: 'ag_1', type: `openai-workers:${worker}`, status: 'running' }], register: async x => registrations.push(x) },

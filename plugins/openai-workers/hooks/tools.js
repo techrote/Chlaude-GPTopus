@@ -31,7 +31,7 @@ export const OPENAI_TOOLS = Object.entries(TOOL_SPECS).map(([name, t]) => ({
   strict: false,
 }));
 export function filterToolArgs(name, raw) {
-  if (!(name in TOOL_SPECS)) throw new Error(`Unsupported tool: ${name}`);
+  if (!Object.hasOwn(TOOL_SPECS, name)) throw new Error(`Unsupported tool: ${name}`);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`Invalid arguments for ${name}`);
   const spec = TOOL_SPECS[name];
   for (const prop of spec.required) if (typeof raw[prop] !== 'string') throw new Error(`Missing ${name}.${prop}`);

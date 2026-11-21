@@ -4,6 +4,8 @@
 
 Chlaude-GPTopus supports **both tabs** of the Claude Desktop app, but they use *different* extension mechanisms:
 
+This page describes the preserved default worker integration. The opt-in **ULTRA** candidate adds governed recursion and shared policy. Chat profile A remains think-only; B permits scoped reads; separately enabled C permits private staged edits. General shell execution and live patch application are not supplied by the candidate. See the [ULTRA guide](ULTRA.md), [host compatibility findings](ULTRA_HOSTS.md) and [Windows acceptance steps](ULTRA_ACCEPTANCE.md) before enabling it.
+
 | Where you work | How it works | Can OpenAI workers use Claude Code's file/shell tools? | Install method |
 |---|---|---|---|
 | **Code tab** (a local Claude Code session) | Native Claude Code `openai-workers:*` subagents via the mod/plugin | **Yes**, through Claude Code permission checks | Install the marketplace plugin once; then use the desktop Code tab |

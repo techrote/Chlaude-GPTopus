@@ -1,5 +1,5 @@
 {
   "name": "openai-workers",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Six native Claude Code subagents via OpenAI Responses API, two API keys, Flex/priority tiers, persistent UTC daily quota ledger.; per-worker effort ranges and selection notes"
 }
