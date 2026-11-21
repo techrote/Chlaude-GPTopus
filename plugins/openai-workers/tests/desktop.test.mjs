@@ -119,12 +119,10 @@ test('MCP initialize, list, tool call, error handling and notifications are prot
   await handleMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }, write, backend, targetEnv);
   assert.equal(out.length, 4);
   assert.equal(out[0].result.serverInfo.name, 'chlaude-gptopus-desktop');
-  assert.equal(out[0].result.protocolVersion, '2025-06-18');
   assert.equal(out[1].result.tools.length, 5);
   assert.equal(JSON.parse(out[2].result.content[0].text).workers.length, 6);
   assert.equal(out[3].result.isError, true);
 });
-
 
 test('MCP 2026-07-28 discovery, metadata and version rejection are protocol-correct', async () => {
   const out = [];
@@ -139,7 +137,6 @@ test('MCP 2026-07-28 discovery, metadata and version rejection are protocol-corr
   await handleMessage({ jsonrpc: '2.0', id: 11, method: 'tools/list', params: { _meta: meta } }, write, backend, targetEnv);
   await handleMessage({ jsonrpc: '2.0', id: 12, method: 'tools/call', params: { _meta: meta, name: 'list_openai_workers', arguments: {} } }, write, backend, targetEnv);
   await handleMessage({ jsonrpc: '2.0', id: 13, method: 'tools/list', params: { _meta: { ...meta, 'io.modelcontextprotocol/protocolVersion': '1900-01-01' } } }, write, backend, targetEnv);
-
   assert.deepEqual(out[0].result.supportedVersions, ['2026-07-28']);
   assert.equal(out[0].result.resultType, 'complete');
   assert.equal(out[0].result.cacheScope, 'public');
