@@ -196,6 +196,7 @@ export function validateConfig(config) {
   list(config.execution.consequentialAuthorities, 'execution.consequentialAuthorities', ['user', 'trusted-orchestrator', 'helicop-sol', 'helicop-astra']);
   if (!config.execution.consequentialAuthorities.length) throw new Error('Consequential actions require at least one approval authority.');
   en(config.execution.combination, ['AND', 'OR', 'veto', 'prioritised', 'escalation'], 'execution.combination'); bool(config.execution.requireFreshEvidence, 'execution.requireFreshEvidence');
+  if (!config.execution.requireFreshEvidence) throw new Error('Fresh execution evidence is an invariant; stale approval cannot be enabled by configuration.');
   keys(config.desktop, Object.keys(DEFAULT_CONFIG.desktop), 'desktop'); en(config.desktop.profile, ['A', 'B', 'C'], 'desktop.profile'); bool(config.desktop.enableExecutionBridge, 'desktop.enableExecutionBridge'); list(config.desktop.roots, 'desktop.roots');
   if (config.desktop.profile === 'C' && !config.desktop.enableExecutionBridge) throw new Error('Desktop C requires explicit enableExecutionBridge=true.');
   return config;

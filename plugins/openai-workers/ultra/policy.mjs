@@ -115,9 +115,10 @@ export function evaluateRecruitment({ config = DEFAULT_CONFIG, parent, request, 
   const pool = review(role) ? 'review' : 'core';
   let risk;
   try { risk = assessRisk(request.risk ?? {}, config.risk); } catch (error) { return reject(error.message); }
-  const mode = request.mode ?? parent.mode ?? mission.recruitmentMode ?? worker.mode ?? config.recruitment.mode;
-  let flags;
-  try { flags = modeFlags(mode, config.recruitment.custom); } catch (error) { return reject(error.message); }
+  const mode = request.mode ?? parent.mode ?? mission.recruitmentMode ?? config.recruitment.mode;
+  const childMode = request.mode ?? mission.recruitmentMode ?? worker.mode ?? mode;
+  let flags, childFlags;
+  try { flags = modeFlags(mode, config.recruitment.custom); childFlags = modeFlags(childMode, config.recruitment.custom); } catch (error) { return reject(error.message); }
   let inherited;
   try { inherited = intersectPermissions(config.permissions, parent.permissions, mission.permissions); } catch (error) { return reject(error.message); }
   const parentFlags = root ? inherited.recruit : { ...inherited.recruit };
@@ -128,7 +129,8 @@ export function evaluateRecruitment({ config = DEFAULT_CONFIG, parent, request, 
   if (!root && request.mode && Object.keys(flags).some(key => flags[key] && !parentFlags[key])) {
     return reject('Descendant mode attempts to expand its inherited recruitment ceiling. Use an authorised scoped promotion.');
   }
-  const ceiling = { ...inherited, recruit: effectiveModeFlags, reviewHigher: inherited.reviewHigher && config.recruitment.reviewHigher };
+  const childCeiling = Object.fromEntries(Object.keys(effectiveModeFlags).map(k => [k, effectiveModeFlags[k] && childFlags[k]]));
+  const ceiling = { ...inherited, recruit: childCeiling, reviewHigher: inherited.reviewHigher && config.recruitment.reviewHigher };
   if (review(role)) ceiling.tools = ceiling.tools.filter(tool => readTools.has(tool));
   let effectivePermissions;
   try {
@@ -153,11 +155,16 @@ export function evaluateRecruitment({ config = DEFAULT_CONFIG, parent, request, 
   if (depth > config.fleets[pool].maxDepth) return reject(`${pool} recruitment depth would exceed ${config.fleets[pool].maxDepth}.`);
   const identity = orchestratorIdentity(config, mission, now);
   const authority = identity.profile;
-  if (root && authority.restrictedFamilies.includes(childModel.family)) {
+  if (authority.restrictedFamilies.includes(childModel.family)) {
     if (!authority.supervisor) return reject(`${identity.model} has no authority configured for restricted recruitment.`);
     requiredApprovals.push(approval(authority.supervisor,
       identity.model === 'haiku' ? 'Haiku defers restricted recruitment decisions to Sol.' : identity.model === 'sonnet' ? 'Sonnet requires Sol consultation and configured final authority.' : 'Unverified or restricted orchestrator requires independent authority.',
       { id: 'orchestrator-authority', finalAuthority: authority.final, decisionMaker: identity.model === 'haiku' }));
+    if (!authority.final) {
+      if (!identity.trusted) return reject('An unverified orchestrator cannot accept final authority after advisory consultation.');
+      const consultation = requiredApprovals.at(-1); consultation.consultation = true; consultation.veto = false;
+      requiredApprovals.push(approval('trusted-orchestrator', 'Owner configured supervisor consultation with a separate final orchestrator decision.', { id: 'orchestrator-final' }));
+    }
   }
   const context = { mode, parentFamily: parentModel?.family, parentModel: parent.model, childFamily: childModel.family, childModel: childModel.model,
     role, risk, tools: effectivePermissions.tools, parentKey: parent.keyProfile, childKey: worker.keyProfile,
@@ -170,7 +177,14 @@ export function evaluateRecruitment({ config = DEFAULT_CONFIG, parent, request, 
   }
   if (risk.uncertain) requiredApprovals.push(approval(config.risk.uncertainAuthority, 'Uncertain impact or verification requires scrutiny.', { id: 'risk-uncertainty' }));
   if (risk.highImpact && config.risk.requireHighRecruitmentApproval) requiredApprovals.push(approval(config.risk.highAuthority, 'Configured high-impact recruitment gate.', { id: 'risk-high-impact' }));
-  if (request.reviewerSelection === 'C') requiredApprovals.push(approval('helicop-sol', 'Policy C reviewer recommendation requires authorised supervisor selection.', { id: 'reviewer-selection' }));
+  const selection = parent.reviewerPolicy?.selection ?? config.review.selection;
+  if (review(role) && !['supervisor', 'judge'].includes(role)) {
+    if (selection === 'C') requiredApprovals.push(approval('helicop-sol', 'Policy C reviewer recommendation requires authorised supervisor selection.', { id: 'reviewer-selection' }));
+    else if (!root) {
+      const expected = role === 'second_opinion' ? config.review.secondOpinion : role === 'gap_inspector' ? config.review.gapInspector : parent.reviewerPolicy?.reviewer ?? config.review.primary;
+      if (request.worker !== expected) return reject('Policy B review must use the reviewer preauthorised with the implementation allocation.');
+    }
+  }
   if (parent.keyProfile === 'free' && worker.keyProfile === 'standard') {
     const transition = config.freeToPaid;
     const knownBudget = Number.isFinite(budget.tokens) && Number.isFinite(budget.usd);
@@ -181,11 +195,11 @@ export function evaluateRecruitment({ config = DEFAULT_CONFIG, parent, request, 
   }
   for (const requirement of requiredApprovals) {
     // Disabling a helicopter never erases independent identity/risk/transition requirements.
-    const enabled = requirement.authority === 'user' || requirement.authority === 'helicop-sol' && config.helicop.sol || requirement.authority === 'helicop-astra' && config.helicop.astra;
+    const enabled = requirement.authority === 'user' || requirement.authority === 'trusted-orchestrator' && identity.trusted || requirement.authority === 'helicop-sol' && config.helicop.sol || requirement.authority === 'helicop-astra' && config.helicop.astra;
     if (!enabled) return reject(`Required authority ${requirement.authority} is unavailable; its approval cannot be bypassed.`);
   }
   const allocation = { pool, role, worker: request.worker, model: childModel.model, family: childModel.family, rank: childModel.rank,
-    keyProfile: worker.keyProfile, serviceTier: worker.serviceTier, mode, relation, reviewException, effectivePermissions, risk, depth,
+    keyProfile: worker.keyProfile, serviceTier: worker.serviceTier, mode: childMode, recruitmentMode: mode, relation, reviewException, effectivePermissions, risk, depth,
     orchestrator: { model: identity.model, trusted: identity.trusted, source: identity.source }, budget: clone(budget) };
   trace.push(`Worker ${request.worker} resolves to exact model ${childModel.model}, family ${childModel.family}, ${worker.keyProfile} key.`);
   trace.push(`Recruitment ${relation} relationship is ${reviewException ? 'review-only authorised' : 'within inherited mode authority'}; ${role} uses ${pool} capacity.`);
@@ -197,7 +211,11 @@ export function evaluateRecruitment({ config = DEFAULT_CONFIG, parent, request, 
 /** Resolve authenticated, request-bound decisions supplied by the durable approval engine. */
 export function combineApprovals(requirements, decisions, combination = 'AND') {
   if (!['AND', 'OR', 'veto', 'prioritised', 'escalation'].includes(combination)) throw new Error('Unknown approval combination.');
-  const records = requirements.map(requirement => ({ requirement, decision: decisions.find(d => d.authority === requirement.authority && (!d.requirementId || d.requirementId === requirement.id)) }));
+  const records = requirements.map(requirement => {
+    const original = decisions.find(d => d.authority === requirement.authority && (!d.requirementId || d.requirementId === requirement.id));
+    const decision = requirement.consultation && original && ['APPROVE', 'REJECT', 'MODIFY', 'ESCALATE'].includes(original.decision) ? { ...original, decision: 'APPROVE' } : original;
+    return { requirement, decision };
+  });
   if (!records.length) return { decision: 'APPROVE', reasons: ['No independent approval is required.'] };
   const veto = records.find(({ requirement, decision }) => decision?.decision === 'REJECT' && (requirement.veto || requirement.mandatory));
   if (veto) return { decision: 'REJECT', reasons: [`${veto.requirement.authority} rejected a mandatory/veto gate.`] };
