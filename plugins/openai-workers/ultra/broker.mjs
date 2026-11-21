@@ -71,7 +71,7 @@ export class RecruitmentBroker {
         permissions.roots = permissions.roots.filter(x => rootPermissions.roots?.includes(x));
       }
       const m = { id, task, surface, policyHash: policy, config: resolved, createdAt: this.now(), status: 'active',
-        orchestrator: clone(orchestrator), rootAgentId: 'root', nodes: {}, requests: {}, approvals: {}, idempotency: {}, workflows: {}, actions: {}, promotions: {}, plans: {}, apiRequests: [] };
+        orchestrator: clone(orchestrator), rootAgentId: 'root', nodes: {}, requests: {}, approvals: {}, idempotency: {}, workflows: {}, actions: {}, promotions: {}, plans: {}, apiRequests: [], retryCount: 0 };
       m.nodes.root = { id: 'root', missionId: id, parentId: null, role: 'orchestrator', model: orchestrator.model,
         permissions, depth: { core: 0, review: 0 }, status: 'running', pool: null, usage: { tokens: 0, usd: 0 }, reservation: { tokens: 0, usd: 0 } };
       state.missions[id] = m; event('mission.created', id, { task, policyHash: policy, orchestrator }); return m;
@@ -220,6 +220,19 @@ export class RecruitmentBroker {
       const spec = m.config.workers[worker];
       const root = nodeOf(m, m.rootAgentId);
       invariant(root.permissions.reviewHigher, 'Root policy does not authorise supervisory escalation');
+      const identity = orchestratorIdentity(m.config, m, this.now());
+      const bootstrapAuthority = identity.trusted ? identity.profile.supervisor ?? 'user' : 'user';
+      const restrictedSupervisor = identity.profile.authority !== 'full' && identity.profile.restrictedFamilies.includes(spec.family);
+      const existingBootstrapVote = r.approvals.some(id => m.approvals[id].authority === bootstrapAuthority && m.approvals[id].decision === 'APPROVE' && m.approvals[id].expiresAt > this.now());
+      if (restrictedSupervisor && !(identity.trusted && bootstrapAuthority === authority) && !existingBootstrapVote) {
+        const requirementId = `supervisory-orchestrator:${authority}`;
+        r.additionalRequirements ??= [];
+        if (!r.additionalRequirements.some(a => a.id === requirementId)) r.additionalRequirements.push({ id: requirementId, authority: bootstrapAuthority, mandatory: true, veto: true, priority: 1000, scope: 'recruitment',
+          reason: 'Root identity must authorise this restricted supervisory allocation before its invocation', supervisorAllocation: { worker, model: spec.model, keyProfile: spec.keyProfile, serviceTier: spec.serviceTier, budget: { tokens: 8000, usd: 2 } } });
+        r.evaluation.requiredApprovals = [...r.evaluation.requiredApprovals.filter(a => !r.additionalRequirements.some(x => x.id === a.id)), ...r.additionalRequirements];
+        r.blockedReason = 'Restricted root authority is awaiting approval before supervisory recruitment';
+        event('supervisor.authority_held', missionId, { requestId, authority: bootstrapAuthority, requestedSupervisor: authority }); return { status: 'pending', reason: r.blockedReason };
+      }
       const origin = nodeOf(m, r.originId ?? r.parentId), transition = m.config.freeToPaid;
       const paidGate = origin.keyProfile === 'free' && spec.keyProfile === 'standard' &&
         (transition.policy === 'C' || transition.policy === 'B' && (8000 > transition.maxTokensWithoutApproval || 2 > transition.maxUsdWithoutApproval));
@@ -316,12 +329,18 @@ export class RecruitmentBroker {
   async yield(missionId, nodeId, lease) {
     return this.store.transaction((state, event) => { const n = nodeOf(missionOf(state, missionId), nodeId); invariant(n.status === 'running' && n.lease?.token === lease, 'Execution lease is not owned'); n.status = 'queued'; n.lease = null; event('agent.yielded', missionId, { id: nodeId }); return n; });
   }
+  consumeRetry(m, event, scope) {
+    invariant((m.retryCount ?? 0) < m.config.mission.maxRetries, 'Mission retry limit exhausted');
+    m.retryCount = (m.retryCount ?? 0) + 1;
+    event('mission.retry_consumed', m.id, { used: m.retryCount, maximum: m.config.mission.maxRetries, ...scope });
+  }
   async revise(missionId, requestId, parentId, changes, key) {
     const r = await this.store.transaction((state, event) => {
       const m = missionOf(state, missionId), prior = m.requests[requestId];
       invariant(prior && prior.parentId === parentId && ['modify', 'rejected', 'escalated'].includes(prior.status), 'Request cannot be revised or was already revised');
       invariant(prior.status === 'modify' || m.config.helicop.denial === 'revise' && prior.status !== 'escalated', 'Policy requires final rejection or an explicitly authorised escalation');
       invariant(prior.revisions < Math.min(m.config.mission.maxRetries ?? 2, m.config.helicop.maxRevisions), 'Recruitment revision limit exhausted');
+      this.consumeRetry(m, event, { kind: 'recruitment-revision', requestId });
       prior.status = 'revising'; event('recruitment.revision_claimed', missionId, { requestId }); return prior;
     });
     return this.request(missionId, parentId, { ...r.proposal, ...changes }, key, { predecessorId: requestId, reviewerPolicy: r.reviewerPolicy, originId: r.originId, protectedAuthority: r.protectedAuthority, binding: r.binding, gapReuseAuthorId: r.gapReuseAuthorId });
@@ -333,6 +352,7 @@ export class RecruitmentBroker {
       const identity = orchestratorIdentity(m.config, m, this.now());
       invariant(principal?.trusted && (principal.source === 'local-user' && principal.authority === 'user' || principal.source === 'native-host' && principal.authority === 'trusted-orchestrator' && identity.trusted && identity.profile.authority === 'full'), 'Escalation needs authorised owner or full orchestrator authority');
       invariant(r.revisions < m.config.mission.maxRetries, 'Mission escalation/retry limit exhausted');
+      this.consumeRetry(m, event, { kind: 'recruitment-escalation', requestId });
       r.status = 'escalating'; r.escalatedBy = clone(principal); event('recruitment.escalation_authorised', missionId, { requestId, principal }); return r;
     });
     return this.request(missionId, prior.parentId, { ...prior.proposal, ...changes }, key, { predecessorId: requestId, reviewerPolicy: prior.reviewerPolicy, originId: prior.originId, protectedAuthority: prior.protectedAuthority, binding: prior.binding, gapReuseAuthorId: prior.gapReuseAuthorId });
@@ -450,7 +470,7 @@ export class RecruitmentBroker {
       waiting: nodes.filter(n => n.pool === pool && n.status === 'waiting').length }]));
     const total = accounted(m);
     return { missionId, status: m.status, policyHash: m.policyHash, orchestrator: m.orchestrator, fleets,
-      estimated: total, remaining: { tokens: m.config.mission.maxTokens == null ? null : m.config.mission.maxTokens - total.tokens, usd: m.config.mission.maxUsd == null ? null : m.config.mission.maxUsd - total.usd },
+      estimated: total, retries: { used: m.retryCount ?? 0, maximum: m.config.mission.maxRetries }, remaining: { tokens: m.config.mission.maxTokens == null ? null : m.config.mission.maxTokens - total.tokens, usd: m.config.mission.maxUsd == null ? null : m.config.mission.maxUsd - total.usd, retries: m.config.mission.maxRetries - (m.retryCount ?? 0) },
       tree: nodes.map(({ id, parentId, model, worker, role, pool, depth, status, permissions, requestId }) => ({ id, parentId, model, worker, role, pool, depth, status, permissions, requestId })),
       pending: Object.values(m.requests).filter(r => ['pending', 'modify', 'escalated'].includes(r.status)),
       approvals: Object.values(m.approvals), workflows: m.workflows,

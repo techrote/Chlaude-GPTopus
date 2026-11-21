@@ -162,7 +162,8 @@ export class ReviewController {
       const t = { id: randomUUID(), ...clone(evidence), principal: clone(principal), at: this.broker.now() };
       w.tests.push(t);
       if (w.status === 'code_approved' && !this.testsPass(w, w.source.hash)) { w.status = 'held'; w.approval = null; w.reason = 'Required independent test evidence is missing or failing'; }
-      if (w.status === 'held' && w.reason === 'Required independent test evidence is missing or failing' && this.testsPass(w, w.source.hash) && (w.judgementGeneration ?? 0) < m.config.mission.maxRetries) {
+      if (w.status === 'held' && w.reason === 'Required independent test evidence is missing or failing' && this.testsPass(w, w.source.hash) && (w.judgementGeneration ?? 0) < m.config.mission.maxRetries && (m.retryCount ?? 0) < m.config.mission.maxRetries) {
+        this.broker.consumeRetry(m, event, { kind: 'evidence-readjudication', workflowId });
         w.judgementGeneration = (w.judgementGeneration ?? 0) + 1; w.status = 'adjudication'; w.reason = null;
         event('review.readjudication_required', missionId, { workflowId, generation: w.judgementGeneration, sourceHash: w.source.hash });
       }
