@@ -292,9 +292,13 @@ test('bridge create, poll, cancel all use the matching worker key (never cross t
   process.env.OPENAI_FREE_API_KEY = 'sk-free-test';
   const headers = [];
   try {
-    globalThis.fetch = async (_url, init) => {
+    const responses = new Map();
+    globalThis.fetch = async (url, init) => {
       headers.push(init.headers.Authorization);
-      return { ok: true, json: async () => ({ id: `resp_keyrouting${headers.length}`, status: 'completed', output: [], usage: { input_tokens: 20, output_tokens: 5, total_tokens: 25 } }) };
+      const fresh = url.endsWith('/responses');
+      const id = fresh ? `resp_keyrouting${headers.length}` : new URL(url).pathname.split('/')[3];
+      if (fresh) responses.set(id, JSON.parse(init.body).model);
+      return { ok: true, json: async () => ({ id, model: responses.get(id), status: 'completed', output: [], usage: { input_tokens: 20, output_tokens: 5, total_tokens: 25 } }) };
     };
     for (const [type, expected] of [
       ['daily-astrafree', 'Bearer sk-free-test'],
@@ -302,16 +306,17 @@ test('bridge create, poll, cancel all use the matching worker key (never cross t
       ['flex6-1', 'Bearer sk-straight-test'],
       ['sol', 'Bearer sk-straight-test'],
     ]) {
-      await dispatch('create', { worker_type: type, model: type === 'daily-terrafree' ? 'gpt-5.6-terra' : type === 'daily-astrafree' ? 'gpt-6-astra' : 'gpt-6.1-sol', input: 'Hi', instructions: 'Test', tools: [] });
-      await dispatch('poll', { id: 'resp_keyrouting1', worker_type: type, wait_ms: 0 });
-      await dispatch('cancel', { id: 'resp_keyrouting1', worker_type: type });
+      const created = await dispatch('create', { worker_type: type, model: type === 'daily-terrafree' ? 'gpt-5.6-terra' : type === 'daily-astrafree' ? 'gpt-6-astra' : type === 'sol' ? 'gpt-6.2-sol' : 'gpt-6.1-sol', input: 'Hi', instructions: 'Test', tools: [] });
+      await dispatch('poll', { id: created.id, worker_type: type, wait_ms: 0 });
+      await dispatch('cancel', { id: created.id, worker_type: type });
       assert.deepEqual(headers.slice(-3), [expected, expected, expected]);
     }
     const usage = await dispatch('usage');
-    // Two free-key requests were counted; paid-key requests were not.
+    // Free daily groups exclude paid requests, which have separate estimates.
     assert.equal(usage.groups.premium.usedTokens, 25);
     assert.equal(usage.groups.terra.usedTokens, 25);
     assert.equal(usage.groups.premium.pendingRequests, 0);
+    assert.equal(usage.profiles.standard.tokens, 50);
   } finally {
     globalThis.fetch = originalFetch;
     if (oldUsageDir === undefined) delete process.env.OPENAI_WORKER_USAGE_DIR; else process.env.OPENAI_WORKER_USAGE_DIR = oldUsageDir;
@@ -348,7 +353,7 @@ test('free-key daily threshold pauses only its worker; straight API continues', 
   try {
     Object.assign(process.env, {
       OPENAI_API_KEY: 'sk-paid-fixture', OPENAI_FREE_API_KEY: 'sk-free-fixture',
-      OPENAI_WORKER_USAGE_DIR: directory, OPENAI_WORKER_PREMIUM_DAILY_TOKENS: '20',
+      OPENAI_WORKER_USAGE_DIR: directory, OPENAI_WORKER_PREMIUM_DAILY_TOKENS: '17080',
       OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10', OPENAI_WORKER_DAILY_OVERRUN_PERCENT: '0',
     });
     globalThis.fetch = async () => {

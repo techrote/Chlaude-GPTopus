@@ -30,12 +30,12 @@ test('documented complementary token groups are SHARED and do not include new 6.
 });
 
 test('free-key ledger does not include flex6-1 or any straight API key worker', async t => {
-  const opts = fixture(t, { OPENAI_WORKER_PREMIUM_DAILY_TOKENS: '100' });
+  const opts = fixture(t, { OPENAI_WORKER_PREMIUM_DAILY_TOKENS: '100', OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10' });
   await assert.rejects(reserveRequest({ workerType: 'flex6-1', model: 'gpt-6.1-sol' }, opts), /only accepts daily-astrafree/);
   const astra = await reserveRequest({ workerType: 'daily-astrafree', model: 'gpt-6-astra' }, opts);
   await accountResponse(astra, { id: 'resp_astra01', status: 'in_progress' }, opts);
   let s = await usageSnapshot(opts);
-  assert.equal(s.groups.premium.reservedTokens, 12000);
+  assert.equal(s.groups.premium.reservedTokens, 10);
   assert.equal(s.groups.premium.usedTokens, 0);
   await accountByResponseId(response('resp_astra01', 80, 30), opts);
   await accountByResponseId(response('resp_astra01', 80, 30), opts);
@@ -60,8 +60,8 @@ test('Terra allowance is independent from premium and 10% overrun is configurabl
   assert.equal(s.groups.premium.usedTokens, 103);
   assert.equal(s.groups.terra.usedTokens, 112);
   await assert.rejects(reserveRequest({ workerType: 'daily-terrafree', model: 'gpt-5.6-terra' }, opts), /paused/);
-  const stillAllowed = await reserveRequest({ workerType: 'daily-astrafree', model: 'gpt-6-astra' }, opts);
-  await releaseRequest(stillAllowed, opts);
+  // The proposed reservation is now included; only seven tokens remain.
+  await assert.rejects(reserveRequest({ workerType: 'daily-astrafree', model: 'gpt-6-astra' }, opts), /paused/);
 });
 
 test('per-model-group mismatch fails before any API call', async t => {
@@ -79,12 +79,12 @@ test('shared reservations reduce high-concurrency overrun and can be released on
   const results = await Promise.allSettled(Array.from({ length: 20 }, () =>
     reserveRequest({ workerType: 'daily-astrafree', model: 'gpt-6-astra' }, opts)));
   const permitted = results.filter(x => x.status === 'fulfilled').map(x => x.value);
-  assert.equal(permitted.length, 3); // 0 -> 40 -> 80 -> 120; no more admitted
-  assert.equal((await usageSnapshot(opts)).groups.premium.reservedTokens, 120);
+  assert.equal(permitted.length, 2); // Third 40-token reservation would exceed 110.
+  assert.equal((await usageSnapshot(opts)).groups.premium.reservedTokens, 80);
   await releaseRequest(permitted[0], opts);
   const s = await usageSnapshot(opts);
-  assert.equal(s.groups.premium.reservedTokens, 80);
-  assert.equal(s.groups.premium.pendingRequests, 2);
+  assert.equal(s.groups.premium.reservedTokens, 40);
+  assert.equal(s.groups.premium.pendingRequests, 1);
 });
 
 test('UTC midnight resets admission but late-completing requests are attributed to original day', async t => {
@@ -124,11 +124,12 @@ test('corrupt usage file refuses to reset counts to zero', async t => {
 });
 
 
-test('missing final usage conservatively accounts reserved tokens rather than zero', async t => {
+test('missing final usage retains an unverified reservation rather than becoming verified zero', async t => {
   const opts = fixture(t, { OPENAI_WORKER_DAILY_RESERVE_TOKENS: '1234' });
   const ticket = await reserveRequest({ workerType: 'daily-astrafree', model: 'gpt-6-astra' }, opts);
   await accountResponse(ticket, { id: 'resp_no_usage', status: 'cancelled', estimatedUsd: 0 }, opts);
   const snapshot = await usageSnapshot(opts);
-  assert.equal(snapshot.groups.premium.usedTokens, 1234);
-  assert.equal(snapshot.groups.premium.reservedTokens, 0);
+  assert.equal(snapshot.groups.premium.usedTokens, 0);
+  assert.equal(snapshot.groups.premium.reservedTokens, 1234);
+  assert.equal(snapshot.profiles.free.unknownUsageRequests, 1);
 });
