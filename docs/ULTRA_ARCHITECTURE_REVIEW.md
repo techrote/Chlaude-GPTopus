@@ -10,7 +10,7 @@ All regression scenarios use temporary synthetic state and explicitly offline pr
 
 ## Current qualification checkpoint
 
-The independent architecture suite contains **27 tests, all passing**. The final full integration run passed **214/214 tests**, with zero failures, skips or cancellations, on Linux with Node **v24.22.3**. Every finding listed below has been corrected and its behavior rechecked; no confirmed finding from this review remains open within the reviewed scope. The exact source hashes and remaining qualification boundaries are recorded below.
+The independent architecture suite contains **27 tests, all passing**. The final post-portability integration run passed **215/215 tests**, with zero failures, skips or cancellations, on Linux with Node **v24.22.3**. Every finding listed below has been corrected and its behavior rechecked; no confirmed finding from this review remains open within the reviewed scope. The exact source hashes and remaining qualification boundaries are recorded below.
 
 Run from the repository root:
 
@@ -66,7 +66,7 @@ The review did not require higher-tier authors merely because a task was consequ
 
 **The primary native model is inside protected mode.** When ULTRA is explicitly enabled, native root tools are restricted as well as worker tools. Otherwise a primary model could launch a separate bridge through arbitrary shell execution and forge its own local bootstrap. The inspected integration blocks that path, ungoverned Claude intermediaries and Code Mode's separately matched REPL entry point, while preserving native host denial checks. The normal production profile remains opt-in; the new path's installed-host qualification is still required below.
 
-**Final independent source-review corrections were inspected.** A separate reviewer identified an unverified-root supervisory bootstrap, nonaggregate mission retries, stale risk passed by native review startup, conditional Desktop discovery metadata and a missing free-to-paid policy A budget gate for protected supervision. The final source now requires the applicable root/user and spending gates before allocating that supervisor, consumes one shared mission retry counter across the relevant recovery paths, and starts native reviews against the active authorized classification. The seven regressions from that separate source review are included in the 214-test final run. These are separately authored findings, not additions to this reviewer's AR-01–AR-15 findings.
+**Final independent source-review corrections were inspected.** A separate reviewer identified an unverified-root supervisory bootstrap, nonaggregate mission retries, stale risk passed by native review startup, conditional Desktop discovery metadata and a missing free-to-paid policy A budget gate for protected supervision. The final source now requires the applicable root/user and spending gates before allocating that supervisor, consumes one shared mission retry counter across the relevant recovery paths, and starts native reviews against the active authorized classification. The seven governance/discovery regressions from that separate source review pass in both full-suite checkpoints; its eighth checkout regression is covered in the portability addendum below. These are separately authored findings, not additions to this reviewer's AR-01–AR-15 findings.
 
 **The Windows store retry preserves lock ownership.** After a real Windows CI delete-pending race, the store gained bounded retries for Windows-only `EPERM`, `EACCES` and `EBUSY` at exact filesystem operations. Exclusive `wx` acquisition remains exclusive; `EEXIST` still follows the ownership/dead-process path, and release verifies its nonce before each unlink attempt. Non-Windows permission failures remain immediate. This reviewer inspected the correction and its deterministic fault-injection tests; this inspection does not itself attest a physical Windows or Desktop session.
 
@@ -81,6 +81,18 @@ The review did not require higher-tier authors merely because a task was consequ
 
 Draft/HOLD remains the appropriate delivery state until the required CI and owner acceptance are recorded. Offline source qualification is complete for the snapshot below. This review grants no merge, deployment, production enablement or consequential execution approval.
 
+## Windows checkout portability addendum
+
+A subsequent Windows CI package check exposed incomplete line-ending coverage: the earlier `.gitattributes` rules pinned only the original manifest, bridge modules and credential helper. Newly packaged ULTRA modules, the portable hook and package metadata could therefore be checked out as CRLF under `core.autocrlf=true`, even though the committed MCPB contained LF source bytes. This invalidated the deterministic source/package comparison without changing the application logic.
+
+The correction replaces the narrow text-file list with `* text=auto eol=lf` and retains `dist/*.mcpb -text`. This reviewer inspected the exact change, confirmed that all tracked text already had LF bytes in the index and working tree, checked the effective attributes for the omitted bundle inputs and Windows evaluator entry points, and verified that the binary bundle and all runtime bytes remained unchanged. The broader rule also protects newly added source/evaluator inputs from silently acquiring platform-dependent fingerprints.
+
+The separately authored regression `source: real Git autocrlf checkout preserves source fingerprints and the reproducible Desktop bundle` uses a disposable Git repository/index and two actual `checkout-index` exports with `core.autocrlf=true` and `core.eol=crlf`. The exact old rules are its negative control: the test observes real CRLF source, an unchanged binary MCPB and a failing invocation of the actual bundle builder. With the current rules, every evaluator-relevant source file and the MCPB match their original bytes, and the same builder succeeds. The regression modifies only its disposable test directory.
+
+Windows CI subsequently exposed a separate setup error in the existing successful-C regression: its project root already used a canonical temporary directory, but its ledger used the raw Windows `TEMP` spelling, which can be an 8.3 alias. The security reviewer corrected that shared fixture to create its ledger below `realpath(tmpdir())`. This reviewer inspected the change and reran qualification after it was frozen. The runtime and permission boundary are unchanged; canonical-path, alias and junction checks remain binding. The owner documentation now explicitly requires canonical state-directory spelling, including when environment-provided default paths are aliases. A `PATH_ALIAS` hold must be resolved through the owner-selected path.
+
+After inspecting that test, this reviewer independently reran the entire suite: **215/215 PASS**, including **27 architecture regressions** and **8 source-review regressions**, with zero failures, skips or cancellations. The reproducible-bundle check also passed. The checkout test demonstrates Git's actual conversion behavior locally; supported Windows CI and Windows 11/Desktop owner acceptance remain separately recorded evidence. No new architecture finding arose from this portability correction.
+
 ## Final reviewed source snapshot
 
 The final local qualification ran the following commands from the repository root:
@@ -90,19 +102,20 @@ node --test --test-reporter=tap plugins/openai-workers/tests/*.test.mjs
 node scripts/build-desktop.mjs --check
 ```
 
-The test run completed **214/214 PASS**, **0 FAIL**, **0 skipped**, **0 cancelled**, in **6.975 seconds** on Linux, Node **v24.22.3**. The bundle reproduction check passed. The suite includes all 27 architecture regressions and all seven separately authored final source-review regressions. This is deterministic source qualification, not live provider or installed-host acceptance.
+The final post-portability test run completed **215/215 PASS**, **0 FAIL**, **0 skipped**, **0 cancelled**, in **7.833 seconds** on Linux, Node **v24.22.3**. The bundle reproduction check passed. The suite includes all 27 architecture regressions and all eight separately authored source-review regressions. The earlier **214/214 PASS** run in **6.975 seconds** remains a valid preceding checkpoint; the new checkout regression accounts for the increase. This is deterministic source qualification, not live provider or installed-host acceptance.
 
-The reviewed core-stage tree is `a4e3716997fc288d50ca2b2de8e706827ee582f7`, corresponding to the programme's published Stage 3 head `5ee6f0ccdd8c796b9a2c702285babce040d2e90e`. The final integration additions are identified by the file manifest below; the handoff report records their subsequent commit and PR ancestry. The original Desktop integration remains the ancestor `04f570d130eeed47f50c6353829f9bffccd33604`.
+The reviewed core-stage tree is `a4e3716997fc288d50ca2b2de8e706827ee582f7`, corresponding to the programme's published Stage 3 head `5ee6f0ccdd8c796b9a2c702285babce040d2e90e`. The initial final integration head was `cd583986f10efb64c3e94883f0267d8a077de0db`. The programme published the attributes-only corrective commit `0628b9fe9de448ce817b0c73757a3902b7daad42`, tree `7bbe589055cfc65851d080bc79c9c6aff202e533`, on that head; the final checkout regression and review-report follow-up are identified by the file manifest below. The handoff report records their delivery commit and PR ancestry. The original Desktop integration remains the ancestor `04f570d130eeed47f50c6353829f9bffccd33604`.
 
-All implementation, test, packaging and evaluator file hashes in this manifest stayed unchanged across the final test run. The CI workflow received its final trigger/evaluator/artifact configuration during that interval; its final source was separately inspected and the manifest refreshed. The local test run does not claim to have executed GitHub Actions. Documentation and generated temporary test logs are excluded from the source fingerprint so completing review reports cannot alter the reviewed implementation identity.
+All 47 file hashes in this manifest stayed unchanged across the final post-portability test run. Relative to the preceding 46-file snapshot, the changed files are the separately authored source-review test and the canonical temporary-path correction in the independent security-test fixture; `.gitattributes` is newly included in the fingerprint. Runtime, packaging, evaluator and binary bundle bytes are unchanged. The local test run does not claim to have executed GitHub Actions. Documentation and generated temporary test logs are excluded from the source fingerprint so completing review reports cannot alter the reviewed implementation identity.
 
-The manifest contains **46 files**. Its aggregate SHA-256 is **`b5cfe3aa3581def28845207d95339eafac35e300aa6a041cff42c404083c64fe`**. To reproduce that aggregate, sort the rows by repository-relative path, represent each as an object with the keys `path` and `sha256`, and encode the resulting JSON array as UTF-8 with sorted object keys and compact separators, without a trailing newline.
+The manifest contains **47 files**. Its aggregate SHA-256 is **`022df90f012dcfe85c3bebcf24913fd5c6043924f418f4a2875c4439edaed394`**. To reproduce that aggregate, sort the rows by repository-relative path, represent each as an object with the keys `path` and `sha256`, and encode the resulting JSON array as UTF-8 with sorted object keys and compact separators, without a trailing newline.
 
 The independently reproduced `dist/Chlaude-GPTopus-Desktop.mcpb` has SHA-256 **`7b4c660e5929400a01a7d04f4caa7c9e52f704f566a74d29f993a07701aa5e75`**.
 
 | Repository-relative source path | SHA-256 |
 |---|---|
 | `.claude-plugin/marketplace.json` | `0ef45add1934aed94bb2e65ed03d0628b332750ba6963921b2f29d09c0df2ecf` |
+| `.gitattributes` | `88e0e17dcefccb73a96070ea5d9ee90425c98008fc0783ce962ae1230e951f98` |
 | `.github/workflows/test.yml` | `88d07185831c3f08f817ff2532ccb82444af134c6ec531d57cc1a479557675dd` |
 | `desktop-extension/manifest.json` | `8b42eb18e03784bc642601da22c4193859ebdbad724a0d99261b5f2cac073844` |
 | `plugins/openai-workers/.claude-plugin/plugin.json` | `438b0a83e8ec0d6a8f87d59b4ffd9ad5c50a8d0b8683656f191dfa9cd595eae8` |
@@ -123,12 +136,12 @@ The independently reproduced `dist/Chlaude-GPTopus-Desktop.mcpb` has SHA-256 **`
 | `plugins/openai-workers/tests/effort.test.mjs` | `d69d5b40e55d2b14d28c24edc17d5a4343e5bc522e119c464354efce3233e0c4` |
 | `plugins/openai-workers/tests/ultra-architecture.test.mjs` | `d983e1887b571c65669f992762e997a50e6ce912dcdbd48b5ecfdddaa4013f87` |
 | `plugins/openai-workers/tests/ultra-desktop.test.mjs` | `21bb1f22c30b2c36462183b07b8d719412025e7018b3a757b93e211ef3eec32a` |
-| `plugins/openai-workers/tests/ultra-independent.test.mjs` | `832592674587f69f06ab635873ad850ae95f255fe197ae6483168142c12d4afb` |
+| `plugins/openai-workers/tests/ultra-independent.test.mjs` | `c933ecca4f96c961d2639d734199491fe1b10417db41107bf16b49f88247ea54` |
 | `plugins/openai-workers/tests/ultra-integration.test.mjs` | `8c268b769352f3a09dd55d6afc9c097443691bc0cc0ceb079404f35582a0152d` |
 | `plugins/openai-workers/tests/ultra-native.test.mjs` | `61500c3c551c8e02be3c51fc7584f2ecef2d6b6cc8bfa968b43f2f21f52b2c6b` |
 | `plugins/openai-workers/tests/ultra-permissions.test.mjs` | `2dc7b6bdede21a0cd62b5931f3d9645f2081c3dae60a77757a891888ce8bd61d` |
 | `plugins/openai-workers/tests/ultra-policy.test.mjs` | `762d82897c307e4544d1f05c8e86f223f8452207b79ea8343710061f867c4265` |
-| `plugins/openai-workers/tests/ultra-source.test.mjs` | `4903ddde3e6ad1fd072c05e56d684af297d4ca0e2cc8be3557cd5d59cbd619eb` |
+| `plugins/openai-workers/tests/ultra-source.test.mjs` | `0c340ef82df1a72d3ca4f52c969b2ad7c6b80d4f896e2e027b44c1681d78c0b6` |
 | `plugins/openai-workers/tests/ultra-windows.test.mjs` | `c234f086d6c965eb6474708143116c4208dae30d2d825a7dc4b53b03157bb36c` |
 | `plugins/openai-workers/tests/usage.test.mjs` | `44f5c0edbf5fdffc8b421aabcbceeaff2c2bfcbd515fc15640e1fba23f8d47c8` |
 | `plugins/openai-workers/ultra/actions.mjs` | `12256db0d2f5e2d43f720b9419d68f4d86d3603129de34c74e534099f32e9125` |

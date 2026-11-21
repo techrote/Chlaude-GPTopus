@@ -1,7 +1,7 @@
 // Fresh independent source/integration review. This author implemented no ULTRA code.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, realpath } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -121,4 +121,61 @@ test('source: native review startup uses the authorised current risk classificat
   const workflow = await controller.handle('ultra_native_review_start', { ...identity, authorAgentId: 'native-risk-author' }, channel);
   assert.equal(workflow.assessment.effectiveImpact, 'low', 'Native adapter must not overwrite the current authorised assessment with the stale recruitment proposal');
   assert(workflow.riskOverrideId);
+});
+
+test('source: real Git autocrlf checkout preserves source fingerprints and the reproducible Desktop bundle', async t => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+  const directory = await mkdtemp(join(await realpath(tmpdir()), 'ultra-source-checkout-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const indexRoot = join(directory, 'index');
+  const git = (cwd, args) => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 20000, windowsHide: true });
+    assert.equal(result.status, 0, `Git ${args.join(' ')} failed: ${result.error ?? result.stderr}`);
+    return result.stdout;
+  };
+  // Match the evaluator's source-byte inputs, including the PowerShell/CMD
+  // entry points. Use the current source bytes without changing the real index.
+  const paths = git(root, ['ls-files', '-z']).split('\0').filter(file => /\.(?:mjs|js|json|ps1|cmd|yml|yaml)$/.test(file));
+  const bundle = 'dist/Chlaude-GPTopus-Desktop.mcpb';
+  const original = new Map();
+  for (const file of [...paths, bundle]) {
+    const bytes = await readFile(join(root, file)); original.set(file, bytes);
+    await mkdir(dirname(join(indexRoot, file)), { recursive: true });
+    await writeFile(join(indexRoot, file), bytes);
+  }
+  const fixedAttributes = await readFile(join(root, '.gitattributes'));
+  // Negative control: the exact original rules omitted the newly bundled
+  // ultra modules, portable hook and package metadata. Real Git must reproduce
+  // their Windows-style CRLF conversion and the resulting package mismatch.
+  const oldAttributes = '# Bundle inputs must have stable bytes across Windows/Linux checkouts.\n'
+    + 'desktop-extension/manifest.json text eol=lf\n'
+    + 'plugins/openai-workers/bridge/*.mjs text eol=lf\n'
+    + 'plugins/openai-workers/scripts/read-openai-key.ps1 text eol=lf\n\n'
+    + '# The distributable is an opaque ZIP/MCPB binary.\n'
+    + 'dist/*.mcpb -text\n';
+  await writeFile(join(indexRoot, '.gitattributes'), oldAttributes);
+  git(indexRoot, ['-c', 'core.autocrlf=false', 'init', '--quiet']);
+  git(indexRoot, ['-c', 'core.autocrlf=false', '-c', 'core.safecrlf=false', 'add', '--all']);
+  const checkout = async name => {
+    const target = join(directory, name); await mkdir(target);
+    git(indexRoot, ['-c', 'core.autocrlf=true', '-c', 'core.eol=crlf', 'checkout-index', '--all', `--prefix=${target.replaceAll('\\', '/')}/`]);
+    return target;
+  };
+  const verifyBundle = cwd => spawnSync(process.execPath, ['scripts/build-desktop.mjs', '--check'], { cwd, encoding: 'utf8', timeout: 20000, windowsHide: true });
+  const legacy = await checkout('legacy');
+  const legacyModule = await readFile(join(legacy, 'plugins/openai-workers/ultra/config.mjs'));
+  assert(legacyModule.includes(Buffer.from('\r\n')), 'Negative control must really check out CRLF source, rather than only inspecting attributes');
+  assert.deepEqual(await readFile(join(legacy, bundle)), original.get(bundle), 'Git must preserve the binary distributable even with old attributes');
+  const mismatch = verifyBundle(legacy);
+  assert.notEqual(mismatch.status, 0); assert.match(mismatch.stderr, /Committed MCPB does not match deterministic source build/);
+
+  await writeFile(join(indexRoot, '.gitattributes'), fixedAttributes);
+  git(indexRoot, ['-c', 'core.autocrlf=false', 'add', '.gitattributes']);
+  const fixed = await checkout('fixed');
+  for (const [file, bytes] of original) {
+    assert.deepEqual(await readFile(join(fixed, file)), bytes, `Git checkout changed reviewed bytes: ${file}`);
+  }
+  const matched = verifyBundle(fixed);
+  assert.equal(matched.status, 0, `Fixed checkout failed source/package matching: ${matched.error ?? matched.stderr}`);
+  assert.match(matched.stdout, /Verified reproducible MCPB/);
 });

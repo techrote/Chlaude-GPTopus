@@ -20,7 +20,9 @@ import { register } from '../hooks/register.js';
 const risk = { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95, reversibility: 'reversible', testsAvailable: true };
 const proposal = (worker = 'luna', extra = {}) => ({ worker, task: 'Bounded synthetic engineering task', risk, budget: { tokens: 1000, usd: 0.05 }, ...extra });
 async function fixture(t, config = {}, options = {}) {
-  const directory = await mkdtemp(join(tmpdir(), 'ultra-independent-'));
+  // Match the owner state-directory contract: Windows TEMP may be an 8.3
+  // alias, while the execution boundary deliberately requires canonical paths.
+  const directory = await mkdtemp(join(await realpath(tmpdir()), 'ultra-independent-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const store = new ExecutionStore(join(directory, 'ledger.json'));
   const broker = new RecruitmentBroker(store, { config: { enabled: true, ...config }, ...options });

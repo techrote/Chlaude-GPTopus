@@ -8,7 +8,7 @@ The review concentrates on actual admission, execution, provenance, accounting, 
 
 ## Qualification status
 
-**Final frozen-source gate: 214/214 tests pass, including all 31 regressions independently authored for this review; no open concrete security/source finding remains within the reviewed scope.** The tests were developed from concrete source findings, with regression failures recorded during implementation and corrected before the passing checkpoints. Actual native hook registration, private/public MCP routing and the declared host event shapes have been inspected. Passing deterministic tests qualifies the stated local behaviour; it does not certify the installed host, a live API call or an operating-system sandbox.
+**Final local frozen-source gate: 215/215 tests pass, including all 31 regressions independently authored for this review; no open concrete security/source finding remains within the reviewed scope.** The tests were developed from concrete source findings, with regression failures recorded during implementation and corrected before the passing checkpoints. Actual native hook registration, private/public MCP routing and the declared host event shapes have been inspected. Passing deterministic tests qualifies the stated local behaviour; it does not certify the installed host, a live API call or an operating-system sandbox. The Windows fixture correction below still requires the source-matched CI rerun; this local gate is not a Windows PASS claim.
 
 The exact frozen file identities and reproduction commands are recorded below. The integration baseline is Desktop PR #1 at `04f570d130eeed47f50c6353829f9bffccd33604`; the independently excluded policy foundation was committed as `638471aaf8ebd61f6c3bc213dc8e98164b053d64`. Accounting hardening was committed separately as `91f789927f93445558efdff01b905c4615311b4a`.
 
@@ -49,7 +49,7 @@ Additional source observations led to improvements in the new-file tool schema (
 
 ## Final requalification of later changes
 
-The final review inspected the later broker, review, action, store, native and CLI changes without modifying their implementation. The original 31 independent regressions remain intact and passing. The complete `npm test` run passed **214/214**, with **zero skipped, cancelled or failed tests**, on Linux with Node **v24.22.3**. It includes 27 tests from the separate architecture reviewer, seven from the fresh source reviewer, 22 native-adapter tests, 13 permission-boundary tests, the six offline acceptance scenarios, multi-process accounting and extracted-package checks. These are source-matched local results; this reviewer did not execute Windows or Desktop UI acceptance.
+The final review inspected the later broker, review, action, store, native and CLI changes without modifying their implementation. The original 31 independent regressions retain their assertions and pass. After the portability-only fixture correction described below, the complete `npm test` run passed **215/215**, with **zero skipped, cancelled or failed tests**, on Linux with Node **v24.22.3**. It includes 27 tests from the separate architecture reviewer, eight from the fresh source reviewer, 22 native-adapter tests, 13 permission-boundary tests, the six offline acceptance scenarios, multi-process accounting and extracted-package checks. These are source-matched local results; this reviewer did not execute Windows or Desktop UI acceptance.
 
 The recheck verified:
 
@@ -62,6 +62,14 @@ The recheck verified:
 - Enabled Desktop discovery accurately describes A/B/C source access and uses private, immediately expiring metadata. Disabled legacy discovery retains its original public text-only contract.
 
 The recheck reproduced one final still-open test supplied by the fresh source reviewer: Policy A allowed a paid supervisor for a free-key origin without a mission spending ceiling. The correction now requires the authorised ceiling before that invocation; the exact regression passed in the final full suite. The additional unknown-root supervisor gate was also checked: explicit user authority is required before invoking restricted Sol supervision, and that permission does not replace Sol's independent decision. See the separate [architecture review](ULTRA_ARCHITECTURE_REVIEW.md) and [fresh source review](ULTRA_SOURCE_REVIEW.md) for their independently owned findings and evidence.
+
+### Windows fixture portability requalification
+
+Windows Node 20 and 22 CI on head `0628b9fe` (run `44913965460`) reported `PATH_ALIAS` in the independent successful-C staging regression. Inspection found inconsistent fixture setup: the project used `realpath(tmpdir())`, but the shared ledger fixture used raw `tmpdir()`. The runtime derives its durable private-stage path from that ledger path. The boundary deliberately requires canonical spelling for every existing ancestor; Windows temporary-directory aliases therefore failed the success fixture before stage creation.
+
+The correction is limited to trusted test setup: the shared fixture now creates its temporary ledger directory beneath `realpath(tmpdir())`, matching the canonical project and existing permission-test fixtures. Its real runtime, real permission boundary and all behavioural assertions remain in place. No implementation was changed, and `noLinks` still rejects noncanonical spelling, symbolic links and junctions. The reported Windows denial demonstrates that the alias check was active; it was not removed to obtain a pass.
+
+This does not establish automatic normalization of production state paths. Both explicit state overrides and default `LOCALAPPDATA`/home paths must satisfy the same canonical-ancestor requirement. A noncanonical default remains a fail-closed hold until the owner selects a canonical state directory; [ULTRA configuration](ULTRA.md) documents that limitation. The corrected Linux full run passed **215/215** in 7.605 seconds. Exact-head Windows CI and owner Desktop acceptance remain separate evidence and must be reported from their actual results.
 
 ## Permission-boundary assessment
 
@@ -94,7 +102,7 @@ Review provenance distinguishes the preserved native author result from an expli
 
 ## Final source snapshot
 
-Captured after the implementation freeze at **2026-11-21T14:16:37+00:00**. The parent checkout commit was `46d9ecee435f37b2c1eb8e52da22d85093064852`, tree `a4e3716997fc288d50ca2b2de8e706827ee582f7`. The reviewed integration files include the then-uncommitted Stage 4 implementation; the exact Git blob identities below bind this review to file bytes independently of the later integration commit. The programme's final engineering report records the full commit ancestry and staged PR heads.
+Rechecked after the portability-only fixture correction at **2026-11-21T14:31:33+00:00**. The parent checkout commit was `cd583986f10efb64c3e94883f0267d8a077de0db`, tree `2b9207c21efdbd6255d34216ab9476d9f4119b36`, with the independent fixture correction still uncommitted. All 16 previously listed implementation/build-script blobs and the packaged extension were unchanged; the independent test blob changed only for canonical temporary-directory setup. The exact Git blob identities below bind this review to file bytes independently of the later test/report commit. The programme's final engineering report records the full commit ancestry and staged PR heads.
 
 | Independently inspected file | Git blob SHA-1 |
 |---|---|
@@ -114,7 +122,7 @@ Captured after the implementation freeze at **2026-11-21T14:16:37+00:00**. The p
 | `plugins/openai-workers/bridge/server.mjs` | `adc4cd02759a8401a5e6682ec881f585fc8df435` |
 | `plugins/openai-workers/bridge/desktop-server.mjs` | `668055fdf426ff8fefaea0beb8903c37bdc4c47e` |
 | `scripts/build-desktop.mjs` | `18496b97a382ad5cdbdcee5e51d97908ce1bc72b` |
-| `plugins/openai-workers/tests/ultra-independent.test.mjs` | `2c287aa8e9b2ceb37aebfdbc0eb1823ac72a50fc` |
+| `plugins/openai-workers/tests/ultra-independent.test.mjs` | `926dace2e3a76e6d53e1cb9a9a33252cbc726acd` |
 
 The rebuilt `dist/Chlaude-GPTopus-Desktop.mcpb` at this checkpoint has SHA-256 `7b4c660e5929400a01a7d04f4caa7c9e52f704f566a74d29f993a07701aa5e75`. The full suite verified deterministic packaging and exercised the actual governed service from the extracted package; this does not establish Desktop UI acceptance.
 
@@ -128,6 +136,6 @@ node --test plugins/openai-workers/tests/ultra-native.test.mjs plugins/openai-wo
 npm --prefix plugins/openai-workers test
 ```
 
-The frozen-source full run passed **214/214** on Linux/Node v24.22.3, including **31/31 independent security regressions**, **27/27 separate architecture regressions**, **7/7 fresh source regressions**, and **35/35 native/permission tests**. The native and permission tests were authored by the adapter implementer and are corroborating execution evidence, not an additional independent review. No tests were skipped in the final run.
+The frozen-source full run passed **215/215** on Linux/Node v24.22.3, including **31/31 independent security regressions**, **27/27 separate architecture regressions**, **8/8 fresh source regressions**, and **35/35 native/permission tests**. The native and permission tests were authored by the adapter implementer and are corroborating execution evidence, not an additional independent review. No tests were skipped in the final run.
 
 A later edit to a listed module does not automatically inherit this review. Compare `git hash-object <path>`, inspect relevant changes, and rerun the affected tests. Policy foundation files are intentionally absent from the independently inspected table; their separate architecture review is required. No production default was enabled, no real API request was sent, and this review author neither committed nor merged implementation changes.
