@@ -234,6 +234,7 @@ export class RecruitmentBroker {
         event('supervisor.authority_held', missionId, { requestId, authority: bootstrapAuthority, requestedSupervisor: authority }); return { status: 'pending', reason: r.blockedReason };
       }
       const origin = nodeOf(m, r.originId ?? r.parentId), transition = m.config.freeToPaid;
+      invariant(!(origin.keyProfile === 'free' && spec.keyProfile === 'standard' && transition.policy === 'A') || Number.isFinite(m.config.mission.maxUsd), 'Free-to-paid A requires an explicit mission spending budget before supervisory recruitment');
       const paidGate = origin.keyProfile === 'free' && spec.keyProfile === 'standard' &&
         (transition.policy === 'C' || transition.policy === 'B' && (8000 > transition.maxTokensWithoutApproval || 2 > transition.maxUsdWithoutApproval));
       const paidAuthority = transition.policy === 'C' ? 'user' : transition.authority;
