@@ -1,0 +1,265 @@
+{
+  "version": 1,
+  "enabled": false,
+  "profile": "Lite",
+  "families": {
+    "astra": 4,
+    "sol": 3,
+    "luna": 2,
+    "terra": 1
+  },
+  "models": {
+    "gpt-6.2-sol": {
+      "family": "sol",
+      "rank": null
+    },
+    "gpt-6.2-astra": {
+      "family": "astra",
+      "rank": null
+    },
+    "gpt-6-luna": {
+      "family": "luna",
+      "rank": null
+    },
+    "gpt-6.1-sol": {
+      "family": "sol",
+      "rank": null
+    },
+    "gpt-6-astra": {
+      "family": "astra",
+      "rank": null
+    },
+    "gpt-5.6-terra": {
+      "family": "terra",
+      "rank": null
+    }
+  },
+  "workers": {
+    "sol": {
+      "model": "gpt-6.2-sol",
+      "family": "sol",
+      "keyProfile": "standard",
+      "mode": null,
+      "permissions": null,
+      "serviceTier": null
+    },
+    "astra": {
+      "model": "gpt-6.2-astra",
+      "family": "astra",
+      "keyProfile": "standard",
+      "mode": null,
+      "permissions": null,
+      "serviceTier": null
+    },
+    "luna": {
+      "model": "gpt-6-luna",
+      "family": "luna",
+      "keyProfile": "standard",
+      "mode": null,
+      "permissions": null,
+      "serviceTier": null
+    },
+    "flex6-1": {
+      "model": "gpt-6.1-sol",
+      "family": "sol",
+      "keyProfile": "standard",
+      "mode": null,
+      "permissions": null,
+      "serviceTier": "flex"
+    },
+    "daily-astrafree": {
+      "model": "gpt-6-astra",
+      "family": "astra",
+      "keyProfile": "free",
+      "mode": null,
+      "permissions": null,
+      "serviceTier": "default"
+    },
+    "daily-terrafree": {
+      "model": "gpt-5.6-terra",
+      "family": "terra",
+      "keyProfile": "free",
+      "mode": null,
+      "permissions": null,
+      "serviceTier": "default"
+    }
+  },
+  "recruitment": {
+    "mode": "SWARM",
+    "custom": {
+      "lower": true,
+      "equal": false,
+      "higher": false
+    },
+    "reviewHigher": true
+  },
+  "permissions": {
+    "recruit": {
+      "lower": true,
+      "equal": true,
+      "higher": true
+    },
+    "reviewHigher": true,
+    "tools": [],
+    "roots": []
+  },
+  "fleets": {
+    "core": {
+      "maxDepth": 2,
+      "maxInvocations": 12,
+      "concurrency": 4,
+      "reserved": 0
+    },
+    "review": {
+      "maxDepth": 2,
+      "maxInvocations": 12,
+      "concurrency": 3,
+      "reserved": 1
+    }
+  },
+  "mission": {
+    "maxTokens": null,
+    "maxUsd": null,
+    "maxWallMs": null,
+    "maxOutstanding": 32,
+    "maxJobs": 24,
+    "maxRetries": 2,
+    "requestsPerMinute": null,
+    "perKey": {},
+    "perModel": {}
+  },
+  "authority": {
+    "unknownProfile": "restricted",
+    "profiles": {
+      "opus": {
+        "authority": "full",
+        "restrictedFamilies": [],
+        "supervisor": null,
+        "final": true
+      },
+      "fable": {
+        "authority": "full",
+        "restrictedFamilies": [],
+        "supervisor": null,
+        "final": true
+      },
+      "sonnet": {
+        "authority": "routine",
+        "restrictedFamilies": [
+          "sol",
+          "astra"
+        ],
+        "supervisor": "helicop-sol",
+        "final": true
+      },
+      "haiku": {
+        "authority": "limited",
+        "restrictedFamilies": [
+          "sol",
+          "astra"
+        ],
+        "supervisor": "helicop-sol",
+        "final": true
+      },
+      "restricted": {
+        "authority": "limited",
+        "restrictedFamilies": [
+          "sol",
+          "astra"
+        ],
+        "supervisor": "user",
+        "final": true
+      }
+    },
+    "configuredIdentity": null
+  },
+  "helicop": {
+    "sol": true,
+    "astra": true,
+    "combination": "AND",
+    "denial": "revise",
+    "maxRevisions": 1,
+    "rules": [
+      {
+        "id": "sol-peer",
+        "authority": "helicop-sol",
+        "enabled": true,
+        "when": {
+          "parentFamilies": [
+            "sol"
+          ],
+          "childFamilies": [
+            "sol"
+          ]
+        },
+        "mandatory": true,
+        "veto": true,
+        "priority": 50
+      },
+      {
+        "id": "sol-astra",
+        "authority": "helicop-astra",
+        "enabled": true,
+        "when": {
+          "parentFamilies": [
+            "sol"
+          ],
+          "childFamilies": [
+            "astra"
+          ]
+        },
+        "mandatory": true,
+        "veto": true,
+        "priority": 100
+      }
+    ]
+  },
+  "risk": {
+    "minimumConfidence": 0.75,
+    "uncertainAuthority": "helicop-sol",
+    "highAuthority": "helicop-astra",
+    "requireHighRecruitmentApproval": false
+  },
+  "review": {
+    "selection": "B",
+    "maxRounds": 3,
+    "primary": "astra",
+    "reworker": "sol",
+    "rereviewer": "astra",
+    "secondOpinion": "sol",
+    "gapInspector": "luna",
+    "judge": "astra",
+    "secondOpinionImpacts": [
+      "high",
+      "critical"
+    ],
+    "gapInspectionImpacts": [
+      "high",
+      "critical"
+    ],
+    "freshGapInspector": true,
+    "requireTests": true,
+    "repeatedDefectLimit": 2,
+    "noProgressLimit": 1,
+    "blindSecondOpinion": true
+  },
+  "freeToPaid": {
+    "policy": "B",
+    "maxTokensWithoutApproval": 16000,
+    "maxUsdWithoutApproval": 0.25,
+    "authority": "user"
+  },
+  "execution": {
+    "defaultApproval": "risk-based",
+    "consequentialAuthorities": [
+      "user"
+    ],
+    "combination": "AND",
+    "requireFreshEvidence": true
+  },
+  "desktop": {
+    "profile": "A",
+    "enableExecutionBridge": false,
+    "roots": []
+  }
+}
