@@ -18,8 +18,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: Build desktop MCP extension
-        run: node scripts/build-desktop.mjs
+      - name: Verify committed desktop MCP extension is reproducible
+        run: node scripts/build-desktop.mjs --check
       - name: Run unit tests
         working-directory: plugins/openai-workers
         run: npm test
