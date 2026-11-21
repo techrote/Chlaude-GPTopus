@@ -261,5 +261,15 @@
     "profile": "A",
     "enableExecutionBridge": false,
     "roots": []
+  },
+  "surfaces": {
+    "codeCli": {
+      "profile": "A",
+      "enableExecutionBridge": false
+    },
+    "desktopCode": {
+      "profile": "A",
+      "enableExecutionBridge": false
+    }
   }
 }

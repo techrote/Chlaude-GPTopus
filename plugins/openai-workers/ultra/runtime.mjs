@@ -6,6 +6,7 @@ import { quoteRequest } from '../bridge/usage.mjs';
 import { ReviewController } from './review.mjs';
 import { ActionGate } from './actions.mjs';
 import { assertApiAdmission } from './broker.mjs';
+import { missionProfile } from './config.mjs';
 
 const object = properties => ({ type: 'object', properties, additionalProperties: false });
 const text = { type: 'string' };
@@ -23,10 +24,10 @@ const patchTool = tool('stage_patch', 'Return source-bound patches from your pri
 
 export function runtimeTools(node, profile = 'A') {
   if (['supervisor', 'judge'].includes(node.role)) return [];
-  const tools = [];
+  const tools = [], rank = typeof profile === 'string' && Object.hasOwn({ A: 0, B: 1, C: 2 }, profile) ? 'ABC'.indexOf(profile) : 0;
   if (Object.values(node.permissions.recruit).some(Boolean) || node.permissions.reviewHigher) tools.push(recruitment, waitTool, resultsTool);
-  if (profile !== 'A' && node.permissions.tools.includes('read_file')) tools.push(readTool);
-  if (profile === 'C' && ['implementation', 'reworker'].includes(node.role) && node.permissions.tools.includes('stage_write')) tools.push(stageTool, writeTool, patchTool);
+  if (rank >= 1 && node.permissions.tools.includes('read_file')) tools.push(readTool);
+  if (rank >= 2 && ['implementation', 'reworker'].includes(node.role) && node.permissions.tools.includes('stage_write')) tools.push(stageTool, writeTool, patchTool);
   return tools;
 }
 function parseJson(text) {
@@ -45,7 +46,7 @@ export class UltraRuntime {
   boundary(m, n) {
     const key = `${m.id}:${n.id}`;
     if (!this.boundaries.has(key)) {
-      const options = { profile: m.config.desktop.profile, principal: { id: n.id, role: n.role === 'implementation' ? 'author' : n.role },
+      const options = { profile: missionProfile(m), principal: { id: n.id, role: n.role === 'implementation' ? 'author' : n.role },
         roots: n.permissions.roots.map((path, i) => ({ id: String(i), path, read: ['.'], write: n.permissions.tools.includes('stage_write') ? ['.'] : [] })),
         protectedPaths: [this.store.path, `${this.store.path}.lock`], commands: [] };
       this.boundaries.set(key, this.boundaryFactory ? this.boundaryFactory(options, m, n) : new PermissionBoundary(options, { stageDirectory: `${this.store.path}.stages/${m.id}/${n.id}` }));
@@ -118,7 +119,7 @@ export class UltraRuntime {
       else {
         invariant(rt.phase === 'ready', 'Ambiguous runtime phase needs reconciliation');
         invariant(rt.steps < this.maxSteps, 'Agent step limit reached');
-        const tools = runtimeTools(n, m.config.desktop.profile), selection = selectWorkerEffort(n.worker, null, this.env, n.model);
+        const tools = runtimeTools(n, missionProfile(m)), selection = selectWorkerEffort(n.worker, null, this.env, n.model);
         const remaining = n.allocation.tokens - rt.usage.tokens - (rt.contextTokens ?? 0);
         const maxOutput = Math.min(8000, Math.max(256, Math.floor(remaining / 2)));
         const args = { worker_type: n.worker, model: n.model, service_tier: n.serviceTier ?? undefined,
@@ -162,14 +163,14 @@ export class UltraRuntime {
         return { id: n.id, status: 'completed', text: response.text };
       }
       invariant(response.calls.length <= 16, 'Too many tool calls in one step');
-      const advertised = runtimeTools(n, m.config.desktop.profile).map(t => t.name), outputs = [];
+      const advertised = runtimeTools(n, missionProfile(m)).map(t => t.name), outputs = [];
       for (const call of response.calls) {
         const current = (await this.store.snapshot(missionId)).nodes[n.id];
         invariant(current.status === 'running' && current.lease?.token === lease, 'Agent cancelled or lease changed before tool execution');
         invariant(advertised.includes(call.name), `Tool boundary rejected ${call.name}`);
         const args = call.args;
         invariant(args && typeof args === 'object' && !Array.isArray(args), 'Invalid tool arguments');
-        const schema = runtimeTools(n, m.config.desktop.profile).find(t => t.name === call.name).parameters;
+        const schema = runtimeTools(n, missionProfile(m)).find(t => t.name === call.name).parameters;
         invariant(Object.keys(args).every(k => Object.hasOwn(schema.properties, k)) && schema.required.every(k => Object.hasOwn(args, k)), 'Unexpected or missing tool arguments');
         let value;
         if (call.name === 'recruit_agent') {

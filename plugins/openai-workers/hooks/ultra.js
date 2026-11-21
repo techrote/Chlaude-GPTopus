@@ -70,19 +70,24 @@ export function nativeProposal(event) {
   return { ...options, worker, task, role: options.role ?? 'implementation', adapter: 'native' };
 }
 
+// `profile` is the effective project-access ceiling of the host SURFACE running the
+// native mission (see surfaceCeiling in ultra/config.mjs), never Desktop Chat's profile.
+// An unrecognised or missing value is think-only, never a grant.
+const PROFILE_RANK = { A: 0, B: 1, C: 2 };
+const profileRank = profile => typeof profile === 'string' && Object.hasOwn(PROFILE_RANK, profile) ? PROFILE_RANK[profile] : 0;
 export function nativeToolNames(node, profile) {
   if (['supervisor', 'judge'].includes(node.role)) return [];
-  const result = [];
+  const result = [], rank = profileRank(profile);
   if (Object.values(node.permissions.recruit).some(Boolean) || node.permissions.reviewHigher) result.push('Agent');
-  if (profile !== 'A' && node.permissions.tools.includes('read_file')) result.push(`${NATIVE_PREFIX}ultra_read_file`);
-  if (profile === 'C' && ['implementation', 'reworker'].includes(node.role) && node.permissions.tools.includes('stage_write')) {
+  if (rank >= 1 && node.permissions.tools.includes('read_file')) result.push(`${NATIVE_PREFIX}ultra_read_file`);
+  if (rank >= 2 && ['implementation', 'reworker'].includes(node.role) && node.permissions.tools.includes('stage_write')) {
     result.push(...['create_stage', 'stage_read', 'stage_write', 'stage_patch'].map(name => `${NATIVE_PREFIX}ultra_${name}`));
   }
   return result;
 }
 export function nativeRootToolNames(node, profile) {
   return ['Agent', ...['diagnostics', 'start_review', 'recruitment_decide', 'action_propose', 'action_decide', 'risk_override', 'promote', 'escalate'].map(name => `${NATIVE_PREFIX}ultra_${name}`),
-    ...(profile !== 'A' && node.permissions.tools.includes('read_file') ? [`${NATIVE_PREFIX}ultra_read_file`] : [])];
+    ...(profileRank(profile) >= 1 && node.permissions.tools.includes('read_file') ? [`${NATIVE_PREFIX}ultra_read_file`] : [])];
 }
 export function nativeOpenAITools(node, profile) {
   return nativeToolNames(node, profile).map(name => {

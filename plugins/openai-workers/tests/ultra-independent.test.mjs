@@ -271,7 +271,7 @@ async function nativeFixture(t, options = {}) {
   const f = await fixture(t, options.config);
   const controller = new NativeController(f.broker, options);
   const transport = { trustedHostChannel: true };
-  const init = await controller.handle('ultra_native_init', { sessionId: 'independent-native', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false }, transport);
+  const init = await controller.handle('ultra_native_init', { sessionId: 'independent-native', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] }, transport);
   const common = { sessionId: 'independent-native', capability: init.capability };
   const admitted = await controller.handle('ultra_native_admit', { ...common, toolUseId: 'spawn-1', primaryModel: 'opus', subagentType: 'openai-workers:luna',
     prompt: JSON.stringify({ task: 'Independent native fixture', ultra: { risk, budget: { tokens: 20000, usd: 1 } } }) }, transport);
@@ -303,7 +303,7 @@ test('independent: native requests enforce the same per-key API count limit as t
 test('independent: native tool intent revalidates a cancelled allocation instead of using a stale snapshot', async t => {
   let effects = 0;
   const backend = async () => { throw new Error('No API call expected'); }; backend.offline = true;
-  const f = await nativeFixture(t, { backend, config: { desktop: { profile: 'B' }, permissions: { tools: ['read_file'] } }, boundaryFactory: () => ({ readFile: async () => { effects++; return { content: 'private source' }; } }) });
+  const f = await nativeFixture(t, { backend, config: { surfaces: { codeCli: { profile: 'B' } }, permissions: { tools: ['read_file'] } }, boundaryFactory: () => ({ readFile: async () => { effects++; return { content: 'private source' }; } }) });
   const stale = await f.store.snapshot(f.nativeMissionId);
   await f.broker.cancel(f.nativeMissionId, f.nodeId);
   await assert.rejects(() => f.controller.tool(stale, { hostAgentId: 'native-agent-1', toolUseId: 'read-after-cancel', tool: 'mcp__openai-workers__ultra_read_file', input: { rootId: '0', path: 'source.txt' } }), /cancel|lease|running|active|stale/i);
@@ -371,9 +371,9 @@ test('independent: native project reads protect configured owner policy outside 
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'ultra-native-control-')));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const env = { OPENAI_ULTRA_ENABLED: '1', OPENAI_ULTRA_STATE_DIR: join(directory, 'state'), OPENAI_ULTRA_CONFIG: join(directory, 'owner-policy.json') };
-  await writeOwnerConfig(resolveConfig({ enabled: true, desktop: { profile: 'B', roots: [directory] }, permissions: { roots: [directory], tools: ['read_file'] } }), env);
+  await writeOwnerConfig(resolveConfig({ enabled: true, surfaces: { codeCli: { profile: 'B' } }, permissions: { roots: [directory], tools: ['read_file'] } }), env);
   const options = { env };
-  const initialized = await dispatchNative('ultra_native_init', { sessionId: 'control-path-test', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false }, options);
+  const initialized = await dispatchNative('ultra_native_init', { sessionId: 'control-path-test', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] }, options);
   const common = { sessionId: 'control-path-test', capability: initialized.capability };
   const admitted = await dispatchNative('ultra_native_admit', { ...common, toolUseId: 'control-spawn', primaryModel: 'opus', subagentType: 'openai-workers:luna',
     prompt: JSON.stringify({ task: 'Synthetic read-only project inspection', ultra: { risk, budget: { tokens: 1000, usd: 0.05 } } }) }, options);

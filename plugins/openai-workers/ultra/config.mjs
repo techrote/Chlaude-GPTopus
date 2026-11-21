@@ -62,7 +62,51 @@ export const DEFAULT_CONFIG = freezeDeep({
   freeToPaid: { policy: 'B', maxTokensWithoutApproval: 16000, maxUsdWithoutApproval: 0.25, authority: 'user' },
   execution: { defaultApproval: 'risk-based', consequentialAuthorities: ['user'], combination: 'AND', requireFreshEvidence: true },
   desktop: { profile: 'A', enableExecutionBridge: false, roots: [] },
+  // Independent capability ceilings for the two native Code surfaces. Desktop Chat
+  // keeps `desktop`. Every ceiling defaults to the lowest (think-only) level.
+  surfaces: {
+    codeCli: { profile: 'A', enableExecutionBridge: false },
+    desktopCode: { profile: 'A', enableExecutionBridge: false },
+  },
 });
+
+/** Native Code surfaces with an owner-configured ceiling. Desktop Chat is governed by `desktop`. */
+export const SURFACE_KEYS = Object.freeze(['codeCli', 'desktopCode']);
+export const PROFILE_RANK = Object.freeze({ A: 0, B: 1, C: 2 });
+// Closed vocabulary of host-reported surface names (`$.session.surfaces()` reports
+// `terminal`/`desktop`/...). Anything else, or a mixture, is an unqualified surface.
+const HOST_SURFACE_FACTS = Object.freeze({ terminal: 'codeCli', cli: 'codeCli', desktop: 'desktopCode' });
+
+/**
+ * Resolve the native Code surface from trusted host facts supplied by the mod at
+ * initialisation. Empty, unrecognised, malformed or mixed facts are 'unknown', which
+ * receives the lowest ceiling. Never accepts a caller-supplied model/tool argument.
+ */
+export function resolveHostSurface(facts) {
+  const raw = facts && typeof facts === 'object' ? [...(Array.isArray(facts.surfaces) ? facts.surfaces : []), ...(facts.surface === undefined ? [] : [facts.surface])] : [];
+  if (!raw.length || raw.length > 16) return 'unknown';
+  const found = new Set();
+  for (const fact of raw) {
+    if (typeof fact !== 'string' || !own(HOST_SURFACE_FACTS, fact)) return 'unknown';
+    found.add(HOST_SURFACE_FACTS[fact]);
+  }
+  return found.size === 1 ? [...found][0] : 'unknown';
+}
+/** Ceiling for one native Code surface; a missing/invalid entry or unknown surface is think-only. */
+export function surfaceCeiling(config, surface) {
+  const known = typeof surface === 'string' && SURFACE_KEYS.includes(surface);
+  const spec = known && config?.surfaces && own(config.surfaces, surface) ? config.surfaces[surface] : null;
+  if (!spec || typeof spec !== 'object' || typeof spec.profile !== 'string' || !own(PROFILE_RANK, spec.profile)) {
+    return { surface: known ? surface : 'unknown', configured: null, profile: 'A', enableExecutionBridge: false };
+  }
+  const bridge = spec.enableExecutionBridge === true;
+  // C without the explicit bridge flag is never honoured, even for unvalidated input.
+  return { surface, configured: spec.profile, profile: spec.profile === 'C' && !bridge ? 'B' : spec.profile, enableExecutionBridge: bridge };
+}
+/** The project-access profile governing a mission's file tools: native missions use their Code surface, others keep Desktop Chat's. */
+export function missionProfile(mission) {
+  return mission.surface === 'native' ? surfaceCeiling(mission.config, mission.native?.surface).profile : mission.config.desktop.profile;
+}
 
 export function modeFlags(mode, custom = DEFAULT_CONFIG.recruitment.custom) {
   if (mode === 'CUSTOM') return clone(custom);
@@ -199,6 +243,13 @@ export function validateConfig(config) {
   if (!config.execution.requireFreshEvidence) throw new Error('Fresh execution evidence is an invariant; stale approval cannot be enabled by configuration.');
   keys(config.desktop, Object.keys(DEFAULT_CONFIG.desktop), 'desktop'); en(config.desktop.profile, ['A', 'B', 'C'], 'desktop.profile'); bool(config.desktop.enableExecutionBridge, 'desktop.enableExecutionBridge'); list(config.desktop.roots, 'desktop.roots');
   if (config.desktop.profile === 'C' && !config.desktop.enableExecutionBridge) throw new Error('Desktop C requires explicit enableExecutionBridge=true.');
+  keys(config.surfaces, SURFACE_KEYS, 'surfaces');
+  for (const surface of SURFACE_KEYS) {
+    const spec = config.surfaces[surface];
+    keys(spec, ['profile', 'enableExecutionBridge'], `surfaces.${surface}`);
+    en(spec.profile, ['A', 'B', 'C'], `surfaces.${surface}.profile`); bool(spec.enableExecutionBridge, `surfaces.${surface}.enableExecutionBridge`);
+    if (spec.profile === 'C' && !spec.enableExecutionBridge) throw new Error(`surfaces.${surface} C requires explicit enableExecutionBridge=true.`);
+  }
   return config;
 }
 
@@ -253,6 +304,10 @@ function assertAttenuation(before, after) {
   }
   const ranks = { A: 0, B: 1, C: 2 };
   if (ranks[after.desktop.profile] > ranks[before.desktop.profile] || (after.desktop.enableExecutionBridge && !before.desktop.enableExecutionBridge) || after.desktop.roots.some(p => !before.desktop.roots.includes(p))) throw new Error('Scoped Desktop access exceeds its ceiling.');
+  for (const surface of SURFACE_KEYS) {
+    const was = before.surfaces[surface], now = after.surfaces[surface];
+    if (PROFILE_RANK[now.profile] > PROFILE_RANK[was.profile] || (now.enableExecutionBridge && !was.enableExecutionBridge)) throw new Error(`Scoped ${surface} Code surface access exceeds its ceiling.`);
+  }
 }
 
 /** Raw objects are owner configuration. Wrapped scoped layers require explicit authorisation to expand. */

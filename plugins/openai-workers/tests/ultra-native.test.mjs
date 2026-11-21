@@ -14,7 +14,7 @@ const risk = { complexity: 'low', impact: 'low', verifiability: 'high', confiden
 const prompt = (task = 'Synthetic bounded work', extra = {}) => JSON.stringify({ task, ultra: { role: 'exploration', risk, budget: { tokens: 40000, usd: 4 }, ...extra } });
 const tool = name => `${NATIVE_PREFIX}ultra_${name}`;
 
-async function fixture(t, { config = {}, model = 'opus', version = '2.1.326', enabled = true, backend: supplied, info = {} } = {}) {
+async function fixture(t, { config = {}, model = 'opus', version = '2.1.326', enabled = true, backend: supplied, info = {}, surfaces = ['terminal'] } = {}) {
   const directory = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'ultra-native-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const store = new ExecutionStore(path.join(directory, 'execution.json'));
@@ -43,6 +43,7 @@ async function fixture(t, { config = {}, model = 'opus', version = '2.1.326', en
     command: { register: async () => {} },
     env: { get: async name => name === 'OPENAI_ULTRA_ENABLED' ? enabled ? '1' : undefined : undefined },
     session: { version: async () => ({ version }), id: async () => 'synthetic-native-session', model: async () => hostModel,
+      surfaces: async () => structuredClone(surfaces),
       info: async () => ({ platform: 'linux', isHosted: false, dataRules: [], ...info }),
       messages: async args => args.as === 'api' ? [] : structuredClone(messages.get(args.agentId) ?? []), cwd: async () => directory },
     state: { get: async ref => ({ value: states.get(ref.id) }), set: async (ref, value) => states.set(ref.id, structuredClone(value)) },
@@ -215,7 +216,8 @@ test('native policy preserves host deny/ask and actual B/C scoped bridge boundar
   const project = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'ultra-native-project-'));
   t.after(() => fs.rm(project, { recursive: true, force: true })); await fs.writeFile(path.join(project, 'source.txt'), 'before'); await fs.writeFile(path.join(project, '.env'), 'SECRET');
   for (const profile of ['B', 'C']) {
-    const f = await fixture(t, { config: { desktop: { profile, enableExecutionBridge: profile === 'C' }, permissions: { roots: [project], tools: ['read_file', ...(profile === 'C' ? ['stage_write'] : [])] } } });
+    // The native Code CLI ceiling (surfaces.codeCli) governs; Desktop Chat's desktop.profile never did and must not.
+    const f = await fixture(t, { config: { surfaces: { codeCli: { profile, enableExecutionBridge: profile === 'C' } }, permissions: { roots: [project], tools: ['read_file', ...(profile === 'C' ? ['stage_write'] : [])] } } });
     const agent = await f.spawn('luna', { prompt: prompt('Scoped implementation', { role: 'implementation' }) });
     const rootRead = await f.execute(undefined, tool('read_file'), { rootId: '0', path: 'source.txt' }, 'root-read-source');
     assert.equal(JSON.parse(rootRead.result).content, 'before');

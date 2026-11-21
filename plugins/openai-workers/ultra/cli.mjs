@@ -17,7 +17,7 @@ Configuration (local owner commands):
   node plugins/openai-workers/ultra/cli.mjs validate [policy.json]
   node plugins/openai-workers/ultra/cli.mjs set enabled true
   node plugins/openai-workers/ultra/cli.mjs set recruitment.mode '"REPLICATOR"'
-  node plugins/openai-workers/ultra/cli.mjs project-add C:/Projects/Synthetic B
+  node plugins/openai-workers/ultra/cli.mjs project-add C:/Projects/Synthetic B --surface codeCli
 
 Mission operations:
   node plugins/openai-workers/ultra/cli.mjs start "A bounded engineering task"
@@ -40,7 +40,9 @@ Approval commands require a real interactive terminal and show the exact request
 No --yes switch is provided. Code approval never implies execution or merge.
 Live ULTRA calls additionally require OPENAI_ULTRA_ALLOW_API=1.
 Native Code integration additionally requires OPENAI_ULTRA_ENABLED=1.
-Desktop Chat defaults to A; B reads approved roots; C only edits private stages.
+Capability ceilings are per surface (--surface codeCli|desktopCode|chat), all default to A:
+A think-only; B reads approved roots; C only edits private stages. Chat uses desktop.profile;
+native Claude Code uses surfaces.codeCli / surfaces.desktopCode. An unreported surface gets A.
 General shell and live-project patch application require a separately qualified executor.
 
 Offline acceptance: node scripts/ultra-evaluate.mjs --output <report-directory>
@@ -70,12 +72,28 @@ export async function main(argv = process.argv.slice(2), { env = process.env, pr
     print({ file: await writeOwnerConfig(config, env), policyHash: policyHash(config) }); return;
   }
   if (command === 'project-add') {
-    invariant(args.length >= 1 && args.length <= 2, 'project-add requires an absolute project path and optional B/C profile');
-    const root = resolve(args[0]), profile = args[1] ?? 'B'; invariant(['B', 'C'].includes(profile), 'Choose B or C');
-    const config = await readOwnerConfig(env); config.desktop.profile = profile; config.desktop.enableExecutionBridge = profile === 'C';
-    config.desktop.roots = [...new Set([...config.desktop.roots, root])]; config.permissions.roots = [...new Set([...config.permissions.roots, root])];
+    // The three surfaces are independent: this command changes ONLY the named one.
+    const rest = [], flags = {};
+    for (let i = 0; i < args.length; i++) {
+      const eq = /^--surface=(.*)$/.exec(args[i]);
+      if (eq) { invariant(!Object.hasOwn(flags, 'surface'), 'Specify --surface once'); flags.surface = eq[1]; }
+      else if (args[i] === '--surface') { invariant(!Object.hasOwn(flags, 'surface') && i + 1 < args.length, 'Specify --surface once, with a value'); flags.surface = args[++i]; }
+      else { invariant(!args[i].startsWith('--'), `Unknown project-add option ${args[i]}`); rest.push(args[i]); }
+    }
+    invariant(rest.length >= 1 && rest.length <= 2, 'project-add requires an absolute project path, optional B/C profile and --surface');
+    invariant(['codeCli', 'desktopCode', 'chat'].includes(flags.surface), 'project-add requires an explicit --surface codeCli|desktopCode|chat; each surface has its own capability ceiling and no other surface is changed');
+    const root = resolve(rest[0]), profile = rest[1] ?? 'B'; invariant(['B', 'C'].includes(profile), 'Choose B or C');
+    const config = await readOwnerConfig(env);
+    if (flags.surface === 'chat') {
+      config.desktop.profile = profile; config.desktop.enableExecutionBridge = profile === 'C';
+      config.desktop.roots = [...new Set([...config.desktop.roots, root])];
+    } else {
+      config.surfaces[flags.surface].profile = profile; config.surfaces[flags.surface].enableExecutionBridge = profile === 'C';
+    }
+    config.permissions.roots = [...new Set([...config.permissions.roots, root])];
     config.permissions.tools = [...new Set([...config.permissions.tools, 'read_file', ...(profile === 'C' ? ['stage_write'] : [])])];
-    print({ file: await writeOwnerConfig(config, env), profile, root, execution: 'Private stages only; live writes and arbitrary commands remain unavailable.' }); return;
+    print({ file: await writeOwnerConfig(config, env), surface: flags.surface, profile, root, execution: 'Private stages only; live writes and arbitrary commands remain unavailable.',
+      note: flags.surface === 'chat' ? 'Only the Desktop Chat ceiling and its root allowlist changed; Code surfaces are unchanged.' : 'Only this Code surface ceiling changed; Desktop Chat and the other Code surface are unchanged. Workers still need the granted tools and roots.' }); return;
   }
   const backend = async (name, input) => {
     const result = await dispatch(name, input, { env });

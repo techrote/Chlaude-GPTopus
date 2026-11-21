@@ -161,8 +161,11 @@ export function register(on) {
         if (!hostVersionSupported(version.version)) throw new Error('Protected native ULTRA requires Claude Code 2.1.326 or later');
         const info = await $.session.info();
         const sessionId = await $.session.id();
+        // Host-reported surfaces (terminal/desktop/...) select the owner's per-surface capability ceiling.
+        // An unavailable or failing report is empty, which the controller treats as an unknown, think-only surface.
+        const surfaces = await Promise.resolve().then(() => $.session.surfaces()).then(list => Array.isArray(list) ? list.filter(item => typeof item === 'string').slice(0, 8) : [], () => []);
         const initialized = await bridge($, 'ultra_native_init', { sessionId, version: version.version, model: await $.session.model(),
-          platform: info.platform, isHosted: info.isHosted });
+          platform: info.platform, isHosted: info.isHosted, surfaces });
         nativeChannel = { sessionId, capability: initialized.capability, missionId: initialized.missionId };
         nativeError = '';
       } catch (error) { nativeChannel = null; nativeError = errorText(error); }
