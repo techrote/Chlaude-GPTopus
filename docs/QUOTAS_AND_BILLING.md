@@ -31,6 +31,8 @@ The ledger stores UTC-day totals, requests, response IDs and pending reservation
 
 The old v0.3 `usage-ledger.json` is not automatically migrated because it predates the present key split.
 
+A v1 `free-usage-ledger.json` is upgraded in place on the first write. The original file is first copied byte-for-byte (`free-usage-ledger.v1-<sha256>.json`, same folder) and the upgrade records the unknown period and affected months. v1 never tracked the straight (standard) key, so for that period only you can supply the real figure. If you set `OPENAI_WORKER_MONTHLY_LIMIT_USD`, requests in the upgrade month are refused until you reconcile once from a local terminal (`scripts\reconcile-usage.ps1`; see [ULTRA accounting](ULTRA_ACCOUNTING.md#owner-reconciliation-after-a-v1-upgrade)). The next UTC month is fully tracked and needs nothing. Never edit the ledger by hand to lift the block.
+
 ## What `/openai-workers` shows
 
 - Whether each of the two key profiles is configured (never the secret itself)
@@ -38,7 +40,7 @@ The old v0.3 `usage-ledger.json` is not automatically migrated because it predat
 - UTC day and next reset time
 - Daily tokens **used** plus tokens **reserved** in flight, per free-key group
 - Daily targets, soft limits, and an **estimated** monthly free-key worker cost
-- Optional informational `MonthlyAllowanceUsd` reference (for example `$88`)
+- Optional informational `MonthlyAllowanceUsd` reference (for example `$88`), the separately enforced `monthlyLimitUsd`, and any unreconciled-history scope after a v1 upgrade
 
 An `$88` allowance reference does **not** grant credits, query account billing, or stop paid API usage. Consult the [OpenAI usage dashboard](https://platform.openai.com/usage) and [billing settings](https://platform.openai.com/settings/organization/billing/overview) for actual entitlements and charges.
 
