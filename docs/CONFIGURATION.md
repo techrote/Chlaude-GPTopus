@@ -66,6 +66,49 @@ To set a specific model as well:
 
 Use `-Tier inherit` to clear an agent's explicit tier override; that restores the named preset (if any) or global/default behaviour.
 
+## Per-worker reasoning effort (new in v0.7)
+
+Claude can **choose the right effort for a task inside a range you control**. The plugin enforces the bounds before each OpenAI model request — not just in a prompt. The short selection note travels with the worker's description, so Claude has practical guidance when delegating. These defaults are intentionally quality-oriented:
+
+| Worker | Allowed API effort | Default | Guidance given to Claude |
+|---|---|---|---|
+| `luna` | **max only** | max | Always Max; keep tasks well scoped |
+| `daily-terrafree` | **high–max** | high | High for regular inspection, xhigh for multi-file work, max for difficult audits |
+| `daily-astrafree` | medium–max | high | Medium for bounded research, high for reviews, xhigh/max for difficult investigations |
+| `sol` | medium–max | high | Medium for bounded coding, high for multi-file changes, xhigh/max for deep debugging |
+| `astra` | medium–max | high | Medium for straightforward reviews, high for architecture, xhigh/max for critical decisions |
+| `flex6-1` | medium–max | high | Medium for routine refactors, high for multi-step work, xhigh/max for difficult work |
+
+**Windows configuration:** from the repository root, run:
+
+```powershell
+# Luna may *only* use max; Terra must use at least high.
+.\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent luna -Min max -Max max
+.\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent daily-terrafree -Min high -Max max -Default high
+
+# Change a range and tell Claude when to choose a higher effort.
+.\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent sol -Min medium -Max xhigh -Default high `
+  -Note 'Medium for small fixes; high for multiple files; xhigh for difficult regressions.'
+
+# Inspect saved overrides, or restore a worker's built-in policy.
+.\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent sol -Show
+.\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent sol -Reset
+```
+
+**Equivalent environment variables:** `OPENAI_WORKER_<NAME>_EFFORT_MIN`, `_EFFORT_MAX`, `_EFFORT_DEFAULT`, and `_EFFORT_NOTE`, where `<NAME>` is the worker ID in uppercase with punctuation replaced by underscores. For example, `OPENAI_WORKER_DAILY_TERRAFREE_EFFORT_MIN=high`. Set them as **user environment variables**, then restart Claude Code or Claude Desktop so the processes inherit the new values. The helper changes one worker at a time; other workers are unaffected.
+
+If you change only the minimum or maximum, an unset built-in default is automatically clamped into the new range. An **explicit** out-of-range default or inverted range is rejected, without making an OpenAI call. Known unsupported model/effort combinations (such as `none` on GPT-6.2 Astra) are also rejected. If you override the underlying model, check its supported effort values.
+
+**How selection works:**
+
+- In native Claude Code (CLI or Desktop **Code** tab), Claude sees the worker's range/note. When supported, it can specify per-invocation subagent `effort`; otherwise the worker gets the session's inherited effort. The plugin clamps either to your allowed range. An omitted effort uses the worker default.
+- In the Desktop **Chat** tab, `list_openai_workers` shows each worker's `effort_policy`. Claude can pass `reasoning_effort` to `ask_openai_worker`. An out-of-range request is clamped, and the returned `reasoning_effort` records what the plugin actually sent.
+- Your configured range is a **local policy**; it does not add capabilities to an API model. More effort may improve difficult tasks, but uses more time and tokens. `max` can also consume a substantial part of the response token budget before producing text, so max-effort workers default to a 32k output-token ceiling (including hidden reasoning), rather than the normal lower cap. This is a ceiling, not a spending prediction.
+
+**Ultra ≠ Max ≠ Ultrafast:** `max` is the highest **single-model API** `reasoning.effort`. **Ultra** is a ChatGPT Work/Codex harness orchestration level that can use multiple subagents; there is no `reasoning.effort: "ultra"` in the Responses API. If a native host indicates Ultra, this bridge translates its single-model portion to `max`; it does **not** reproduce Ultra orchestration itself. **Ultrafast** is a separately priced API processing speed tier (`service_tier`), not a reasoning effort. Some GPT-5.6 and GPT-6 models additionally support `reasoning.mode: "pro"`; this is another independent API feature, not an alternative name for Ultra. This plugin does not currently expose Pro mode or Ultrafast as worker presets.
+
+Docs: [OpenAI reasoning efforts](https://developers.openai.com/api/docs/guides/reasoning), [OpenAI Ultrafast](https://developers.openai.com/api/docs/guides/ultrafast-mode), [OpenAI API model limits](https://developers.openai.com/api/docs/models).
+
 ## Daily ledger and quotas (free key only)
 
 | Variable | Default | Notes |
@@ -114,7 +157,7 @@ Restart Claude Code and run `/openai-workers`; the diagnostics display the effec
 
 ## Claude Desktop Chat configuration
 
-The [desktop extension](DESKTOP.md) exposes **two masked API-key fields** at installation and declares them `sensitive: true` for Claude Desktop's OS-backed secure configuration. The straight key maps to `OPENAI_API_KEY`; the daily free-programme key maps to `OPENAI_FREE_API_KEY`. On Windows, leaving either field empty allows fallback to its corresponding existing DPAPI key if one is stored for the same Windows user. Treat the installed extension's settings/environment view as sensitive: some Claude Desktop builds have displayed values derived from sensitive fields in plaintext there (tracked upstream as `modelcontextprotocol/mcpb#244`).
+The [desktop extension](DESKTOP.md) exposes **two masked API-key fields** at installation and stores them through Claude Desktop's OS-backed secure configuration. The straight key maps to `OPENAI_API_KEY`; the daily free-programme key maps to `OPENAI_FREE_API_KEY`. On Windows, leaving either field empty allows fallback to its corresponding existing DPAPI key if one is stored for the same Windows user.
 
 The Desktop MCP server and native Claude Code plugin load the **same worker model/tier environment-variable names** and **same quota settings**, although per-worker CLI mod configuration changes only apply to newly started sessions. Restart Claude Desktop after changing Windows user environment variables. The `.mcpb` cannot be configured to silently bypass a missing free key with the paid key.
 

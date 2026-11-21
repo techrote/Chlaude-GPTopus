@@ -37,6 +37,10 @@ flowchart TD
 | `plugins/openai-workers/bridge/usage.mjs` | Persistent, locked, cross-process free-key quota ledger |
 | `plugins/openai-workers/scripts/*.ps1` | Windows DPAPI and user environment helper scripts |
 
+## Reasoning effort policy
+
+Both native Code subagents and the Desktop Chat MCP server import `bridge/workers.mjs` as the authoritative six-profile policy. Each profile has a default `min`, `max`, `default`, and concise delegation `note`. The user can override these with four per-worker environment variables or `scripts/set-worker-effort.ps1`. The native mod includes guidance in agent descriptions and clamps incoming host effort before dispatch; Desktop Chat exposes policy through discovery and clamps the explicit `reasoning_effort` argument. The API receives only a supported single-model effort (never `ultra`). Invalid policy is rejected before dispatch. This bounds the *request*, not the model's internal token consumption, the user's API spend, or the number of agents Claude chooses to spawn.
+
 ## Trust and permission boundaries
 
 - **Claude Code → OpenAI:** delegated instructions, project-specific context, tool results and relevant repository content leave your machine for OpenAI. Only delegate appropriate repositories.
@@ -59,7 +63,7 @@ The OpenAI API request uses `background: true` and `store: true`; model-side and
 
 ## Versioning
 
-The original two-key, quota-guarded implementation is retained in **v0.6.0**. The Desktop Chat MCP facade shares its underlying OpenAI client and free-key ledger without granting Chat tools repository execution permissions. If Claude Code changes its mods API, validate on the supported CLI version and extend the automated tests before publishing compatibility claims.
+This repository initially imports the tested **v0.5.0** two-key plugin, with no changes to quota routing or model request semantics. If Claude Code changes its mods API, validate on the supported CLI version and extend the automated tests before publishing compatibility claims.
 
 
 ## Claude Desktop extension

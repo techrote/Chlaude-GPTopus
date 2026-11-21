@@ -16,10 +16,7 @@ The Code and Chat integrations **share the same on-device Astra/Terra token ledg
 1. **Download** [Chlaude-GPTopus-Desktop.mcpb](../dist/Chlaude-GPTopus-Desktop.mcpb) from this repository. If GitHub previews it as a binary, use the **Download raw file** option.
 2. Open **Claude Desktop** → **Settings** → **Desktop app** → **Extensions: Manage**. In some app versions this is **Settings → Extensions**.
 3. Open **Advanced settings** → **Extension Developer** → **Install Extension…**. Select the downloaded `.mcpb` file.
-4. Enter the **straight OpenAI API key** (Sol / Astra / Luna / Flex) and **free-programme API key** (daily Astra / Terra). Input is masked and the fields are declared `sensitive: true` so Claude Desktop can use OS-backed secret storage.
-
-> [!CAUTION]
-> Treat the installed extension's settings page as sensitive. Some Claude Desktop builds have displayed environment-variable values derived from `sensitive: true` fields in plaintext after installation (tracked upstream as `modelcontextprotocol/mcpb#244`). Avoid screen-sharing or exposing that settings panel when API keys are configured.
+4. Enter the **straight OpenAI API key** (Sol / Astra / Luna / Flex) and **free-programme API key** (daily Astra / Terra). These are separate masked fields stored by Claude Desktop as sensitive configuration.
 5. Finish installation. Open a **Chat** conversation, click **+ → Connectors**, and confirm the `chlaude-gptopus-desktop` tools are connected. Restart Claude Desktop if they do not appear.
 
 > **Already stored keys with `install.ps1` on Windows?** You can leave the two fields blank to use the existing `%LOCALAPPDATA%\ClaudeOpenAIWorkers` DPAPI keys. Key storage is *not* copied between formats. If you installed Claude Desktop under a different Windows user, the DPAPI fallback cannot read your old keys.
@@ -29,6 +26,12 @@ The Code and Chat integrations **share the same on-device Astra/Terra token ledg
 > Ask `list_openai_workers` to show all OpenAI profiles and which API key profiles are configured. Then use `ask_openai_worker` with `daily-terrafree` to propose three ways to simplify this design. Poll the response using `poll_openai_worker` if the worker is still running.
 
 Claude can call these tools in a normal Chat conversation. Depending on your Claude Desktop settings, tool approval may be requested.
+
+### Choosing reasoning effort
+
+Claude sees each worker's **minimum, maximum, default and short selection note** in `list_openai_workers`. It can pass `reasoning_effort` on `ask_openai_worker`; the bridge enforces the policy even if Claude asks for something outside your range. The reply reports `reasoning_effort` (and `effort_adjusted_from` if clamped). By default, Luna always runs at `max` and daily Terra runs at `high` or above. Configure these with `scripts/set-worker-effort.ps1`; see [Configuration](CONFIGURATION.md#per-worker-reasoning-effort-new-in-v07).
+
+These levels are **OpenAI API efforts**, not Claude Desktop's host intelligence slider. Ultra is a multi-agent orchestration mode, not an API effort value; Ultrafast is a processing-speed service tier.
 
 ### Desktop Chat tools
 
@@ -77,7 +80,7 @@ If local marketplace registration is unavailable in your desktop build, do the *
 - To **update Chat support**, download and install the latest `.mcpb` again; privately installed extensions do not automatically update from GitHub.
 - To **update Code support**, update the marketplace plugin. These are separate installations.
 - For missing Chat tools: confirm the extension is enabled, inspect Claude Desktop's local extension logs under Settings → Extensions / Desktop app → Manage, and restart the app.
-- For missing keys: review the configured extension fields or save the Windows DPAPI keys through the Code plugin installer. Avoid exposing the installed extension's environment/settings view while keys are configured.
+- For missing keys: review the two masked fields in the desktop extension settings or save the Windows DPAPI keys through the Code plugin installer.
 - For a quota stop: use `openai_worker_daily_usage` and check the UTC reset rather than deleting the ledger.
 - A real Claude Desktop UI installation and live OpenAI call still need **manual end-to-end acceptance** on the target machine. The source is covered by portable unit and stdio protocol tests.
 
