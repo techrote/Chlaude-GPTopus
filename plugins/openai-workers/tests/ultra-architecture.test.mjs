@@ -316,6 +316,10 @@ test('architecture: a mandatory modification remains actionable when the same su
   const request = await f.broker.request(f.mission.id, 'root', proposal('sol'), 'combined-modification');
   const supervisor = await f.broker.appointSupervisor(f.mission.id, request.id, 'helicop-sol');
   await complete(f, supervisor.id);
+  // The separate trusted final decision is itself a blocking gate (its REJECT would outrank a MODIFY), so the verdict is
+  // only settled once it has answered; approval verdicts are independent of arrival order.
+  const early = await f.broker.decide(f.mission.id, request.id, { decision: 'APPROVE', rationale: 'Separate trusted final decision' }, { source: 'native-host', trusted: true, authority: 'trusted-orchestrator' });
+  assert.equal(early.status, 'pending', 'an unanswered mandatory Sol gate still holds the request');
   const result = await f.broker.decide(f.mission.id, request.id, { decision: 'MODIFY', rationale: 'The required gate needs a reduced scope', modification: { budget: { tokens: 10000, usd: 0.5 } } }, { source: 'supervisor', trusted: true, authority: 'helicop-sol', nodeId: supervisor.id });
   assert.equal(result.status, 'modify', 'Mandatory MODIFY must expose bounded revision instead of leaving an already-voted request stuck pending');
   assert.equal(result.nodeId, null);
@@ -404,7 +408,9 @@ test('architecture: late trusted tests trigger bounded fresh adjudication and st
   const highRisk = { ...risk, impact: 'high' };
   const author = await f.broker.request(f.mission.id, 'root', proposal('luna', { risk: highRisk }), 'late-tests-author');
   await complete(f, author.nodeId);
-  const flow = await f.reviews.start(f.mission.id, { authorId: author.nodeId, source: { content: 'source awaiting independent test evidence' }, risk: highRisk });
+  // High-impact work must designate its required tests up front; the evidence for them arrives late.
+  const flow = await f.reviews.start(f.mission.id, { authorId: author.nodeId, source: { content: 'source awaiting independent test evidence' }, risk: highRisk,
+    testPlan: { entries: [{ id: 'late-independent-test', description: 'Independent test supplied after the first adjudication' }] }, principal: { trusted: true, source: 'local-user', authority: 'user' } });
   let oldJudge;
   for (const role of ['reviewer', 'judge']) {
     const assignment = (await f.reviews.assign(f.mission.id, flow.id))[0];
@@ -414,7 +420,10 @@ test('architecture: late trusted tests trigger bounded fresh adjudication and st
     if (role === 'judge') oldJudge = assignment;
   }
   assert.equal((await f.store.snapshot(f.mission.id)).workflows[flow.id].status, 'held');
-  const evidence = { name: 'late-independent-test', sourceHash: flow.source.hash, passed: true, details: 'Late trusted test evidence' };
+  const planHash = (await f.store.snapshot(f.mission.id)).workflows[flow.id].requiredTests.planHash;
+  const executed = passed => ({ name: 'late-independent-test', testId: 'late-independent-test', sourceHash: flow.source.hash, planHash, passed,
+    attestation: { runnerId: 'ci-runner-1', commandDigest: 'a'.repeat(64), exitCode: passed ? 0 : 1, sourceHash: flow.source.hash, qualification: 'trusted-executor' } });
+  const evidence = { ...executed(true), details: 'Late trusted test evidence' };
   const runner = { trusted: true, source: 'test-runner' };
   await f.reviews.recordTest(f.mission.id, flow.id, evidence, runner);
   const judge = (await f.reviews.assign(f.mission.id, flow.id))[0];
@@ -425,7 +434,7 @@ test('architecture: late trusted tests trigger bounded fresh adjudication and st
   const accepted = await f.reviews.submit(f.mission.id, flow.id, judge.nodeId, flow.source.hash, passedReview());
   assert.equal(accepted.status, 'code_approved');
   const action = await f.actions.propose(f.mission.id, author.nodeId, { kind: 'delete', description: 'Synthetic action on reviewed source', workflowId: flow.id, sourceHash: flow.source.hash });
-  await f.reviews.recordTest(f.mission.id, flow.id, { ...evidence, passed: false, details: 'Independent test now fails' }, runner);
+  await f.reviews.recordTest(f.mission.id, flow.id, { ...executed(false), details: 'Independent test now fails' }, runner);
   await f.reviews.recordTest(f.mission.id, flow.id, { ...evidence, details: 'Retried test passes' }, runner);
   const m = await f.store.snapshot(f.mission.id);
   assert.equal(m.actions[action.id].status, 'stale');

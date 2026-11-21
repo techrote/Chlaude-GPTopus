@@ -16,6 +16,7 @@ import { PermissionBoundary } from '../ultra/permissions.mjs';
 import { main as cli } from '../ultra/cli.mjs';
 import * as ceilings from '../ultra/config.mjs';
 import { register } from '../hooks/register.js';
+import { nativeTransport } from './native-host.mjs';
 import { nativeToolNames, nativeRootToolNames, nativeOpenAITools, NATIVE_PREFIX } from '../hooks/ultra.js';
 
 // Namespace import: on unfixed source the new exports are simply undefined, so each test fails individually.
@@ -455,12 +456,16 @@ async function modHarness(t, { surfaces, config = {}, surfaceFails = false, noSu
   const store = new ExecutionStore(path.join(directory, 'execution.json'));
   const broker = new RecruitmentBroker(store, { config: { enabled: true, permissions: { tools: ['read_file'], roots: [root] }, ...config } });
   const controller = new NativeController(broker, { backend: Object.assign(async () => { throw new Error('No API'); }, { offline: true }) });
-  const handlers = new Map(), initCalls = [];
+  // The mod reaches the controller only through the production owner-key authenticator, so the surfaces
+  // fact travels inside the signed (MAC-covered) args; the spy below records what the controller receives.
+  const host = nativeTransport(controller), handlers = new Map(), initCalls = [];
+  const handle = controller.handle.bind(controller);
+  controller.handle = (name, args, ctx) => { if (name === 'ultra_native_init') initCalls.push(structuredClone(args)); return handle(name, args, ctx); };
   register((event, filter, fn) => { if (typeof filter === 'function') { fn = filter; filter = null; } if (!filter?.tool && !filter?.command) handlers.set(event, fn); return { catch() { return this; } }; });
   const session = { version: async () => ({ version: '2.1.326' }), model: async () => 'opus', id: async () => 'mod-session', info: async () => ({ platform: 'linux', isHosted: false, dataRules: [] }) };
   if (!noSurfaceApi) session.surfaces = async () => { if (surfaceFails) throw new Error('surfaces unavailable'); return surfaces; };
-  const context = { env: { get: async name => name === 'OPENAI_ULTRA_ENABLED' ? '1' : undefined }, session, tool: { register: async () => {} }, agent: { register: async () => {} }, command: { register: async () => {} },
-    mcp: { call: async (_server, name, args) => { if (name === 'ultra_native_init') initCalls.push(structuredClone(args)); return { content: [{ type: 'text', text: JSON.stringify(await controller.handle(name, args, transport)) }] }; } } };
+  const context = { env: { get: async name => name === 'OPENAI_ULTRA_ENABLED' ? '1' : host.env(name) }, fs: { read: host.read }, session, tool: { register: async () => {} }, agent: { register: async () => {} }, command: { register: async () => {} },
+    mcp: { call: async (_server, name, args) => ({ content: [{ type: 'text', text: JSON.stringify(await host.call(name, args)) }] }) } };
   await handlers.get('session.start')(context, {}, async value => value);
   return { initCalls, store, root };
 }

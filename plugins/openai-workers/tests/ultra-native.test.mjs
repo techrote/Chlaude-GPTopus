@@ -308,7 +308,11 @@ test('native root starts actual independent review workflow from a completed aut
   assert.equal(workflow.policy.secondOpinion, true); assert.equal(workflow.policy.gapReview, true);
   assert.equal(workflow.source.content, result.answer);
   let m = await f.snapshot();
-  await f.runtime.reviews.recordTest(m.id, workflow.id, { sourceHash: workflow.source.hash, name: 'Synthetic independent function evidence', passed: true, details: 'Offline fixture evidence; not an OS sandbox or live host qualification.' }, { source: 'test-runner', trusted: true });
+  // High-impact work must designate its required tests; the owner registers the plan and an attested runner supplies the evidence.
+  await f.runtime.reviews.addRequiredTests(m.id, workflow.id, [{ id: 'unit:clean', description: 'Synthetic independent function evidence' }], { source: 'local-user', trusted: true, authority: 'user' });
+  const planHash = (await f.snapshot()).workflows[workflow.id].requiredTests.planHash;
+  await f.runtime.reviews.recordTest(m.id, workflow.id, { sourceHash: workflow.source.hash, planHash, name: 'unit:clean', testId: 'unit:clean', passed: true, details: 'Offline fixture evidence; not an OS sandbox or live host qualification.',
+    attestation: { runnerId: 'fixture-runner', commandDigest: 'b'.repeat(64), exitCode: 0, sourceHash: workflow.source.hash, qualification: 'trusted-executor' } }, { source: 'test-runner', trusted: true });
   for (let i = 0; i < 6; i++) {
     await f.run('command.run', { command: 'ultra', args: 'supervise', origin: { kind: 'composer' } });
     m = await f.snapshot(); if (m.workflows[workflow.id].status === 'code_approved') break;
