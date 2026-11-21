@@ -114,7 +114,7 @@ Restart Claude Code and run `/openai-workers`; the diagnostics display the effec
 
 ## Claude Desktop Chat configuration
 
-The [desktop extension](DESKTOP.md) exposes **two masked API-key fields** at installation and stores them through Claude Desktop's OS-backed secure configuration. The straight key maps to `OPENAI_API_KEY`; the daily free-programme key maps to `OPENAI_FREE_API_KEY`. On Windows, leaving either field empty allows fallback to its corresponding existing DPAPI key if one is stored for the same Windows user.
+The [desktop extension](DESKTOP.md) exposes **two masked API-key fields** at installation and declares them `sensitive: true` for Claude Desktop's OS-backed secure configuration. The straight key maps to `OPENAI_API_KEY`; the daily free-programme key maps to `OPENAI_FREE_API_KEY`. On Windows, leaving either field empty allows fallback to its corresponding existing DPAPI key if one is stored for the same Windows user. Treat the installed extension's settings/environment view as sensitive: some Claude Desktop builds have displayed values derived from sensitive fields in plaintext there (tracked upstream as `modelcontextprotocol/mcpb#244`).
 
 The Desktop MCP server and native Claude Code plugin load the **same worker model/tier environment-variable names** and **same quota settings**, although per-worker CLI mod configuration changes only apply to newly started sessions. Restart Claude Desktop after changing Windows user environment variables. The `.mcpb` cannot be configured to silently bypass a missing free key with the paid key.
 
