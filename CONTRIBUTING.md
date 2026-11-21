@@ -32,3 +32,12 @@ claude plugin validate .
 ## Principles
 
 Never commit `.dpapi`, `.env`, `free-usage-ledger.json` or any credential output. Avoid changing API prices without sources and effective-date notes. Validate user-supplied model/tier names. Preserve calls through Claude Code's own tool permission boundary. Report what was actually tested versus mocked.
+
+
+## Desktop extension
+
+Worker defaults live in `plugins/openai-workers/bridge/workers.mjs`, shared by the native Code mod and Chat MCP facade. The MCP stdio facade is `plugins/openai-workers/bridge/desktop-server.mjs`, with protocol/packaging tests in `tests/desktop.test.mjs`. The extension source manifest is `desktop-extension/manifest.json`.
+
+Build the distributable bundle from the repository root with `node scripts/build-desktop.mjs`. The reproducible `.mcpb` (ZIP) contains no third-party Node modules. Run `npm test` in the plugin folder, and manually install the `.mcpb` in Claude Desktop before claiming graphical end-to-end validation. The Chat extension intentionally does not offer file or shell tools.
+
+CI verifies that the committed `.mcpb` is byte-for-byte reproducible from its reviewed source. If bundle inputs change, run `node scripts/build-desktop.mjs` and commit the regenerated artifact; never bypass the reproducibility check.

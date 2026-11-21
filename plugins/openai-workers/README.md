@@ -104,3 +104,12 @@ claude plugin validate .
 ```
 
 Implementation is not affiliated with OpenAI or Anthropic.
+
+
+## Claude Desktop app
+
+This plugin's native subagents work in **local Desktop Code sessions** as well as the CLI. For the regular Desktop **Chat** tab, install the companion [one-click MCPB extension](../../dist/Chlaude-GPTopus-Desktop.mcpb). The Chat extension provides six text-only worker tools and a shared local daily ledger, but not Claude Code's file/shell authorizations. See the [desktop guide](../../docs/DESKTOP.md).
+
+## Reasoning effort per worker
+
+Each worker now advertises a minimum/maximum API reasoning effort, a default, and a short note helping Claude choose. Luna defaults to **Max only**, and `daily-terrafree` to **High–Max**. The enforced range applies in Claude Code CLI, local Desktop Code sessions and the Desktop Chat MCP extension. Edit one worker using `scripts/set-worker-effort.ps1 -Agent luna -Min max -Max max`, or see [the full configuration guide](../../docs/CONFIGURATION.md#per-worker-reasoning-effort-new-in-v07). **Ultra** is host-managed parallel orchestration, not an API `reasoning.effort` value.

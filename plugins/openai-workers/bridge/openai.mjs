@@ -30,10 +30,16 @@ const PROFILES = {
 export function keyProfileForWorker(workerType) {
   return workerType === 'daily-astrafree' || workerType === 'daily-terrafree' ? 'free' : 'standard';
 }
+function providedKey(value) {
+  const key = typeof value === 'string' ? value.trim() : '';
+  // MCPB clients may leave an optional user_config placeholder unexpanded.
+  // Never send a literal placeholder as an API credential.
+  return key && !/^\$\{user_config\.[a-zA-Z0-9_-]+\}$/.test(key) ? key : null;
+}
 export function configuredKey(env = process.env, profile = 'standard') {
   const spec = PROFILES[profile];
   if (!spec) throw new Error('Unknown OpenAI key profile.');
-  if (typeof env[spec.env] === 'string' && env[spec.env].trim()) return 'environment';
+  if (providedKey(env[spec.env])) return 'environment';
   if (onWindows(env) && env.LOCALAPPDATA && existsSync(join(env.LOCALAPPDATA, 'ClaudeOpenAIWorkers', spec.file))) return 'Windows DPAPI';
   return null;
 }
@@ -41,9 +47,9 @@ export function configuredKey(env = process.env, profile = 'standard') {
 export function getKey(env = process.env, profile = 'standard') {
   const spec = PROFILES[profile];
   if (!spec) throw new Error('Unknown OpenAI key profile.');
-  if (env[spec.env]?.trim()) return env[spec.env].trim();
+  if (providedKey(env[spec.env])) return providedKey(env[spec.env]);
   if (env === process.env && cachedKeys.has(profile)) return cachedKeys.get(profile);
-  if (!onWindows(env) || !env.LOCALAPPDATA) {
+  if (!onWindows(env) || !env.LOCALAPPDATA || !existsSync(join(env.LOCALAPPDATA, 'ClaudeOpenAIWorkers', spec.file))) {
     throw new Error(`Missing ${profile} OpenAI key. Set ${spec.env}${onWindows(env) ? ' or run set-openai-key.ps1 -Profile ' + profile : ''}.`);
   }
   const script = join(myDir, '..', 'scripts', 'read-openai-key.ps1');

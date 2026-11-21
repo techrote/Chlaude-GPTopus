@@ -37,6 +37,10 @@ flowchart TD
 | `plugins/openai-workers/bridge/usage.mjs` | Persistent, locked, cross-process free-key quota ledger |
 | `plugins/openai-workers/scripts/*.ps1` | Windows DPAPI and user environment helper scripts |
 
+## Reasoning effort policy
+
+Both native Code subagents and the Desktop Chat MCP server import `bridge/workers.mjs` as the authoritative six-profile policy. Each profile has a default `min`, `max`, `default`, and concise delegation `note`. The user can override these with four per-worker environment variables or `scripts/set-worker-effort.ps1`. The native mod includes guidance in agent descriptions and clamps incoming host effort before dispatch; Desktop Chat exposes policy through discovery and clamps the explicit `reasoning_effort` argument. The API receives only a supported single-model effort (never `ultra`). Invalid policy is rejected before dispatch. This bounds the *request*, not the model's internal token consumption, the user's API spend, or the number of agents Claude chooses to spawn.
+
 ## Trust and permission boundaries
 
 - **Claude Code → OpenAI:** delegated instructions, project-specific context, tool results and relevant repository content leave your machine for OpenAI. Only delegate appropriate repositories.
@@ -60,3 +64,14 @@ The OpenAI API request uses `background: true` and `store: true`; model-side and
 ## Versioning
 
 This repository initially imports the tested **v0.5.0** two-key plugin, with no changes to quota routing or model request semantics. If Claude Code changes its mods API, validate on the supported CLI version and extend the automated tests before publishing compatibility claims.
+
+
+## Claude Desktop extension
+
+`bridge/desktop-server.mjs` adds a second MCP stdio interface that exposes a **fixed allowlist** of six text-only OpenAI worker profiles. It calls the existing `bridge/server.mjs` `dispatch` path for creation, polling, cancellations and quota ledger accounting. It never exposes the underlying arbitrary `create` bridge tool directly to desktop Chat, never grants local file/shell tools and never returns key material.
+
+The `.mcpb` archive packages the server, OpenAI client, usage ledger, worker profiles and DPAPI reader without external Node dependencies. Sensitive installer configuration is delivered through environment variables (`OPENAI_API_KEY` and `OPENAI_FREE_API_KEY`). An unset key can fall back to its DPAPI store on Windows.
+
+The native Claude Code mod's worker profile table and desktop Chat worker profile table are imported from `bridge/workers.mjs` to prevent accidental model/tier drift. Both modes share the same `free-usage-ledger.json` path and locking protocol for free-key requests.
+
+**Important boundary:** Code-tab mods use Claude Code's tool authorization. Regular Chat-tab MCP calls ask a remote OpenAI model for text; they do not authorize the OpenAI worker to independently inspect or edit files.

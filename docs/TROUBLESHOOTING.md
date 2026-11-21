@@ -52,3 +52,15 @@ Record the Claude Code and Node versions, operating system, plugin version, affe
 ## Resetting local usage
 
 The ledger is intentionally conservative. It is a JSON state file with a short-lived lock directory beside it. If you suspect a stale lock or reservation, stop all Claude Code sessions first, take a backup, and inspect the pending entries and timestamps. Only change or delete entries when you understand what OpenAI may have accepted. Incorrectly resetting it can defeat your free-key guardrail. OpenAI's billing dashboard remains the source of truth.
+
+
+## Claude Desktop extension issues
+
+- **No MCP tools in Chat:** install the `.mcpb` under Settings → Desktop app → Extensions, confirm it is enabled, check `+ → Connectors`, then restart Claude Desktop.
+- **Desktop requests have no key:** enter the two keys in the extension's masked settings fields. On Windows an empty field falls back to the same user's existing DPAPI key if present.
+- **Request stays `in_progress`:** use `poll_openai_worker` with the *same* worker and returned response ID. Flex may take longer.
+- **Desktop Code tab lacks native subagents:** the `.mcpb` is for *Chat*. Install the `openai-workers` Claude Code marketplace plugin for **local Code sessions**; cloud/WSL Code sessions do not load the mod.
+- **Quota differs between tabs:** ensure both sessions run under the same Windows user and use the same `OPENAI_WORKER_USAGE_DIR` (or default user ledger). Another machine has a separate ledger.
+- **Changing model or tier doesn't apply:** restart the Desktop app after updating Windows user environment variables, so the MCP server receives the new values.
+
+Full walkthrough: [Desktop integration](DESKTOP.md).

@@ -1,16 +1,9 @@
+import { WORKER_TYPES as TYPES, effortPolicy, selectWorkerEffort, effortGuidance } from '../bridge/workers.mjs';
 import { OPENAI_TOOLS } from './tools.js';
 import { newRun, nextInput, responseStep, stopStep, finalStep } from './step.js';
 
 const PLUGIN = 'openai-workers';
 const SERVER = 'plugin:openai-workers:bridge';
-const TYPES = {
-  sol: { model: 'gpt-6.2-sol', env: 'OPENAI_WORKER_SOL_MODEL', description: 'OpenAI Sol: general-purpose coding, investigation and independent review.' },
-  astra: { model: 'gpt-6.2-astra', env: 'OPENAI_WORKER_ASTRA_MODEL', description: 'OpenAI Astra: complex architecture, difficult coding and rigorous review.' },
-  luna: { model: 'gpt-6-luna', env: 'OPENAI_WORKER_LUNA_MODEL', description: 'OpenAI Luna: economical searches, straightforward changes and routine audits.' },
-  'flex6-1': { model: 'gpt-6.1-sol', defaultTier: 'flex', env: 'OPENAI_WORKER_FLEX6_1_MODEL', description: 'GPT-6.1 Sol with Flex pricing; best for time-insensitive engineering tasks.' },
-  'daily-astrafree': { model: 'gpt-6-astra', defaultTier: 'default', env: 'OPENAI_WORKER_DAILY_ASTRAFREE_MODEL', description: 'GPT-6 Astra on the shared free-programme API key; local 250K/day guardrail with configurable headroom.' },
-  'daily-terrafree': { model: 'gpt-5.6-terra', defaultTier: 'default', env: 'OPENAI_WORKER_DAILY_TERRAFREE_MODEL', description: 'GPT-5.6 Terra on the shared free-programme API key; local 2.5M/day guardrail with configurable headroom.' },
-};
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
 const cap = (v, fallback) => Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : fallback;
@@ -36,6 +29,26 @@ async function agentTier($, type) {
   // caller explicitly overrides it. Otherwise a global Fast/Flex setting
   // could unexpectedly turn daily 'free' calls into premium-tier requests.
   return override ?? TYPES[type].defaultTier ?? parseServiceTier(await $.env.get('OPENAI_WORKER_SERVICE_TIER'), 'OPENAI_WORKER_SERVICE_TIER');
+}
+
+// Read user-scoped effort policy overrides via the Claude Code mod environment.
+async function agentEffortEnv($, type) {
+  const prefix = `OPENAI_WORKER_${envSuffix(type)}_EFFORT_`;
+  const names = [TYPES[type].env, ...['MIN', 'MAX', 'DEFAULT', 'NOTE'].map(k => `${prefix}${k}`)];
+  const env = {};
+  for (const key of names) {
+    const value = await $.env.get(key);
+    if (value !== undefined && value !== null) env[key] = value;
+  }
+  return env;
+}
+async function agentEffort($, type, requested) {
+  const env = await agentEffortEnv($, type);
+  const model = (env[TYPES[type].env] || '').trim() || TYPES[type].model;
+  // "ultra" / "ultracode" are host orchestration levels, not API values.
+  const actualRequested = requested === 'ultra' || requested === 'ultracode' ? 'max' :
+    EFFORTS.has(requested) ? requested : null;
+  return selectWorkerEffort(type, actualRequested, env, model);
 }
 
 async function bridge($, name, params) {
@@ -95,8 +108,11 @@ async function instructions($) {
 export function register(on) {
   on('session.start', async ($, e, next) => {
     for (const [name, spec] of Object.entries(TYPES)) {
-      await $.agent.register({ name, description: `Proactively delegate bounded tasks here when OpenAI is requested. ${spec.description} Native Claude Code subagent, reasoning via external OpenAI API.`,
-        prompt: `You are an external OpenAI-backed agent. Your model steps are supplied by ${PLUGIN}.`,
+      let guidance;
+      try { guidance = effortGuidance(name, effortPolicy(name, await agentEffortEnv($, name))); }
+      catch (err) { guidance = `Effort configuration invalid: ${errorText(err)}. Fix before delegating.`; }
+      await $.agent.register({ name, description: `Proactively delegate bounded tasks here when OpenAI is requested. ${spec.description} ${guidance} Native Claude Code subagent, reasoning via external OpenAI API.`,
+        prompt: `You are an external OpenAI-backed agent. Your model steps are supplied by ${PLUGIN}. ${guidance}`,
         tools: ['Read', 'Edit', 'Write', 'Bash'] });
     }
     await $.command.register({ name: 'openai-workers', description: 'OpenAI subagent diagnostics (usage: /openai-workers)' });
@@ -114,7 +130,9 @@ export function register(on) {
     for (const [type, spec] of Object.entries(TYPES)) {
       try {
         const tier = await agentTier($, type);
-        settings.push(`  ${type}: model=${(await $.env.get(spec.env))?.trim() || spec.model}, service_tier=${tier ?? 'auto (project default)'}`);
+        const model = (await $.env.get(spec.env))?.trim() || spec.model;
+        const effort = effortPolicy(type, await agentEffortEnv($, type), model);
+        settings.push(`  ${type}: model=${model}, service_tier=${tier ?? 'auto (project default)'}, effort=${effort.min}..${effort.max}, default=${effort.default} — ${effort.note}`);
       } catch (err) { settings.push(`  ${type}: configuration ERROR: ${errorText(err)}`); }
     }
     let usageLine;
@@ -182,12 +200,13 @@ export function register(on) {
           nextState = { ...run, finished: result.finished, handback: result.handback, pending: [] };
         } else {
           const model = (await $.env.get(spec.env))?.trim() || spec.model;
+          const effortSelection = await agentEffort($, type, e.effort);
           const service_tier = await agentTier($, type);
           const flexWait = Math.min(120, cap(await $.env.get('OPENAI_WORKER_FLEX_TIMEOUT_MINUTES'), 45));
           const response = await query($, { worker_type: type, model, input: plan.input, previous_response_id: plan.previous_response_id,
             instructions: await instructions($), tools: OPENAI_TOOLS,
-            effort: EFFORTS.has(e.effort) ? e.effort : 'high',
-            max_output_tokens: 16000, ...(service_tier && { service_tier }) }, next.signal,
+            effort: effortSelection.effective,
+            max_output_tokens: effortSelection.effective === 'max' ? 32000 : 16000, ...(service_tier && { service_tier }) }, next.signal,
             service_tier === 'flex' ? flexWait : 15);
           result = responseStep(response, seed, handback);
           nextState = { responseId: response.id, pending: result.pending, seenPrompts: plan.seenPrompts,

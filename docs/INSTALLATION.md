@@ -2,6 +2,8 @@
 
 [← Overview](../README.md) · [Configuration →](CONFIGURATION.md)
 
+> **Using Claude Desktop instead of the terminal?** Follow [Desktop installation](DESKTOP.md) for the Chat-tab one-click `.mcpb` installer or the native Code-tab plugin.
+
 ## Before starting
 
 You need Claude Code 2.1.299 or newer, Node.js 20.11 or newer and an API key for each profile you plan to use. On Windows, use **PowerShell** (not the legacy `cmd.exe` shell). Neither key belongs in the repository or a screenshot.

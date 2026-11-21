@@ -1,0 +1,70 @@
+{
+  "manifest_version": "0.3",
+  "name": "chlaude-gptopus-desktop",
+  "display_name": "Chlaude-GPTopus \u2014 OpenAI Workers",
+  "version": "0.7.0",
+  "description": "Delegate text-only tasks from Claude Desktop Chat to six OpenAI workers, with two separate API keys and persistent daily-usage guardrails. Per-worker reasoning effort ranges and guidance.",
+  "long_description": "OpenAI worker tools for the regular Claude Desktop Chat tab. Uses the OpenAI Responses API, separate straight/free API key profiles, configurable Flex/Fast tiers and local Astra/Terra token-usage ledgers. For file and shell access, use the native Claude Code plugin in Desktop's Code tab instead.",
+  "author": {
+    "name": "Chlaude-GPTopus contributors",
+    "url": "https://github.com/techrote/Chlaude-GPTopus"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/techrote/Chlaude-GPTopus.git"
+  },
+  "homepage": "https://github.com/techrote/Chlaude-GPTopus",
+  "documentation": "https://github.com/techrote/Chlaude-GPTopus/blob/main/docs/DESKTOP.md",
+  "support": "https://github.com/techrote/Chlaude-GPTopus/issues",
+  "privacy_policies": [
+    "https://openai.com/policies/privacy-policy/"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "openai",
+    "claude",
+    "workers",
+    "subagents",
+    "mcp"
+  ],
+  "tools_generated": true,
+  "compatibility": {
+    "platforms": [
+      "win32",
+      "darwin"
+    ],
+    "runtimes": {
+      "node": ">=20.11.0"
+    }
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "server/desktop-server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/desktop-server.mjs"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "${user_config.straight_api_key}",
+        "OPENAI_FREE_API_KEY": "${user_config.free_api_key}"
+      }
+    }
+  },
+  "user_config": {
+    "straight_api_key": {
+      "type": "string",
+      "title": "Straight OpenAI API key",
+      "description": "Used by sol, astra, luna and flex6-1. Leave empty on Windows to reuse the key saved by Chlaude-GPTopus CLI setup, if available.",
+      "required": false,
+      "sensitive": true
+    },
+    "free_api_key": {
+      "type": "string",
+      "title": "Free-programme OpenAI API key",
+      "description": "Used only by daily-astrafree and daily-terrafree. Leave empty on Windows to reuse the existing DPAPI free key, if available.",
+      "required": false,
+      "sensitive": true
+    }
+  }
+}

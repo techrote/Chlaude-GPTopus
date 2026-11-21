@@ -39,3 +39,14 @@ The plugin replaces the subagent's `turn.step` through a Claude Code mod. It sen
 ## Limitations
 
 Workers have only the tools exposed by this plugin (`Read`, `Edit`, `Write`, `Bash`); they are not given the parent Claude session's entire tool catalogue or all integrations. Tool permissions remain subject to Claude Code and any managed policies. Both provider access and tool capabilities may vary by installed version. Unbounded, full-repository parallel changes are not a good first test.
+
+
+## Regular Claude Desktop Chat
+
+In the Chat tab, ask Claude: "Use the `daily-terrafree` OpenAI worker to critique this plan, then `daily-astrafree` to evaluate the risk. Poll until both finish. Summarize where they disagree." Claude calls `ask_openai_worker` and `poll_openai_worker`; the workers only receive the text Claude supplies, not local files by default. For repository-writing subagents, switch to the native **Code** tab. [Desktop guide](DESKTOP.md).
+
+## Selecting effort without guessing
+
+You can now tell Claude: “Use Luna for small independent checks (Max is mandatory). Use Terra at High for scans; choose Extra High or Max for multi-file investigations. For Sol and Astra, follow each worker's effort note and stay within its configured range.”
+
+For native Code subagents, use the per-invocation effort parameter when Claude Code offers it. In Chat, inspect `list_openai_workers` for `effort_policy`, then send `reasoning_effort` with `ask_openai_worker`. The bridge clamps out-of-range values and never sends API `ultra`. See [Configuration](CONFIGURATION.md#per-worker-reasoning-effort-new-in-v07).
