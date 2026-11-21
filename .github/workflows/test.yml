@@ -26,4 +26,7 @@ jobs:
 
       - name: Validate desktop MCPB manifest (official toolchain)
         if: matrix.node == '22' && matrix.os == 'ubuntu-latest'
-        run: |\n          mkdir -p desktop-bundle\n          unzip -q dist/Chlaude-GPTopus-Desktop.mcpb -d desktop-bundle\n          npx --yes @anthropic-ai/mcpb validate desktop-bundle/manifest.json
+        run: |
+          mkdir -p desktop-bundle
+          unzip -q dist/Chlaude-GPTopus-Desktop.mcpb -d desktop-bundle
+          npx --yes @anthropic-ai/mcpb validate desktop-bundle/manifest.json
