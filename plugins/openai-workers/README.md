@@ -1,4 +1,4 @@
-# OpenAI-backed Claude Code subagents — v0.5.0
+# OpenAI-backed Claude Code subagents — v0.6.0
 
 This plugin registers six native Claude Code agents. The main Claude Code session remains on Claude, while explicit `openai-workers:*` delegates use OpenAI's Responses API and Claude Code's normal file/shell permission checks.
 
