@@ -23,6 +23,7 @@ const SAFE_BASE = 'function planCleanup(paths) { return []; }\n';
 const FLAWED = 'function planCleanup(paths) { return paths.filter(p => p.endsWith(".tmp")); }\n';
 const FIXED = 'function planCleanup(paths) { return paths.filter(p => /^cache\\/[A-Za-z0-9_-]+\\.tmp$/.test(p)); }\n';
 const owner = { trusted: true, source: 'local-user', authority: 'user' };
+const TEST_ID = 'Synthetic cleanup scope cases';
 const terminal = new Set(['completed', 'failed', 'blocked', 'cancelled']);
 const call = (name, args, n = 0) => ({ call_id: `call_${n}_${name}`, name, args });
 const toolOutputs = args => Array.isArray(args.input) ? args.input.filter(x => x.type === 'function_call_output').map(x => JSON.parse(x.output)) : [];
@@ -142,7 +143,9 @@ export async function scenarioA() {
     const authored = JSON.parse(author.results.at(-1).value.text);
     assert.equal(author.worker, 'luna'); assert.equal(authored.patch.applied, false); assert.equal(authored.patch.patches[0].content, FLAWED);
     assert.equal(await fs.readFile(path.join(ctx.project, 'src', 'cleanup.js'), 'utf8'), SAFE_BASE);
-    let workflow = await reviews.start(ctx.missionId, { authorId: author.id, source: authored.source, risk: HIGH_RISK });
+    // Designated verification: high-impact work needs a plan naming the exact tests; one arbitrary passing test is not enough.
+    let workflow = await reviews.start(ctx.missionId, { authorId: author.id, source: authored.source, risk: HIGH_RISK,
+      testPlan: { entries: [{ id: TEST_ID, description: 'Synthetic cleanup scope cases (offline fixture)' }] }, principal: owner });
     assert.equal(fixtureTests(workflow.source.content).passed, false);
     snapshot = await drain(ctx, runtime, { predicate: m => m.workflows[workflow.id].status === 'rework' });
     workflow = snapshot.workflows[workflow.id];
@@ -153,7 +156,9 @@ export async function scenarioA() {
     assert.equal(reworker.worker, 'sol'); assert.equal(reworker.pool, 'core');
     const revised = JSON.parse(reworker.results.at(-1).value.text); assert.equal(revised.patch.applied, false);
     const tested = fixtureTests(workflow.source.content); assert.equal(tested.passed, true);
-    await reviews.recordTest(ctx.missionId, workflow.id, { sourceHash: workflow.source.hash, name: 'Synthetic cleanup scope cases', ...tested }, { trusted: true, source: 'test-runner' });
+    // The in-process fixture stands in for the trusted executor; its attestation is synthetic, not a sandbox qualification.
+    await reviews.recordTest(ctx.missionId, workflow.id, { sourceHash: workflow.source.hash, planHash: workflow.requiredTests.planHash, name: TEST_ID, testId: TEST_ID, ...tested,
+      attestation: { runnerId: 'offline-evaluator-fixture', commandDigest: digest('vm fixture: cleanup scope cases'), exitCode: tested.passed ? 0 : 1, sourceHash: workflow.source.hash, qualification: 'trusted-executor' } }, { trusted: true, source: 'test-runner' });
     snapshot = await drain(ctx, runtime, { predicate: m => m.workflows[workflow.id].status === 'code_approved' });
     workflow = snapshot.workflows[workflow.id];
     assert.equal(workflow.reviews.filter(r => ['reviewer', 'second_opinion'].includes(r.role)).length, 4);

@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto';
 import { WORKER_TYPES } from '../bridge/workers.mjs';
 
 export const CONFIG_VERSION = 1;
+/** Stable identifier of one required verification; shared by owner policy, workflow plans and evidence. */
+export const TEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@+ -]{0,127}$/;
+/** Areas map onto trusted risk flags (securitySensitive, privacySensitive, ...), never onto author text. */
+export const TEST_AREAS = Object.freeze(['security', 'privacy', 'destructive', 'external', 'deployment', 'persistence']);
 export const MODES = Object.freeze({
   SWARM: Object.freeze({ lower: true, equal: false, higher: false }),
   REPLICATOR: Object.freeze({ lower: true, equal: true, higher: false }),
@@ -58,6 +62,14 @@ export const DEFAULT_CONFIG = freezeDeep({
     selection: 'B', maxRounds: 3, primary: 'astra', reworker: 'sol', rereviewer: 'astra', secondOpinion: 'sol', gapInspector: 'luna', judge: 'astra',
     secondOpinionImpacts: ['high', 'critical'], gapInspectionImpacts: ['high', 'critical'], freshGapInspector: true,
     requireTests: true, repeatedDefectLimit: 2, noProgressLimit: 1, blindSecondOpinion: true,
+    // Owner-policy mandatory tests: [{ id, description?, impacts?, areas?, executable?, commandDigest? }]. Agents may add to, never remove, these.
+    requiredTests: [],
+    // Impact tiers at which work that demands tests but designates none is held instead of accepting "some passing evidence".
+    testPlanRequiredImpacts: ['high', 'critical', 'unknown'],
+    // Tiers at which an owner-attested (human) record may satisfy a test; elsewhere independent execution is required.
+    ownerAttestedImpacts: ['low', 'medium'],
+    // Owner waivers of non-executable tests are refused for critical impact unless this is true.
+    allowCriticalWaivers: false,
   },
   freeToPaid: { policy: 'B', maxTokensWithoutApproval: 16000, maxUsdWithoutApproval: 0.25, authority: 'user' },
   execution: { defaultApproval: 'risk-based', consequentialAuthorities: ['user'], combination: 'AND', mandatoryAuthorities: [], vetoAuthorities: [], requireFreshEvidence: true },
@@ -188,7 +200,21 @@ export function validateConfig(config) {
   for (const name of ['primary', 'reworker', 'rereviewer', 'secondOpinion', 'gapInspector', 'judge']) en(config.review[name], Object.keys(config.workers), `review.${name}`);
   for (const field of ['maxRounds', 'repeatedDefectLimit', 'noProgressLimit']) num(config.review[field], `review.${field}`, 1, false, true);
   for (const field of ['secondOpinionImpacts', 'gapInspectionImpacts']) list(config.review[field], `review.${field}`, ['low', 'medium', 'high', 'critical', 'unknown']);
-  for (const field of ['freshGapInspector', 'requireTests', 'blindSecondOpinion']) bool(config.review[field], `review.${field}`);
+  for (const field of ['freshGapInspector', 'requireTests', 'blindSecondOpinion', 'allowCriticalWaivers']) bool(config.review[field], `review.${field}`);
+  for (const field of ['testPlanRequiredImpacts', 'ownerAttestedImpacts']) list(config.review[field], `review.${field}`, ['low', 'medium', 'high', 'critical', 'unknown']);
+  if (!Array.isArray(config.review.requiredTests) || config.review.requiredTests.length > 64) throw new Error('review.requiredTests must be a bounded array.');
+  const testIds = new Set();
+  for (const test of config.review.requiredTests) {
+    keys(test, ['id', 'description', 'impacts', 'areas', 'executable', 'commandDigest'], 'review.requiredTests entry');
+    if (typeof test.id !== 'string' || !TEST_ID_PATTERN.test(test.id)) throw new Error('review.requiredTests entries need a bounded stable id.');
+    if (testIds.has(test.id)) throw new Error(`Duplicate review.requiredTests id ${test.id}.`); testIds.add(test.id);
+    if (test.description !== undefined) str(test.description, `review.requiredTests.${test.id}.description`);
+    if (test.impacts !== undefined) list(test.impacts, `review.requiredTests.${test.id}.impacts`, ['low', 'medium', 'high', 'critical', 'unknown']);
+    if (test.areas !== undefined) list(test.areas, `review.requiredTests.${test.id}.areas`, TEST_AREAS);
+    if (test.executable !== undefined) bool(test.executable, `review.requiredTests.${test.id}.executable`);
+    if (test.commandDigest !== undefined && test.commandDigest !== null && !/^[a-f0-9]{64}$/.test(test.commandDigest)) throw new Error(`review.requiredTests.${test.id}.commandDigest must be a SHA-256 hex digest or null.`);
+    if (test.executable === false && test.commandDigest) throw new Error(`review.requiredTests.${test.id} cannot pin a command for a non-executable test.`);
+  }
   keys(config.freeToPaid, Object.keys(DEFAULT_CONFIG.freeToPaid), 'freeToPaid'); en(config.freeToPaid.policy, ['A', 'B', 'C'], 'freeToPaid.policy');
   num(config.freeToPaid.maxTokensWithoutApproval, 'freeToPaid.maxTokensWithoutApproval', 0, false, true); num(config.freeToPaid.maxUsdWithoutApproval, 'freeToPaid.maxUsdWithoutApproval');
   en(config.freeToPaid.authority, ['user', 'helicop-sol', 'helicop-astra'], 'freeToPaid.authority');
