@@ -28,7 +28,9 @@ claude --version
 node --version
 claude plugin validate .\plugins\openai-workers
 claude plugin validate .
-node --test .\plugins\openai-workers\tests\*.test.mjs
+Push-Location .\plugins\openai-workers
+npm test
+Pop-Location
 ```
 
 Inside Claude Code use `/plugin` for installed plugins, `/mcp` for bridge health and `/openai-workers` for agent diagnostics.

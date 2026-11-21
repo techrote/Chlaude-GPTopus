@@ -97,7 +97,8 @@ The plugin intercepts each native subagent model step, calls OpenAI Responses AP
 ## Testing
 
 ```powershell
-node --test .\plugins\openai-workers\tests\*.test.mjs
+cd .\plugins\openai-workers
+npm test
 claude plugin validate .\plugins\openai-workers
 claude plugin validate .
 ```
