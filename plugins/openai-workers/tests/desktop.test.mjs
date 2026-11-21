@@ -200,6 +200,10 @@ test('Desktop MCPB builder generates a complete self-contained ZIP with the decl
     const artifact = join(path, 'desktop.mcpb');
     execFileSync(process.execPath, [join(repoRoot, 'scripts/build-desktop.mjs'), artifact], { stdio: 'pipe' });
     const buffer = readFileSync(artifact);
+    execFileSync(process.execPath, [join(repoRoot, 'scripts/build-desktop.mjs'), '--check', artifact], { stdio: 'pipe' });
+    const second = join(path, 'desktop-second.mcpb');
+    execFileSync(process.execPath, [join(repoRoot, 'scripts/build-desktop.mjs'), second], { stdio: 'pipe' });
+    assert.deepEqual(readFileSync(second), buffer);
     assert.equal(buffer.readUInt32LE(0), 0x04034b50);
     assert(buffer.includes(Buffer.from('manifest.json')));
     assert(buffer.includes(Buffer.from('server/desktop-server.mjs')));
