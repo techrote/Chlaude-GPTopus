@@ -119,9 +119,49 @@ test('MCP initialize, list, tool call, error handling and notifications are prot
   await handleMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }, write, backend, targetEnv);
   assert.equal(out.length, 4);
   assert.equal(out[0].result.serverInfo.name, 'chlaude-gptopus-desktop');
+  assert.equal(out[0].result.protocolVersion, '2025-06-18');
   assert.equal(out[1].result.tools.length, 5);
   assert.equal(JSON.parse(out[2].result.content[0].text).workers.length, 6);
   assert.equal(out[3].result.isError, true);
+});
+
+
+test('MCP 2026-07-28 discovery, metadata and version rejection are protocol-correct', async () => {
+  const out = [];
+  const write = str => out.push(JSON.parse(str));
+  const backend = fakeBackend([]);
+  const meta = {
+    'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+    'io.modelcontextprotocol/clientInfo': { name: 'test-client', version: '1.0.0' },
+    'io.modelcontextprotocol/clientCapabilities': {},
+  };
+  await handleMessage({ jsonrpc: '2.0', id: 10, method: 'server/discover', params: { _meta: meta } }, write, backend, targetEnv);
+  await handleMessage({ jsonrpc: '2.0', id: 11, method: 'tools/list', params: { _meta: meta } }, write, backend, targetEnv);
+  await handleMessage({ jsonrpc: '2.0', id: 12, method: 'tools/call', params: { _meta: meta, name: 'list_openai_workers', arguments: {} } }, write, backend, targetEnv);
+  await handleMessage({ jsonrpc: '2.0', id: 13, method: 'tools/list', params: { _meta: { ...meta, 'io.modelcontextprotocol/protocolVersion': '1900-01-01' } } }, write, backend, targetEnv);
+
+  assert.deepEqual(out[0].result.supportedVersions, ['2026-07-28']);
+  assert.equal(out[0].result.resultType, 'complete');
+  assert.equal(out[0].result.cacheScope, 'public');
+  assert.equal(out[0].result._meta['io.modelcontextprotocol/serverInfo'].name, 'chlaude-gptopus-desktop');
+  assert.equal(out[1].result.tools.length, 5);
+  assert.equal(out[1].result.resultType, 'complete');
+  assert.equal(out[1].result.ttlMs, 3600000);
+  assert.equal(out[2].result.resultType, 'complete');
+  assert.equal(JSON.parse(out[2].result.content[0].text).workers.length, 6);
+  assert.equal(out[3].error.code, -32022);
+  assert.deepEqual(out[3].error.data.supported, ['2026-07-28']);
+});
+
+test('Unsupported legacy initialize versions are counter-offered at the latest handshake revision', async () => {
+  const out = [];
+  await handleMessage(
+    { jsonrpc: '2.0', id: 20, method: 'initialize', params: { protocolVersion: '1900-01-01' } },
+    str => out.push(JSON.parse(str)),
+    fakeBackend([]),
+    targetEnv,
+  );
+  assert.equal(out[0].result.protocolVersion, '2025-11-25');
 });
 
 test('Desktop and native mod share the same on-disk daily usage ledger, never the straight key', async () => {
