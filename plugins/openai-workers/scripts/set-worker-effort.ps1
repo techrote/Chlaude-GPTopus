@@ -53,16 +53,16 @@ $preset = $presets[$Agent]
 $minEffort = CurrentValue 'MIN' $preset[0]
 $maxEffort = CurrentValue 'MAX' $preset[1]
 $defaultEffort = CurrentValue 'DEFAULT' $preset[2]
-if ($levels.IndexOf($minEffort) -lt 0 -or $levels.IndexOf($maxEffort) -lt 0 -or $levels.IndexOf($defaultEffort) -lt 0) {
+if ([array]::IndexOf($levels, $minEffort) -lt 0 -or [array]::IndexOf($levels, $maxEffort) -lt 0 -or [array]::IndexOf($levels, $defaultEffort) -lt 0) {
   throw 'Saved policy contains an invalid effort. Use -Reset to recover after inspecting it.'
 }
-if ($levels.IndexOf($minEffort) -gt $levels.IndexOf($maxEffort)) { throw 'Minimum effort exceeds maximum effort.' }
+if ([array]::IndexOf($levels, $minEffort) -gt [array]::IndexOf($levels, $maxEffort)) { throw 'Minimum effort exceeds maximum effort.' }
 if ($updates.ContainsKey('DEFAULT') -or [Environment]::GetEnvironmentVariable($prefix + 'DEFAULT','User')) {
-  if ($levels.IndexOf($defaultEffort) -lt $levels.IndexOf($minEffort) -or $levels.IndexOf($defaultEffort) -gt $levels.IndexOf($maxEffort)) {
+  if ([array]::IndexOf($levels, $defaultEffort) -lt [array]::IndexOf($levels, $minEffort) -or [array]::IndexOf($levels, $defaultEffort) -gt [array]::IndexOf($levels, $maxEffort)) {
     throw 'The explicitly configured default must fall within the selected effort range.'
   }
 } else {
-  $defaultEffort = $levels[[Math]::Min($levels.IndexOf($maxEffort), [Math]::Max($levels.IndexOf($minEffort), $levels.IndexOf($defaultEffort)))]
+  $defaultEffort = $levels[[Math]::Min([array]::IndexOf($levels, $maxEffort), [Math]::Max([array]::IndexOf($levels, $minEffort), [array]::IndexOf($levels, $defaultEffort)))]
 }
 if ($updates.Count -eq 0 -and -not $Show) { $Show = $true }
 foreach ($item in $updates.GetEnumerator()) {
