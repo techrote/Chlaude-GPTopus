@@ -104,3 +104,8 @@ claude plugin validate .
 ```
 
 Implementation is not affiliated with OpenAI or Anthropic.
+
+
+## Claude Desktop app
+
+This plugin's native subagents work in **local Desktop Code sessions** as well as the CLI. For the regular Desktop **Chat** tab, install the companion [one-click MCPB extension](../../dist/Chlaude-GPTopus-Desktop.mcpb). The Chat extension provides six text-only worker tools and a shared local daily ledger, but not Claude Code's file/shell authorizations. See the [desktop guide](../../docs/DESKTOP.md).

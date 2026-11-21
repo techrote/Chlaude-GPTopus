@@ -18,6 +18,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - name: Build desktop MCP extension
+        run: node scripts/build-desktop.mjs
       - name: Run unit tests
         working-directory: plugins/openai-workers
         run: npm test
+
+      - name: Validate desktop MCPB manifest (official toolchain)
+        if: matrix.node == '22' && matrix.os == 'ubuntu-latest'
+        run: npx --yes @anthropic-ai/mcpb validate desktop-extension/manifest.json

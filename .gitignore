@@ -12,3 +12,7 @@ coverage/
 .DS_Store
 Thumbs.db
 *.log
+
+# Keep source release bundle, ignore any temporary builds.
+dist/*
+!dist/Chlaude-GPTopus-Desktop.mcpb

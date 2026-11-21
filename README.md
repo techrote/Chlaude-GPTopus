@@ -1,8 +1,8 @@
 # Chlaude-GPTopus
 
-**Give Claude Code six OpenAI-powered subagents while Claude stays in charge.**
+**Give Claude Code six OpenAI-powered subagents — now in the Claude Desktop app too.**
 
-Chlaude-GPTopus is a Claude Code **mod + plugin marketplace**. Claude remains the top-level orchestrator. When you ask it to delegate to an `openai-workers:*` agent, that subagent's model steps are served by the OpenAI Responses API. File and shell actions go through Claude Code's usual tool permission checks.
+Chlaude-GPTopus includes a Claude Code **mod + plugin marketplace** and a **Claude Desktop Chat extension (`.mcpb`)**. Claude remains the top-level orchestrator. When you ask it to delegate to an `openai-workers:*` agent, that subagent's model steps are served by the OpenAI Responses API. File and shell actions go through Claude Code's usual tool permission checks.
 
 The design deliberately keeps **two API keys** and **local daily-quota controls**:
 
@@ -11,6 +11,12 @@ The design deliberately keeps **two API keys** and **local daily-quota controls*
 
 > [!IMPORTANT]
 > “Free” describes the **intended API programme**, not a billing guarantee. Your account needs the appropriate OpenAI entitlement. The plugin's ledger is a best-effort local stopping rule, not OpenAI's authoritative quota meter. In particular, calls outside this plugin are not counted.
+
+## Claude Desktop (Code and Chat)
+
+**Desktop Code tab:** the native Claude Code plugin works in local Code sessions with full tool permissions. **Desktop Chat tab:** install the text-only [one-click desktop extension](dist/Chlaude-GPTopus-Desktop.mcpb) and delegate to the same six OpenAI model profiles through MCP tools. The desktop extension cannot read/write local files or run shell commands for OpenAI; use the Code tab for that. Both paths share one local free-key quota ledger.
+
+**[Desktop setup walkthrough →](docs/DESKTOP.md)** (no CLI required for regular Chat; masked two-key settings in the extension installer).
 
 ## Quick start: Windows 11
 
@@ -84,6 +90,7 @@ Claude Code still decides whether and when to delegate, and normal tool authoriz
 
 | Guide | What it covers |
 |---|---|
+| [Claude Desktop support](docs/DESKTOP.md) | Code-tab native subagents, Chat-tab one-click extension, two keys, polling and limitations |
 | [Setup and upgrading](docs/INSTALLATION.md) | First install, updates, two-key setup, Windows walkthrough, alternative Linux/macOS configuration |
 | [Configuration reference](docs/CONFIGURATION.md) | Every supported environment variable, models, Flex/Fast tiers and per-worker limits |
 | [Daily usage and billing](docs/QUOTAS_AND_BILLING.md) | 250k/2.5M groups, 10% headroom, reservations, local ledger, reset behaviour, charging caveats |
@@ -94,8 +101,9 @@ Claude Code still decides whether and when to delegate, and normal tool authoriz
 
 ## Compatibility and verification
 
+- Claude Desktop **Chat** local MCPB extension (`.mcpb`), plus native **Code** tab support for local sessions.
 - Native **Claude Code mod hooks** (`session.start`, `turn.step`) plus a local **MCP stdio bridge** (`node`). The code is designed for Claude Code **2.1.299+**.
-- **31 passing local Node tests** cover tool translation, key routing, tier behaviour, daily ledger, concurrent reservations and UTC rollover.
+- **41 passing local Node tests** cover tool translation, key routing, tier behaviour, daily ledger, concurrent reservations and UTC rollover.
 - `claude plugin validate` and a real end-to-end Claude Code + OpenAI run **must still be executed on the target machine**. Local mocked tests are not proof of live API access or final compatibility.
 - Works primarily on **Windows** with DPAPI key storage. On macOS/Linux, provide `OPENAI_API_KEY` and `OPENAI_FREE_API_KEY` as secure process environment variables; Windows PowerShell setup scripts do not apply.
 

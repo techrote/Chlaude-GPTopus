@@ -110,3 +110,12 @@ These limits use model-reported usage and local estimates. They are **not prepai
 ```
 
 Restart Claude Code and run `/openai-workers`; the diagnostics display the effective model/tier of all workers and the free-key ledger totals, not the actual secret values.
+
+
+## Claude Desktop Chat configuration
+
+The [desktop extension](DESKTOP.md) exposes **two masked API-key fields** at installation and stores them through Claude Desktop's OS-backed secure configuration. The straight key maps to `OPENAI_API_KEY`; the daily free-programme key maps to `OPENAI_FREE_API_KEY`. On Windows, leaving either field empty allows fallback to its corresponding existing DPAPI key if one is stored for the same Windows user.
+
+The Desktop MCP server and native Claude Code plugin load the **same worker model/tier environment-variable names** and **same quota settings**, although per-worker CLI mod configuration changes only apply to newly started sessions. Restart Claude Desktop after changing Windows user environment variables. The `.mcpb` cannot be configured to silently bypass a missing free key with the paid key.
+
+Regular Desktop Chat only has text-only MCP delegation; the Code tab uses native permission-gated file/shell tools.

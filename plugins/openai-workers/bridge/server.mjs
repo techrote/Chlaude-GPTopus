@@ -93,7 +93,7 @@ export async function handle(message) {
   if (message.method === 'initialize') return send({ jsonrpc: '2.0', id, result: {
     protocolVersion: message.params?.protocolVersion ?? '2025-06-18',
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: 'openai-workers-bridge', version: '0.5.0' },
+    serverInfo: { name: 'openai-workers-bridge', version: '0.6.0' },
   } });
   if (message.method === 'ping') return send({ jsonrpc: '2.0', id, result: {} });
   if (message.method === 'tools/list') return send({ jsonrpc: '2.0', id, result: { tools: defs } });

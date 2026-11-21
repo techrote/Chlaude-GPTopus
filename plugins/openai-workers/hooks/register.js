@@ -1,16 +1,9 @@
+import { WORKER_TYPES as TYPES } from '../bridge/workers.mjs';
 import { OPENAI_TOOLS } from './tools.js';
 import { newRun, nextInput, responseStep, stopStep, finalStep } from './step.js';
 
 const PLUGIN = 'openai-workers';
 const SERVER = 'plugin:openai-workers:bridge';
-const TYPES = {
-  sol: { model: 'gpt-6.2-sol', env: 'OPENAI_WORKER_SOL_MODEL', description: 'OpenAI Sol: general-purpose coding, investigation and independent review.' },
-  astra: { model: 'gpt-6.2-astra', env: 'OPENAI_WORKER_ASTRA_MODEL', description: 'OpenAI Astra: complex architecture, difficult coding and rigorous review.' },
-  luna: { model: 'gpt-6-luna', env: 'OPENAI_WORKER_LUNA_MODEL', description: 'OpenAI Luna: economical searches, straightforward changes and routine audits.' },
-  'flex6-1': { model: 'gpt-6.1-sol', defaultTier: 'flex', env: 'OPENAI_WORKER_FLEX6_1_MODEL', description: 'GPT-6.1 Sol with Flex pricing; best for time-insensitive engineering tasks.' },
-  'daily-astrafree': { model: 'gpt-6-astra', defaultTier: 'default', env: 'OPENAI_WORKER_DAILY_ASTRAFREE_MODEL', description: 'GPT-6 Astra on the shared free-programme API key; local 250K/day guardrail with configurable headroom.' },
-  'daily-terrafree': { model: 'gpt-5.6-terra', defaultTier: 'default', env: 'OPENAI_WORKER_DAILY_TERRAFREE_MODEL', description: 'GPT-5.6 Terra on the shared free-programme API key; local 2.5M/day guardrail with configurable headroom.' },
-};
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
 const cap = (v, fallback) => Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : fallback;

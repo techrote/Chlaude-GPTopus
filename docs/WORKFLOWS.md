@@ -39,3 +39,8 @@ The plugin replaces the subagent's `turn.step` through a Claude Code mod. It sen
 ## Limitations
 
 Workers have only the tools exposed by this plugin (`Read`, `Edit`, `Write`, `Bash`); they are not given the parent Claude session's entire tool catalogue or all integrations. Tool permissions remain subject to Claude Code and any managed policies. Both provider access and tool capabilities may vary by installed version. Unbounded, full-repository parallel changes are not a good first test.
+
+
+## Regular Claude Desktop Chat
+
+In the Chat tab, ask Claude: "Use the `daily-terrafree` OpenAI worker to critique this plan, then `daily-astrafree` to evaluate the risk. Poll until both finish. Summarize where they disagree." Claude calls `ask_openai_worker` and `poll_openai_worker`; the workers only receive the text Claude supplies, not local files by default. For repository-writing subagents, switch to the native **Code** tab. [Desktop guide](DESKTOP.md).
