@@ -155,6 +155,19 @@ These limits use model-reported usage and local estimates. They are **not prepai
 Restart Claude Code and run `/openai-workers`; the diagnostics display the effective model/tier of all workers and the free-key ledger totals, not the actual secret values.
 
 
+## Native ULTRA channel key
+
+Protected native ULTRA (Claude Code only) authenticates the mod to the local bridge with an owner-provisioned key. Without it every private native request is refused and the mod reports `ULTRA is HOLD`; ULTRA stays disabled by default and the key enables nothing by itself.
+
+| Setting | Meaning |
+|---|---|
+| `<state directory>/ultra-channel.key` | 256-bit random key, created by `node plugins/openai-workers/scripts/provision-ultra-channel.mjs` (Windows: `plugins/openai-workers/scripts/set-ultra-channel.ps1`, which also restricts the ACL; `install.ps1 -ProvisionUltraChannel` provisions only if absent). It is never printed and is not an environment variable. |
+| `OPENAI_ULTRA_STATE_DIR` | Optional state directory (use an absolute path); the key lives beside the ULTRA ledger and policy. |
+| `OPENAI_ULTRA_CHANNEL_KEY_FILE` | Optional explicit key file location. The mod and the bridge must see the same value. |
+| `--rotate` | Replaces the key and closes every open native session; missions opened under the old key cannot be reopened. |
+
+On POSIX the bridge refuses a key file that is not mode 0600 or not owned by the running user. Restart Claude Code after provisioning or rotating. Trust model and limitations: [ULTRA_HOSTS.md](ULTRA_HOSTS.md#private-native-control-channel).
+
 ## Claude Desktop Chat configuration
 
 The [desktop extension](DESKTOP.md) exposes **two masked API-key fields** at installation and stores them through Claude Desktop's OS-backed secure configuration. The straight key maps to `OPENAI_API_KEY`; the daily free-programme key maps to `OPENAI_FREE_API_KEY`. On Windows, leaving either field empty allows fallback to its corresponding existing DPAPI key if one is stored for the same Windows user.

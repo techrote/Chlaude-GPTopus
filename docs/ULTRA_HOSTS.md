@@ -158,11 +158,14 @@ annotations and caller-supplied model names are not authentication or approval
 proof. See [MCP versioning](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)
 and [MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
 
-A shared bridge must not infer privileged native provenance from a JSON field.
-Controller-only operations need an authenticated private channel or a qualified
-native mod that blocks every model-origin call to those operations and invokes
-them only with host-derived facts. Hiding a tool from `tools/list` does not
-prevent a direct `tools/call`. Test that direct caller path explicitly.
+A shared bridge must not infer privileged native provenance from a JSON field,
+from reaching its dispatcher, or from a tool being absent from `tools/list`.
+Controller-only operations therefore require an **authenticated** private
+channel: every `ultra_native_*` request must carry proof of the owner channel
+key (see [Private native control channel](#private-native-control-channel)).
+The mod's host-side deny of model-origin calls to those names is defence in
+depth, not the control. Hiding a tool from `tools/list` does not prevent a
+direct `tools/call`; the raw stdio tests drive exactly that path.
 
 ### Implemented native workflow
 
@@ -182,15 +185,18 @@ editing its policy, or delegating those actions to an unrestricted child.
 Leaving the primary model an unrestricted shell would invalidate the claimed
 authority boundary. The ordinary disabled integration remains available.
 
-The mod obtains its private session capability from the native stdio bridge
-and keeps it only in its closure. Every model-origin `ultra_native_*` and raw
-bridge request is denied, including calls from the primary model. Desktop
-Chat never routes this namespace. MCP itself does not provide model identity
-attestation: the installed mod, native host, bridge process and owner-controlled
+The mod opens its session over the authenticated private channel described
+below and keeps the session capability and the owner key only in its closure.
+Every model-origin `ultra_native_*` and raw bridge request is denied by the
+mod's host-side guard, including calls from the primary model, **and** the
+bridge itself refuses any such request that lacks the owner-key proof, so the
+refusal does not depend on that guard running. Desktop Chat never routes this
+namespace. MCP itself does not provide model identity attestation: the installed
+mod, native host, bridge process, the owner channel key and the owner-controlled
 policy files form the trusted boundary. A hostile same-user external process
 or separately installed malicious plugin is outside that boundary. A failed
-environment lookup or bootstrap holds workers rather than selecting the legacy
-path.
+environment lookup, a missing key or a failed bootstrap holds workers rather
+than selecting the legacy path.
 
 `Agent` requests pass through `agent.spawn`, the shared broker, fleet admission
 and any required HELICOP decisions before the host starts the child. A
@@ -275,6 +281,119 @@ the existing two sensitive key fields and DPAPI fallback. The official
 defines these fields; the
 [Desktop extension installation guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
 describes their user-facing configuration.
+
+## Private native control channel
+
+**What was wrong.** The Code-side stdio bridge answered any `ultra_native_*`
+`tools/call` and itself asserted `trustedHostChannel: true` to the controller.
+Those names are absent from `tools/list`, but MCP does not restrict `tools/call`
+to advertised names, and stdio carries no caller identity: a model tool call, a
+settings `mcp_tool` hook, another installed mod, the ULTRA mod and a second
+`node server.mjs` process are indistinguishable on the wire. A bare request
+could open a session with a fabricated model (`opus`/`fable`), receive a native
+capability and orchestrator trust, and a repeated `ultra_native_init` for a
+live session id silently rotated its stored capability, locking out the real
+mod. The only protection was the mod's by-name deny, which runs in the host and
+not on the transport. All of this was reproduced against the real stdio server
+(`tests/ultra-transport.test.mjs`) before it was fixed.
+
+**Control.** Reaching the dispatcher is no longer authority. Every
+`ultra_native_*` request must prove possession of the **owner channel key**:
+
+- The key is 256 bits of OS randomness in `<owner state directory>/ultra-channel.key`
+  (or `OPENAI_ULTRA_CHANNEL_KEY_FILE`), created by the owner with
+  `plugins/openai-workers/scripts/provision-ultra-channel.mjs` (Windows:
+  `set-ultra-channel.ps1`, which also restricts the ACL). It is never an
+  environment variable, never printed, and the owner state directory is already
+  a protected path that `ultra_read_file` and the permission boundary refuse.
+- The mod reads it once into its closure and sends only an HMAC-SHA256 over the
+  canonical encoding of the whole request (operation, arguments, a bridge-process
+  epoch, a single-use nonce and a timestamp). The mod VM offers only
+  `crypto.subtle.digest`, so HMAC is built from it (`hooks/channel.js`, one
+  implementation shared with the bridge and checked against RFC 4231 and
+  `node:crypto`). The key is never put in `$.state`, a prompt, a diagnostic or a
+  tool result. An observed or leaked request or capability cannot be replayed
+  or edited: any change breaks the MAC, a reused nonce, an old epoch or a clock
+  offset over 120 seconds is refused.
+- The bridge verifies in constant time before it does anything else, including
+  reading owner policy or constructing a service. Every failure of proof gets the
+  same refusal text, so a caller without the key learns nothing about whether a
+  session exists, ULTRA is enabled, or a key is provisioned. Specific reasons go
+  only to the server's own stderr (once per reason, never a secret) and, after
+  authentication, to the authenticated caller. With no key, a malformed or
+  group/world-readable key file (POSIX), a symlink or directory, a low-entropy
+  key, or `OPENAI_ULTRA_ENABLED` unset, the channel is closed. The key file is
+  re-read on every request, so deleting or rotating it revokes the channel
+  immediately.
+- The controller is bound to the channel. It accepts only the single-use token the
+  verifier minted for exactly that operation and argument object; a boolean, a
+  lookalike object, a reused token or another channel's token is refused. The old
+  `trustedHostChannel` boolean survives only for a controller constructed in
+  process without a channel (unit tests); the bridge never builds one that way.
+- A native session is bound to the bridge process (random epoch) and owner key
+  (key id) that opened it. Within one bridge process an open session can be
+  rotated only by presenting its **current capability**. After a bridge restart
+  the previous process's capability cannot be demanded from a mod that may have
+  lost it, so the owner-key proof authorises the reopen. A mod whose bridge
+  restarted detects the stale epoch (an authenticated, refused-before-effect
+  answer), reopens once and retries. Every reopen is audited, rotates the
+  capability and, as before, blocks running native work for explicit
+  reconciliation. A mission created under another key, or before this channel
+  existed, can never be reopened (start a new host session; the local CLI can
+  still cancel it).
+- The raw Code bridge answers only its advertised tools plus the
+  self-authenticating private namespace. Desktop Chat rejects the namespace
+  (any case, full-width forms, whitespace/underscore/hyphen/dot separators,
+  zero-width characters) before reading policy, and its exact-match dispatch
+  independently cannot reach it. The mod's name guard
+  is normalised the same way.
+
+**Trusted computing base.** The bridge process and the Node runtime; the
+installed mod code and the host's mod runtime; the key file and the permissions
+of its directory; the owner policy files; the user account that runs them. The
+model, other MCP clients, `tools/list` hiding, settings hooks, caller-supplied
+session id, model, version or platform, `clientInfo`, `_meta` and `trustedHost*`
+fields are **not** trusted and convey no authority.
+
+**Owner setup.** Native ULTRA stays disabled until you run
+`node plugins/openai-workers/scripts/provision-ultra-channel.mjs` (Windows:
+`plugins/openai-workers/scripts/set-ultra-channel.ps1`; `install.ps1 -ProvisionUltraChannel` does it
+without replacing an existing key), enable owner policy, set
+`OPENAI_ULTRA_ENABLED=1` and restart Claude Code. `--rotate` replaces the key and
+closes every open native session. If the mod cannot find or read the key it holds
+ULTRA (`/ultra` says why) rather than falling back to the legacy path. Keep the
+state directory absolute if you override `OPENAI_ULTRA_STATE_DIR`.
+
+**Residual limitations (not resolved by this change).**
+
+- **Same-user code is inside the boundary.** Any process, and any other installed
+  mod (mods are not sandboxed and see every `$` call), that can read the key file
+  can authenticate, as it could already read or rewrite the ledger. The
+  design does not and cannot hide the key from them. A model able to read the key
+  file through a tool the host permits can also sign requests; protected mode
+  denies those tools through the same host hooks whose coverage is unqualified
+  (below). On Windows the bridge cannot verify ACLs (only POSIX mode and owner
+  are checked); use `set-ultra-channel.ps1` or keep the state directory private.
+- **No installed-host qualification.** The mod-side signing runs on the declared
+  mod-VM `crypto`, `TextEncoder` and `$.fs.read` APIs but was exercised only under
+  Node (RFC 4231 vectors, `node:crypto` parity, and the real hook module against a
+  real stdio server), not in the real mod VM; `claude plugin validate/test` was not
+  run. Whether the host lets a *model* name an unlisted MCP tool, whether
+  `$.mcp.call` raises tool hooks, and whether settings `mcp_tool` hooks reach
+  `tool.run` remain undocumented; the design assumes none of them. No
+  `mcp.call` hook is registered because its availability was not verified.
+- **A mod that lost its closure cannot reopen a live session.** A hot-reloaded
+  mod (new closure, same bridge process) is refused as a second opener and ULTRA
+  holds until the MCP server is reconnected or Claude Code restarts. Switching
+  between sessions inside one mod instance is handled.
+- **A bridge restart holds native work.** The reopen blocks running native nodes
+  and rotates the capability; in-flight calls from the old epoch fail closed.
+- **Clock and replay.** Requests must be within 120 s of the bridge's clock and
+  at most 20,000 nonces are tracked per window; either failure holds, never
+  admits. Replay protection is per bridge process.
+- **Key rotation orphans missions.** They cannot be reopened under the new key.
+- The Desktop `.mcpb` bundle embeds the changed bridge sources and must be
+  rebuilt (`node scripts/build-desktop.mjs`) after this change is merged.
 
 ## Implemented permission boundary
 

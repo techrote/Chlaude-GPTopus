@@ -51,6 +51,10 @@ The command installs without prompting. Workers whose required key is absent wil
 .\plugins\openai-workers\scripts\set-openai-key.ps1 -Profile free
 ```
 
+### Native ULTRA owner key (optional)
+
+Only if you intend to enable protected native ULTRA: add `-ProvisionUltraChannel` to `install.ps1` (or run `plugins/openai-workers/scripts/set-ultra-channel.ps1`) to create the private owner key that authenticates the mod to the local bridge. It enables nothing by itself; ULTRA stays disabled until owner policy and `OPENAI_ULTRA_ENABLED=1` say otherwise. See [the private channel](ULTRA_HOSTS.md#private-native-control-channel).
+
 ### Which key is which?
 
 | When asked for | This key is used by |
