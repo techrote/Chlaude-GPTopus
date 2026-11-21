@@ -17,6 +17,8 @@ Claude remains the lead. In Claude Code, workers can read, edit and run commands
 | `sol` | `gpt-6.2-sol` | Coding and implementation | Standard |
 | `astra` | `gpt-6.2-astra` | Difficult engineering and second opinions | Standard |
 
+**Set each worker's thinking range.** Luna defaults to **Max only**; daily Terra to **High–Max**. Claude sees a short note explaining when to use each effort, while the plugin enforces the limits. Change a worker with `scripts/set-worker-effort.ps1` or see [configuration](docs/CONFIGURATION.md#per-worker-reasoning-effort-new-in-v07).
+
 There are **two keys**, not six: one for the Astra/Terra free-programme workers, and one for everything else. If a key is missing, the plugin stops; it won't quietly switch to the other one.
 
 ## Get started
