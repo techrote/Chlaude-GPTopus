@@ -103,7 +103,7 @@ Claude Code still decides whether and when to delegate, and normal tool authoriz
 
 - Claude Desktop **Chat** local MCPB extension (`.mcpb`), plus native **Code** tab support for local sessions.
 - Native **Claude Code mod hooks** (`session.start`, `turn.step`) plus a local **MCP stdio bridge** (`node`). The code is designed for Claude Code **2.1.299+**.
-- **41 passing local Node tests** cover tool translation, key routing, tier behaviour, daily ledger, concurrent reservations and UTC rollover.
+- **43 passing local Node tests** cover tool translation, key routing, tier behaviour, daily ledger, concurrent reservations and UTC rollover.
 - `claude plugin validate` and a real end-to-end Claude Code + OpenAI run **must still be executed on the target machine**. Local mocked tests are not proof of live API access or final compatibility.
 - Works primarily on **Windows** with DPAPI key storage. On macOS/Linux, provide `OPENAI_API_KEY` and `OPENAI_FREE_API_KEY` as secure process environment variables; Windows PowerShell setup scripts do not apply.
 
