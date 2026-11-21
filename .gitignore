@@ -1,0 +1,14 @@
+# Never commit credentials, local settings or state.
+.env
+.env.*
+!.env.example
+*.dpapi
+free-usage-ledger.json
+usage-ledger.json
+*.lock/
+node_modules/
+.nyc_output/
+coverage/
+.DS_Store
+Thumbs.db
+*.log

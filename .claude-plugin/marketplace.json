@@ -1,0 +1,12 @@
+{
+  "name": "openai-worker-local",
+  "description": "Local Claude Code plugins for OpenAI-powered subagents",
+  "owner": { "name": "Local plugin package" },
+  "plugins": [
+    {
+      "name": "openai-workers",
+      "source": "./plugins/openai-workers",
+      "description": "Native Claude Code subagents whose reasoning is performed by the OpenAI Responses API"
+    }
+  ]
+}

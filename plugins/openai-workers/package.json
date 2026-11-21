@@ -1,0 +1,8 @@
+{
+  "name": "openai-workers-claude-code-plugin",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "engines": { "node": ">=20.11.0" },
+  "scripts": { "test": "node --test tests/*.test.mjs" }
+}

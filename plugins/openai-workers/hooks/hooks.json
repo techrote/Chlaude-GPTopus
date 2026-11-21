@@ -1,0 +1,4 @@
+{
+  "description": "Register native OpenAI-backed subagents and replace only their model steps",
+  "modules": ["./register.js"]
+}
