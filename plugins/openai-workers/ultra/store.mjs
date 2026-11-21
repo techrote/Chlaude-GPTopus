@@ -12,6 +12,16 @@ export const clone = value => structuredClone(value);
 export function invariant(condition, message) { if (!condition) throw new Error(message); }
 const empty = () => ({ version: 1, revision: 0, missions: {}, events: [], lastHash: null });
 const wait = ms => new Promise(r => setTimeout(r, ms));
+const transientWindows = (error, platform = process.platform) => platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error.code);
+
+/** Windows delete-pending/share violations are retryable, never evidence of ownership. */
+export async function retryWindowsFileOperation(operation, { platform = process.platform, timeoutMs = 1000, clock = Date.now, pause = wait } = {}) {
+  const began = clock();
+  while (true) {
+    try { return await operation(); }
+    catch (error) { if (!transientWindows(error, platform) || clock() - began >= timeoutMs) throw error; await pause(10); }
+  }
+}
 
 /** One durable, cross-process transaction boundary. Never steal a live owner's lock. */
 export class ExecutionStore {
@@ -23,13 +33,13 @@ export class ExecutionStore {
     const start = Date.now(); const nonce = randomUUID();
     while (true) {
       try {
-        const fd = await open(this.lockPath, 'wx', 0o600);
+        const fd = await retryWindowsFileOperation(() => open(this.lockPath, 'wx', 0o600), { timeoutMs: Math.max(0, this.lockTimeoutMs - (Date.now() - start)) });
         await fd.writeFile(JSON.stringify({ pid: process.pid, nonce })); await fd.sync(); await fd.close();
-        return async () => {
+        return async () => retryWindowsFileOperation(async () => {
           const owner = JSON.parse(await readFile(this.lockPath, 'utf8'));
           invariant(owner.nonce === nonce, 'Execution ledger lock ownership changed');
           await unlink(this.lockPath);
-        };
+        }, { timeoutMs: this.lockTimeoutMs });
       } catch (error) {
         if (error.code !== 'EEXIST') throw error;
         try {
@@ -47,7 +57,7 @@ export class ExecutionStore {
             } catch (e) { if (!['EEXIST', 'ENOENT'].includes(e.code)) throw e; }
             finally { if (recovery) { await recovery.close(); await unlink(`${this.lockPath}.recovery`).catch(() => {}); } }
           }
-        } catch (e) { if (e.code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
+        } catch (e) { if (e.code !== 'ENOENT' && !(e instanceof SyntaxError) && !transientWindows(e)) throw e; }
         invariant(Date.now() - start < this.lockTimeoutMs, 'Execution ledger busy or incomplete lock; no operation was admitted');
         await wait(10);
       }
@@ -55,7 +65,7 @@ export class ExecutionStore {
   }
   async read() {
     try {
-      const state = JSON.parse(await readFile(this.path, 'utf8'));
+      const state = JSON.parse(await retryWindowsFileOperation(() => readFile(this.path, 'utf8')));
       invariant(state.version === 1 && Number.isInteger(state.revision) && state.missions && Array.isArray(state.events), 'Unsupported or corrupt execution ledger');
       let previous = null;
       for (const event of state.events) {
@@ -85,7 +95,7 @@ export class ExecutionStore {
       temporary = `${this.path}.${randomUUID()}.tmp`;
       const fd = await open(temporary, 'wx', 0o600);
       try { await fd.writeFile(JSON.stringify(state)); await fd.sync(); } finally { await fd.close(); }
-      await rename(temporary, this.path); temporary = null;
+      await retryWindowsFileOperation(() => rename(temporary, this.path)); temporary = null;
       // POSIX directory durability; Windows disallows opening directories.
       if (process.platform !== 'win32') { const dir = await open(dirname(this.path), 'r'); try { await dir.sync(); } finally { await dir.close(); } }
       return clone(result);
