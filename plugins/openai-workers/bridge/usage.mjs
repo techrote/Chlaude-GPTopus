@@ -79,11 +79,36 @@ export function canonicalJson(value) {
   if (object(value)) return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
   return JSON.stringify(value) ?? 'null';
 }
-/** Contiguous UTC months first..last inclusive, newest MAX_SCOPE_MONTHS at most. */
+/** Contiguous UTC months first..last inclusive. When more than MAX_SCOPE_MONTHS apply, the NEWEST
+ * ones are kept: the range is built backwards from `last`, so it always ends at the newest month
+ * (a start that is absurdly old can never push the end of the range away from the present). */
 function monthRange(first, last) {
-  const out = []; let [y, m] = first.split('-').map(Number); const [ly, lm] = last.split('-').map(Number);
-  while ((y < ly || (y === ly && m <= lm)) && out.length < 10_000) { out.push(`${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}`); if (++m > 12) { m = 1; y++; } }
-  return out.slice(-MAX_SCOPE_MONTHS);
+  const out = []; let [y, m] = last.split('-').map(Number); const [fy, fm] = first.split('-').map(Number);
+  while ((y > fy || (y === fy && m >= fm)) && out.length < MAX_SCOPE_MONTHS) {
+    out.unshift(`${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}`);
+    if (--m < 1) { m = 12; y--; }
+  }
+  return out.length ? out : [last];
+}
+/** A valid migration scope: 1..MAX_SCOPE_MONTHS real months, ascending and contiguous. */
+function validScope(months) {
+  if (!Array.isArray(months) || !months.length || months.length > MAX_SCOPE_MONTHS || !months.every(k => typeof k === 'string' && MONTH_KEY.test(k))) return false;
+  return months.every((k, i) => i === 0 || k === nextMonth(months[i - 1]));
+}
+function nextMonth(key) {
+  let [y, m] = key.split('-').map(Number); if (++m > 12) { m = 1; y++; }
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}`;
+}
+// No usage ledger can predate the Responses API, and none can describe a future more than a
+// day (clock skew) ahead of the instant it is migrated. Keys outside that window are corrupt or
+// hand-edited, and must neither widen nor shift the unknown period that gates spending.
+const FIRST_PLAUSIBLE_DAY = '2025-01-01';
+const realDay = day => /^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(Date.parse(`${day}T00:00:00Z`)) && new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) === day;
+function assertPlausibleHistory(keys, kind, now) {
+  const tomorrow = utcDay(new Date(new Date(now).getTime() + 86_400_000)), last = kind === 'month' ? tomorrow.slice(0, 7) : tomorrow;
+  const first = kind === 'month' ? FIRST_PLAUSIBLE_DAY.slice(0, 7) : FIRST_PLAUSIBLE_DAY;
+  const bad = keys.find(k => !(kind === 'month' ? MONTH_KEY.test(k) : realDay(k)) || k < first || k > last);
+  if (bad !== undefined) throw new Error(`Token usage ledger has a ${kind} key (${JSON.stringify(String(bad).slice(0, 20))}) outside the plausible range ${first}..${last}; refusing to derive the unknown-history scope from it. Repair the ledger manually (an unmigrated v1 file is left untouched).`);
 }
 const v1EvidenceName = digest => `free-usage-ledger.v1-${digest}.json`;
 function validateMap(value, label) {
@@ -110,6 +135,7 @@ function loadLedger(path, now = new Date()) {
   if (doc.version === 1) {
     // Preserve every available old entry. A v1 file may already have lost days;
     // migration cannot reconstruct those bills and makes that explicit.
+    assertPlausibleHistory(Object.keys(doc.days), 'day', now);
     doc.version = 2; doc.months = {}; doc.requests = {}; doc.releases = {}; doc.reconciliations = []; doc.baselines = {};
     for (const [day, entry] of Object.entries(doc.days)) {
       const month = doc.months[day.slice(0, 7)] ??= blankMonth();
@@ -139,6 +165,10 @@ function loadLedger(path, now = new Date()) {
     for (const [id, day] of Object.entries(doc.processed)) doc.processed[id] = { day, profile: 'free', legacy: true };
   }
   for (const key of ['months', 'requests', 'releases']) validateMap(doc[key], key);
+  // A scope that is present but malformed would silently read as "fully tracked": refuse instead.
+  if (doc.migration?.historicalTotalsMayBeIncomplete === true && Array.isArray(doc.migration.affectedMonths) && !validScope(doc.migration.affectedMonths)) {
+    throw new Error('Invalid token usage ledger migration scope; refusing unsafe admission.');
+  }
   doc.reconciliations ??= []; doc.baselines ??= {};
   if (!Array.isArray(doc.reconciliations)) throw new Error('Invalid token usage ledger reconciliation audit list; refusing unsafe admission.');
   validateMap(doc.baselines, 'baselines');
@@ -162,6 +192,7 @@ function loadLedger(path, now = new Date()) {
 function normalizeLegacyMigration(doc, now) {
   const m = doc.migration; if (!m || m.historicalTotalsMayBeIncomplete !== true || Array.isArray(m.affectedMonths)) return false;
   const observed = new Date(now).toISOString(), keys = Object.keys(doc.months).filter(k => MONTH_KEY.test(k)).sort();
+  assertPlausibleHistory(keys, 'month', now);
   const latest = [observed.slice(0, 7), keys.at(-1) ?? observed.slice(0, 7)].sort().at(-1);
   doc.migration = { ...m, legacyRecord: true, migratedAt: null, evidence: null, v1FreeTotals: null,
     unknownPeriod: { start: null, end: observed, standardKeyTracked: false },
@@ -269,7 +300,9 @@ export function committedMonthlyUsd(doc, monthKey) {
  * until the owner reconciles that specific month. Later months are fully tracked. */
 export function unreconciledMonth(doc, monthKey) {
   const m = doc.migration;
-  if (!m || m.historicalTotalsMayBeIncomplete !== true || !Array.isArray(m.affectedMonths) || !m.affectedMonths.length) return null;
+  if (!m || m.historicalTotalsMayBeIncomplete !== true) return null;
+  // Fail closed: an incomplete-history flag with an unusable scope blocks every month and cannot be reconciled.
+  if (!validScope(m.affectedMonths)) return { month: monthKey, reconcilable: false, migratedAt: m.migratedAt ?? null, legacyRecord: m.legacyRecord === true };
   if (monthKey > m.affectedMonths.at(-1) || doc.baselines?.[monthKey]) return null;
   return { month: monthKey, reconcilable: m.affectedMonths.includes(monthKey), migratedAt: m.migratedAt, legacyRecord: m.legacyRecord === true };
 }

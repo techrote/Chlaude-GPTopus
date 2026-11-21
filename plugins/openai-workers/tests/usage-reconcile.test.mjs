@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { PassThrough } from 'node:stream';
-import { reserveRequest, releaseRequest, quoteRequest, accountResponse, usageSnapshot, usagePath } from '../bridge/usage.mjs';
+import { reserveRequest, releaseRequest, quoteRequest, accountResponse, usageSnapshot, usagePath, unreconciledMonth } from '../bridge/usage.mjs';
 import { applyReconciliation, normalizeProposal, reconciliationStatus, renderStatus, parseUsd, proposalId, confirmationPhrase, ReconcileRefusal } from '../bridge/usage-reconcile.mjs';
 import { main as reconcileMain } from '../scripts/reconcile-usage.mjs';
 import { dispatch } from '../bridge/server.mjs';
@@ -492,4 +492,62 @@ test('a migration record written by the first v2 revision (no scope, no evidence
   await apply(f, NOV, await ownerRequest(f, NOV, [{ month: '2026-11', authoritativeUsd: 2 }]));
   assert.ok(await reserveRequest(paid, limited(f, NOV)));
   assert.ok(await reserveRequest({ ...paid, requestId: 'dec' }, limited(f, '2026-12-02T00:00:00Z')), 'months after first observation are fully tracked');
+});
+
+// ---- F6: the unreconciled-history guard must fail closed on implausible or corrupt scope ----
+
+test('a regex-valid but implausible day key cannot unblock the unreconciled-history guard', async t => {
+  for (const [label, days] of [
+    ['year 0001', { '0001-01-01': 0.01, '2026-11-01': 0.02 }],
+    ['year 0001 alone', { '0001-01-01': 0.01 }],
+    ['far future', { '9999-12-31': 0.01, '2026-11-01': 0.02 }],
+    ['not a calendar date', { '2026-13-45': 0.01, '2026-11-01': 0.02 }],
+    ['before the Responses API existed', { '2019-06-01': 0.01, '2026-11-01': 0.02 }],
+  ]) {
+    const f = fixture(t);
+    writeV1(f.env, days);
+    await assert.rejects(reserveRequest(paid, limited(f, NOV)), /plausible|predates complete tracking/, `${label} must not be admitted`);
+    assert.equal(ledger(f).version, 1, `${label}: a refused migration leaves the v1 file untouched`);
+    await assert.rejects(usageSnapshot(plain(f, NOV)), /plausible/, `${label}: refused loudly, not silently accepted`);
+  }
+});
+
+test('a legacy migration record with an implausible month key cannot unblock the guard', async t => {
+  const f = fixture(t);
+  const month = { free: { tokens: 1, estimatedUsd: 0.01, requests: 1 }, standard: { tokens: 0, estimatedUsd: 0, requests: 0, unknownPriceRequests: 0 } };
+  const legacy = { version: 2, days: {}, months: { '0001-01': month, '2026-11': month }, pending: {}, processed: {}, requests: {}, releases: {}, migration: { from: 1, historicalTotalsMayBeIncomplete: true } };
+  writeFileSync(usagePath(f.env), JSON.stringify(legacy));
+  await assert.rejects(reserveRequest(paid, limited(f, NOV)), /plausible|predates complete tracking/);
+});
+
+test('the affected-month scope always ends at the newest month and keeps the newest 60 (no forward truncation)', async t => {
+  const f = fixture(t);
+  writeV1(f.env, { '2025-01-05': 0.01 });
+  const late = '2031-03-10T00:00:00Z'; // 75 months after the oldest surviving day
+  await assert.rejects(reserveRequest(paid, limited(f, late)), /predates complete tracking/);
+  await upgradeAt(f, late);
+  const months = ledger(f).migration.affectedMonths;
+  assert.equal(months.length, 60);
+  assert.equal(months.at(-1), '2031-03');
+  assert.equal(months[0], '2026-04');
+  const status = await usageSnapshot(limited(f, late));
+  assert.equal(status.historicalTotalsMayBeIncomplete, true);
+});
+
+test('a corrupt, empty or non-contiguous migration scope is refused instead of silently treated as fully tracked', async t => {
+  const base = { version: 2, days: {}, months: {}, pending: {}, processed: {}, requests: {}, releases: {}, reconciliations: [], baselines: {} };
+  for (const [label, scope] of [
+    ['empty', []],
+    ['gap', ['2026-09', '2026-11']],
+    ['unsorted', ['2026-11', '2026-10']],
+    ['not a month', ['2026-11', 'soon']],
+    ['too long', Array.from({ length: 61 }, (_, i) => `${2021 + Math.floor((i + 10) / 12)}-${String((i + 10) % 12 + 1).padStart(2, '0')}`)],
+  ]) {
+    const f = fixture(t);
+    writeFileSync(usagePath(f.env), JSON.stringify({ ...base, migration: { from: 1, historicalTotalsMayBeIncomplete: true, migratedAt: '2026-10-01T00:00:00.000Z', evidence: null, unknownPeriod: { start: null, end: '2026-10-01T00:00:00.000Z', standardKeyTracked: false }, affectedMonths: scope } }));
+    await assert.rejects(reserveRequest(paid, limited(f, NOV)), /migration scope/, `${label} scope must refuse admission`);
+    await assert.rejects(usageSnapshot(plain(f, NOV)), /migration scope/, label);
+  }
+  const doc = { migration: { historicalTotalsMayBeIncomplete: true, affectedMonths: [] }, baselines: {}, months: {} };
+  assert.notEqual(unreconciledMonth(doc, '2026-11'), null, 'the guard itself fails closed on a malformed scope');
 });
