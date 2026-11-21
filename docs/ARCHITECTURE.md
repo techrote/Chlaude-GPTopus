@@ -59,7 +59,7 @@ The OpenAI API request uses `background: true` and `store: true`; model-side and
 
 ## Versioning
 
-This repository initially imports the tested **v0.5.0** two-key plugin, with no changes to quota routing or model request semantics. If Claude Code changes its mods API, validate on the supported CLI version and extend the automated tests before publishing compatibility claims.
+The original two-key, quota-guarded implementation is retained in **v0.6.0**. The Desktop Chat MCP facade shares its underlying OpenAI client and free-key ledger without granting Chat tools repository execution permissions. If Claude Code changes its mods API, validate on the supported CLI version and extend the automated tests before publishing compatibility claims.
 
 
 ## Claude Desktop extension
