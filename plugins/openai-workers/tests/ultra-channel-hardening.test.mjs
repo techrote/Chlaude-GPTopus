@@ -368,6 +368,6 @@ test('F1: an ULTRA-enabled mod never needs the raw tools: its protected flow onl
   const { readFile } = await import('node:fs/promises');
   const source = (await readFile(join(root, 'hooks', 'register.js'), 'utf8'));
   const ultraBranch = source.slice(source.indexOf('async function nativeQuery'), source.indexOf('function nativeToolInput'));
-  assert.ok(!/bridge\(\$, '(create|poll|cancel|page)'/.test(ultraBranch), 'the native request loop uses only ultra_native_* operations');
-  assert.match(ultraBranch, /nativeBridge\(\$, channel, 'create'/);
+  assert.ok(!/bridge\((\$|call|host\.call|host), '(create|poll|cancel|page)'/.test(ultraBranch), 'the native request loop uses only ultra_native_* operations');
+  assert.match(ultraBranch, /nativeBridge\(host, channel, 'create'/);
 });
