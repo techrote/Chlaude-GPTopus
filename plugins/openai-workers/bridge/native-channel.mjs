@@ -20,9 +20,9 @@
  */
 import { createHmac, randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import { lstat, readFile, mkdir, writeFile, rename, unlink } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { ownerPaths } from '../ultra/service.mjs';
-import { CHANNEL_VERSION, CHANNEL_HELLO, CHANNEL_KEY_FILE, CHANNEL_STALE, CHANNEL_REJECTED, CHANNEL_DENIED, parseChannelKey, signedMessage } from '../hooks/channel.js';
+import { CHANNEL_VERSION, CHANNEL_HELLO, CHANNEL_STALE, CHANNEL_REJECTED, CHANNEL_DENIED, parseChannelKey, signedMessage } from '../hooks/channel.js';
 
 export const NOT_MEDIATED = 'Native controller is available only on the mediated native host channel';
 const HEX32 = /^[0-9a-f]{32}$/, HEX64 = /^[0-9a-f]{64}$/;
@@ -39,11 +39,8 @@ function diagnose(reason) {
   process.stderr.write(`[openai-workers] native ULTRA channel unavailable: ${reason}\n`);
 }
 
-/** The key file: OPENAI_ULTRA_CHANNEL_KEY_FILE, else <owner state directory>/ultra-channel.key. */
-export function keyFilePath(env = process.env) {
-  const configured = env.OPENAI_ULTRA_CHANNEL_KEY_FILE;
-  return typeof configured === 'string' && configured.trim() && !configured.includes('${user_config.') ? resolve(configured.trim()) : join(ownerPaths(env).base, CHANNEL_KEY_FILE);
-}
+/** The key file: OPENAI_ULTRA_CHANNEL_KEY_FILE (absolute), else <owner state directory>/ultra-channel.key. Throws for a relative override. */
+export function keyFilePath(env = process.env) { return ownerPaths(env).key; }
 export const keyIdOfBuffer = key => createHash('sha256').update(`ultra-native/1/key-id:${key.toString('hex')}`).digest('hex').slice(0, 32);
 
 /** Reads and validates the owner key. Throws a diagnostic Error (never shown to a caller). */
@@ -90,10 +87,10 @@ const minted = new WeakMap(); // verified-request token -> { channel, name, payl
  * request can never be replayed into a new process.
  */
 export class NativeChannel {
-  constructor({ key, now = () => Date.now(), windowMs = 120000, maxNonces = 20000 } = {}) {
+  constructor({ key, now = () => Date.now(), windowMs = 120000, futureMs = Math.min(windowMs, 30000), maxNonces = 20000 } = {}) {
     if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error('A 32-byte owner channel key is required');
     this.key = Buffer.from(key); this.keyId = keyIdOfBuffer(this.key); this.epoch = randomBytes(16).toString('hex');
-    this.now = now; this.windowMs = windowMs; this.maxNonces = maxNonces; this.nonces = new Map();
+    this.now = now; this.windowMs = windowMs; this.futureMs = futureMs; this.maxNonces = maxNonces; this.nonces = new Map();
   }
   /** Answer to a SIGNED hello: lets the key holder learn this process's epoch. Nothing is answered unauthenticated. */
   hello() { return { v: CHANNEL_VERSION, epoch: this.epoch }; }
@@ -107,20 +104,26 @@ export class NativeChannel {
     const { channel: envelope, ...payload } = args;
     if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) throw new ChannelDenied();
     const { v, epoch, nonce, ts, mac, ...unknown } = envelope;
-    if (v !== CHANNEL_VERSION || Object.keys(unknown).length || !HEX32.test(epoch ?? '') || !HEX32.test(nonce ?? '') || !Number.isSafeInteger(ts) || !HEX64.test(mac ?? '')) throw new ChannelDenied();
+    // Strings only: RegExp.test() and Buffer.from() coerce arrays and other objects, which must never reach the comparison.
+    const hex = (value, pattern) => typeof value === 'string' && pattern.test(value);
+    if (v !== CHANNEL_VERSION || Object.keys(unknown).length || !hex(epoch, HEX32) || !hex(nonce, HEX32) || !Number.isSafeInteger(ts) || !hex(mac, HEX64)) throw new ChannelDenied();
     let message;
     try { message = signedMessage({ epoch, nonce, ts, name, args: payload }); } catch { throw new ChannelDenied(); }
     if (message.length > MAX_REQUEST_CHARS) throw new ChannelDenied();
     const expected = createHmac('sha256', this.key).update(message).digest(), supplied = Buffer.from(mac, 'hex');
-    if (!timingSafeEqual(expected, supplied)) throw new ChannelDenied();
+    if (supplied.length !== expected.length || !timingSafeEqual(expected, supplied)) throw new ChannelDenied();
     // Authenticated from here on.
     if (epoch !== this.epoch && name !== CHANNEL_HELLO) throw new Error(`${CHANNEL_STALE}: the request was signed for a previous bridge process; reopen the native session`);
     const now = this.now();
-    if (Math.abs(now - ts) > this.windowMs) throw new Error(`${CHANNEL_REJECTED}: request timestamp is outside the ${this.windowMs / 1000}s window`);
-    for (const [seen, expires] of this.nonces) { if (expires > now) break; this.nonces.delete(seen); }
+    // A signer stamps `now`, so a request legitimately arrives slightly after its timestamp, never well before it.
+    if (ts > now + this.futureMs) throw new Error(`${CHANNEL_REJECTED}: request timestamp is in the future`);
+    if (now - ts > this.windowMs) throw new Error(`${CHANNEL_REJECTED}: request timestamp is outside the ${this.windowMs / 1000}s window`);
+    // An entry must outlive the LAST instant its request could still pass the clock check (ts + window, inclusive), so it is
+    // dropped only once it is strictly in the past. Insertion order is expiry order, so the scan can stop at the first live entry.
+    for (const [seen, expires] of this.nonces) { if (expires >= now) break; this.nonces.delete(seen); }
     if (this.nonces.has(nonce)) throw new Error(`${CHANNEL_REJECTED}: replayed request`);
     if (this.nonces.size >= this.maxNonces) throw new Error(`${CHANNEL_REJECTED}: replay window is saturated`);
-    this.nonces.set(nonce, now + 2 * this.windowMs);
+    this.nonces.set(nonce, now + this.windowMs + this.futureMs);
     const verified = Object.freeze({ kind: 'ultra-native-verified-request' });
     minted.set(verified, { channel: this, name, payload, used: false });
     return { verified, payload };
@@ -145,6 +148,8 @@ export class NativeChannel {
  */
 export class NativeGateway {
   constructor(channel, { controller } = {}) { this.channel = channel; this.fixed = controller ?? null; this.fixed?.bindChannel(channel); }
+  /** Verify a signed request for an operation that needs the owner-key proof but no controller (raw legacy spend tools). Returns its arguments without the envelope. */
+  authenticate(name, args) { return this.channel.verify(name, args).payload; }
   async call(name, args, controllerFor) {
     const { verified, payload } = this.channel.verify(name, args);
     if (name === CHANNEL_HELLO) return this.channel.hello();
@@ -160,8 +165,10 @@ export class NativeGateway {
  * and a new key starts a new epoch (closing every open native session).
  */
 export async function openNativeChannel(env, registry) {
-  const path = keyFilePath(env);
   if (env.OPENAI_ULTRA_ENABLED !== '1') throw new ChannelDenied();
+  let path;
+  try { path = keyFilePath(env); }
+  catch (error) { diagnose(error.message); throw new ChannelDenied(); }
   let loaded;
   try { loaded = await loadChannelKey(env); }
   catch (error) { registry.delete(path); diagnose(`${error.message} [${path}]`); throw new ChannelDenied(); }

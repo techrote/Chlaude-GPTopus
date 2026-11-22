@@ -84,17 +84,20 @@ export async function dispatch(name, args = {}, options = {}) {
     // even constructed, for an unauthenticated caller. Hiding the names from
     // tools/list or denying them in mod hooks is defence in depth, not the control.
     const env = options.env ?? process.env;
-    const { openNativeChannel, keyFilePath } = await import('./native-channel.mjs');
+    const { openNativeChannel } = await import('./native-channel.mjs');
     const gateway = await openNativeChannel(env, nativeChannels);
     return gateway.call(name, args, async channel => {
       const { key, service } = await ultraService(options);
       if (!service.config.enabled) throw new Error('Owner ULTRA policy is disabled');
+      // A key that lies inside a readable project root could be returned to a worker or Chat reader; never run native authority on it.
+      const { keyFileExposure } = await import('../ultra/service.mjs');
+      const exposed = keyFileExposure(service.config, env);
+      if (exposed.length) throw new Error('The owner channel key file lies inside a configured project root; move it outside every root (and rotate it with provision-ultra-channel.mjs --rotate) before using native ULTRA');
       const slot = `${key}:${channel.epoch}`; // a new owner key or bridge epoch never inherits a controller
       if (!nativeControllers.has(slot)) {
         const { NativeController } = await import('../ultra/native-controller.mjs');
-        const { ownerPaths } = await import('../ultra/service.mjs');
-        const paths = ownerPaths(env);
-        nativeControllers.set(slot, new NativeController(service.broker, { backend: service.backend, env, live: env.OPENAI_ULTRA_ALLOW_API === '1', protectedPaths: [paths.base, paths.config, keyFilePath(env)], supervisorTick: missionId => service.runtime.tick(missionId, { maxAgents: 1 }) }));
+        const { ownerProtectedPaths } = await import('../ultra/service.mjs');
+        nativeControllers.set(slot, new NativeController(service.broker, { backend: service.backend, env, live: env.OPENAI_ULTRA_ALLOW_API === '1', protectedPaths: ownerProtectedPaths(env), supervisorTick: missionId => service.runtime.tick(missionId, { maxAgents: 1 }) }));
       }
       return nativeControllers.get(slot);
     });
@@ -182,11 +185,27 @@ export async function dispatch(name, args = {}, options = {}) {
     default: throw new Error(`Unknown bridge tool ${String(name).slice(0, 50)}`);
   }
 }
+const refusedLegacy = new Set();
+function legacyRefusal(name) {
+  if (refusedLegacy.has(name)) return; refusedLegacy.add(name);
+  process.stderr.write(`[openai-workers] raw bridge tool "${name}" refused: OPENAI_ULTRA_ENABLED=1 is set for this bridge, so it needs the owner channel proof. ULTRA workers use ultra_native_*; if the mod does not see OPENAI_ULTRA_ENABLED=1 too, set it identically for Claude Code and the bridge, or unset it.
+`);
+}
 function send(message) { process.stdout.write(`${JSON.stringify(message)}\n`); }
 // tools/call is not restricted by what tools/list advertises in MCP, so this
 // transport restricts it itself: the advertised legacy tools, plus the private
 // native namespace, which authenticates every request on its own (see dispatch).
 const advertised = new Set(defs.map(d => d.name));
+// With ULTRA enabled for this bridge process, the legacy tools that spend or alter provider state are no longer open to
+// whoever reaches the transport: the ULTRA mod never calls them (it uses ultra_native_*), so each must carry the same
+// owner-key proof as the private namespace. health and usage stay open (read-only local status and accounting). Without
+// OPENAI_ULTRA_ENABLED=1 the original unauthenticated integration is unchanged. In-process callers (dispatch) are trusted.
+const PROOF_REQUIRED_WHEN_ULTRA = new Set(['create', 'poll', 'cancel', 'page']);
+async function authenticateLegacy(name, args, env) {
+  const { openNativeChannel } = await import('./native-channel.mjs');
+  const gateway = await openNativeChannel(env, nativeChannels);
+  return gateway.authenticate(name, args);
+}
 export async function handle(message, write = send) {
   if (!has(message, 'id')) return; // ignore notifications and unsupported batch envelopes
   const id = message.id;
@@ -201,7 +220,12 @@ export async function handle(message, write = send) {
     try {
       const name = message.params?.name;
       if (typeof name !== 'string' || !(advertised.has(name) || name.startsWith('ultra_native_'))) throw new Error('Unknown bridge tool');
-      const value = await dispatch(name, message.params?.arguments ?? {});
+      let args = message.params?.arguments ?? {};
+      if (PROOF_REQUIRED_WHEN_ULTRA.has(name) && process.env.OPENAI_ULTRA_ENABLED === '1') {
+        try { args = await authenticateLegacy(name, args, process.env); }
+        catch (error) { if (error?.name === 'ChannelDenied') legacyRefusal(name); throw error; }
+      }
+      const value = await dispatch(name, args);
       return write({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(value) }] } });
     } catch (err) {
       return write({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: String(err?.message ?? 'Unknown error').slice(0, 500) }] } });

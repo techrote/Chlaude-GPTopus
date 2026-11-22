@@ -11,6 +11,7 @@ import { dispatch } from './server.mjs';
 import { WORKER_TYPES, workerSettings, EFFORTS, selectWorkerEffort } from './workers.mjs';
 import { configuredKey } from './openai.mjs';
 import { publicDefinitions, readOwnerConfig } from '../ultra/service.mjs';
+import { isNativeNamespaceName } from '../hooks/ultra.js';
 
 const MAX_TASK_CHARS = 60000;
 const MAX_CONTEXT_CHARS = 180000;
@@ -77,8 +78,9 @@ function formatReply(response, worker, effortSelection = null) {
 // (including reading policy) and before any backend can be named. The later
 // dispatch is exact-match, so a spelling that slips this filter still cannot
 // reach the Code-only controller, which additionally demands the owner-key proof.
-const privateNamespace = name => typeof name === 'string'
-  && /ultra[\s_.-]*native/i.test(name.normalize('NFKC').replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2060\ufeff]/g, ''));
+// The mod's host-side guard uses this very function (hooks/ultra.js), so the two
+// refuse exactly the same set of spellings.
+const privateNamespace = isNativeNamespaceName;
 export async function invoke(name, args = {}, backend = dispatch, env = process.env) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Tool arguments must be an object.');
   if (privateNamespace(name)) throw new Error('Private native control operations are not available in Desktop Chat');

@@ -64,3 +64,11 @@ The ledger is intentionally conservative. It is a JSON state file with a short-l
 - **Changing model or tier doesn't apply:** restart the Desktop app after updating Windows user environment variables, so the MCP server receives the new values.
 
 Full walkthrough: [Desktop integration](DESKTOP.md).
+
+## ULTRA native channel messages
+
+- **`raw bridge tool "create" refused: OPENAI_ULTRA_ENABLED=1 is set for this bridge` (bridge stderr) or `Native control channel request was not authenticated.` from a legacy worker:** the bridge sees `OPENAI_ULTRA_ENABLED=1`, so the legacy `create`/`poll`/`cancel`/`page` tools need the owner-key proof, but the mod is running the legacy path (it does not see the variable). Set `OPENAI_ULTRA_ENABLED` identically for Claude Code and for the bridge, or unset it for both.
+- **`... must be an absolute path`:** `OPENAI_ULTRA_STATE_DIR`, `OPENAI_ULTRA_CHANNEL_KEY_FILE` and `OPENAI_ULTRA_CONFIG` are refused when relative; use a full path.
+- **`The owner channel key file lies inside a configured project root`:** move the key file outside every `permissions.roots` / `desktop.roots` entry and rotate it (`node plugins/openai-workers/scripts/provision-ultra-channel.mjs --rotate`).
+- **`Owner ULTRA policy changed since this native session was opened`:** a native session is held to the stricter of its original and the current owner policy, and cannot be reopened under a different one. Start a new host session.
+- **A native worker reports `Local spending guard blocked ...` and stops:** the request was refused before anything was sent, so the worker is not wedged. Reconcile the usage ledger (`scripts/reconcile-usage.mjs status`), then the worker may retry.

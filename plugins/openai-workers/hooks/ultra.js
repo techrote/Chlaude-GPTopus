@@ -47,12 +47,26 @@ export function trustedClaudeFamily(model) {
 }
 // Defence in depth ONLY. The bridge authenticates every private request with the
 // owner channel key and does not rely on this name filter (or on tools/list
-// hiding) for authority. Matching is normalised so a case, width, separator or
-// zero-width spelling of the namespace is not a way around the host-side deny.
+// hiding) for authority. ONE normaliser backs both the mod's host-side guard and
+// the Desktop facade's namespace filter, so they refuse exactly the same set.
+// Control, zero-width, bidirectional and other invisible format characters are
+// dropped after NFKC folding (explicit BMP list: no Unicode property escapes, which
+// the mod VM may not implement), then the name is lower-cased.
+const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8]/g;
+export function normalizeToolName(name) {
+  return typeof name === 'string' ? name.normalize('NFKC').replace(INVISIBLE, '').toLowerCase() : '';
+}
+/**
+ * True for every spelling of the private native namespace: after normalisation, "ultra" followed by "native" with ANY run of
+ * non-alphanumeric characters between them (none, one or many, visible or not). Matching the gap by what it is not, rather than
+ * by a list of separators, means no choice of separator or invisible character there can hide the namespace.
+ */
+export function isNativeNamespaceName(name) {
+  return /ultra[^a-z0-9]*native/.test(normalizeToolName(name));
+}
 export function isPrivateBridgeTool(name) {
   if (typeof name !== 'string') return false;
-  const plain = name.normalize('NFKC').replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2060\ufeff]/g, '').toLowerCase();
-  return /ultra[\s_.-]native/.test(plain) || /^mcp__.*(?:openai|bridge).*__(?:create|poll|cancel|page)$/.test(plain);
+  return isNativeNamespaceName(name) || /^mcp__.*(?:openai|bridge).*__(?:create|poll|cancel|page)$/.test(normalizeToolName(name));
 }
 export function nativeWorker(type) {
   const match = /^openai-workers:(sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree)$/.exec(String(type ?? ''));

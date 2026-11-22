@@ -1,18 +1,55 @@
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { resolve, join, dirname } from 'node:path';
+import { resolve, join, dirname, relative, isAbsolute, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveConfig, profileConfig, validateConfig, policyHash } from './config.mjs';
 import { ExecutionStore, invariant } from './store.mjs';
 import { RecruitmentBroker } from './broker.mjs';
 import { UltraRuntime } from './runtime.mjs';
-import { PermissionBoundary } from './permissions.mjs';
+import { PermissionBoundary, isSecretPathComponent } from './permissions.mjs';
 import { WORKER_TYPES, workerSettings } from '../bridge/workers.mjs';
+import { usagePath } from '../bridge/usage.mjs';
 
+/** Name of the owner channel key inside the state directory (the mod's hooks/channel.js uses the same name; a test pins the agreement). */
+export const OWNER_KEY_FILE = 'ultra-channel.key';
+/** A path an owner override must spell absolutely: a relative one resolves against whichever process cwd happens to read it (often the project). */
+export function isAbsoluteSpelling(value, platform = process.platform) {
+  return platform === 'win32' ? /^(?:[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(value) : value.startsWith('/');
+}
 export function ownerPaths(env = process.env) {
-  const configured = value => typeof value === 'string' && value.trim() && !value.includes('${user_config.') ? value.trim() : null;
-  const base = configured(env.OPENAI_ULTRA_STATE_DIR) || (process.platform === 'win32' ? join(env.LOCALAPPDATA || homedir(), 'ClaudeOpenAIWorkers') : join(env.XDG_STATE_HOME || join(homedir(), '.local', 'state'), 'claude-openai-workers'));
-  return { base: resolve(base), config: resolve(configured(env.OPENAI_ULTRA_CONFIG) || join(base, 'ultra-policy.json')), ledger: resolve(join(base, 'ultra-execution.json')) };
+  const configured = (value, name) => {
+    if (typeof value !== 'string' || !value.trim() || value.includes('${user_config.')) return null;
+    if (!isAbsoluteSpelling(value.trim())) throw new Error(`${name} must be an absolute path (a relative path resolves against the working directory of whichever process reads it)`);
+    return value.trim();
+  };
+  const base = configured(env.OPENAI_ULTRA_STATE_DIR, 'OPENAI_ULTRA_STATE_DIR') || (process.platform === 'win32' ? join(env.LOCALAPPDATA || homedir(), 'ClaudeOpenAIWorkers') : join(env.XDG_STATE_HOME || join(homedir(), '.local', 'state'), 'claude-openai-workers'));
+  const key = configured(env.OPENAI_ULTRA_CHANNEL_KEY_FILE, 'OPENAI_ULTRA_CHANNEL_KEY_FILE');
+  return { base: resolve(base), config: resolve(configured(env.OPENAI_ULTRA_CONFIG, 'OPENAI_ULTRA_CONFIG') || join(base, 'ultra-policy.json')), ledger: resolve(join(base, 'ultra-execution.json')),
+    key: key ? resolve(key) : resolve(join(base, OWNER_KEY_FILE)) };
+}
+/**
+ * Every owner-controlled control or credential location a worker-visible reader must refuse: the state directory
+ * (ledger, policy, default key), the policy file, the channel key wherever it lives, and the usage ledger directory.
+ * Only paths this process can know about are listed (see ULTRA_HOSTS.md for the Desktop-extension caveat).
+ */
+export function ownerProtectedPaths(env = process.env) {
+  const paths = ownerPaths(env);
+  return [...new Set([paths.base, paths.config, paths.key, dirname(resolve(usagePath(env)))])];
+}
+/**
+ * Configured project roots through which the owner channel key could be READ: the key lies inside the root and no path
+ * component under it (for example the default *.key file name or a .claude directory) is one the permission boundary
+ * refuses by name. A reader that is told the key location also refuses it by path (ownerProtectedPaths); this catches
+ * the case where it is not, such as a Desktop extension that never saw the Code bridge's override.
+ */
+export function keyFileExposure(config, env = process.env) {
+  const key = ownerPaths(env).key;
+  const readable = root => {
+    const rel = relative(resolve(root), key);
+    if (rel === '' || rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) return rel === '';
+    return !rel.split(sep).some(isSecretPathComponent);
+  };
+  return [...new Set([...config.permissions.roots, ...config.desktop.roots])].filter(root => isAbsolute(root) && readable(root));
 }
 export async function readOwnerConfig(env = process.env) {
   const paths = ownerPaths(env);
@@ -111,5 +148,5 @@ export const publicDefinitions = [
 
 export async function createService({ env = process.env, backend, config, store, live } = {}) {
   const paths = ownerPaths(env), policy = config ?? await readOwnerConfig(env);
-  return new UltraService({ config: policy, store: store ?? new ExecutionStore(paths.ledger), backend, env, live: live ?? ['1', 'true'].includes(env.OPENAI_ULTRA_ALLOW_API), protectedPaths: [paths.base, paths.config] });
+  return new UltraService({ config: policy, store: store ?? new ExecutionStore(paths.ledger), backend, env, live: live ?? ['1', 'true'].includes(env.OPENAI_ULTRA_ALLOW_API), protectedPaths: ownerProtectedPaths(env) });
 }

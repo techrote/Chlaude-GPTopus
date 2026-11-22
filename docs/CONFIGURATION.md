@@ -162,8 +162,8 @@ Protected native ULTRA (Claude Code only) authenticates the mod to the local bri
 | Setting | Meaning |
 |---|---|
 | `<state directory>/ultra-channel.key` | 256-bit random key, created by `node plugins/openai-workers/scripts/provision-ultra-channel.mjs` (Windows: `plugins/openai-workers/scripts/set-ultra-channel.ps1`, which also restricts the ACL; `install.ps1 -ProvisionUltraChannel` provisions only if absent). It is never printed and is not an environment variable. |
-| `OPENAI_ULTRA_STATE_DIR` | Optional state directory (use an absolute path); the key lives beside the ULTRA ledger and policy. |
-| `OPENAI_ULTRA_CHANNEL_KEY_FILE` | Optional explicit key file location (absolute path). The mod and the bridge must see the same value; a relative path can resolve differently in each. |
+| `OPENAI_ULTRA_STATE_DIR` | Optional state directory; **must be an absolute path** (a relative value is refused). The key lives beside the ULTRA ledger and policy. |
+| `OPENAI_ULTRA_CHANNEL_KEY_FILE` | Optional explicit key file location; **must be an absolute path** (a relative value is refused by the bridge, the CLI and the mod, because it would resolve against a different working directory in each). Keep it outside every project root: a key file inside a configured root under a name the permission boundary does not refuse is never used by the Code bridge (see [ULTRA_HOSTS.md](ULTRA_HOSTS.md#private-native-control-channel)). Set the same value for Claude Code and for the bridge; the Desktop extension protects it only if its own environment names it too. |
 | `--rotate` | Replaces the key and closes every open native session; missions opened under the old key cannot be reopened. |
 
 On POSIX the bridge refuses a key file that is not mode 0600 or not owned by the running user. Restart Claude Code after provisioning or rotating. Trust model and limitations: [ULTRA_HOSTS.md](ULTRA_HOSTS.md#private-native-control-channel).

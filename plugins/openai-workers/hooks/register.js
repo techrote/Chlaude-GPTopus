@@ -2,7 +2,7 @@ import { WORKER_TYPES as TYPES, effortPolicy, selectWorkerEffort, effortGuidance
 import { OPENAI_TOOLS } from './tools.js';
 import { newRun, nextInput, responseStep, stopStep, finalStep } from './step.js';
 import { ULTRA_NATIVE_SPECS, NATIVE_PREFIX, nativeWorker, isPrivateBridgeTool, hostVersionSupported } from './ultra.js';
-import { signRequest, parseChannelKey, modKeyPath, CHANNEL_STALE, SESSION_CLOSED, CHANNEL_DENIED, CHANNEL_HELLO, HELLO_EPOCH } from './channel.js';
+import { signRequest, parseChannelKey, modKeyPath, isWindowsHost, CHANNEL_STALE, SESSION_CLOSED, CHANNEL_DENIED, CHANNEL_HELLO, HELLO_EPOCH } from './channel.js';
 
 const PLUGIN = 'openai-workers';
 const SERVER = 'plugin:openai-workers:bridge';
@@ -26,9 +26,9 @@ async function signedBridge($, channel, name, args) {
   return bridge($, name, await signRequest({ keyHex: channel.key, epoch: channel.epoch, name, args }));
 }
 async function readChannelKey($, info) {
-  const path = modKeyPath({ file: await $.env.get('OPENAI_ULTRA_CHANNEL_KEY_FILE'), state: await $.env.get('OPENAI_ULTRA_STATE_DIR'),
-    localAppData: await $.env.get('LOCALAPPDATA'), userProfile: await $.env.get('USERPROFILE'), xdgState: await $.env.get('XDG_STATE_HOME'),
-    home: await $.env.get('HOME'), windows: info.platform === 'windows' });
+  const where = { file: await $.env.get('OPENAI_ULTRA_CHANNEL_KEY_FILE'), state: await $.env.get('OPENAI_ULTRA_STATE_DIR'),
+    localAppData: await $.env.get('LOCALAPPDATA'), userProfile: await $.env.get('USERPROFILE'), xdgState: await $.env.get('XDG_STATE_HOME'), home: await $.env.get('HOME') };
+  const path = modKeyPath({ ...where, windows: isWindowsHost({ platform: info.platform, localAppData: where.localAppData, userProfile: where.userProfile, home: where.home }) });
   if (!path) throw new Error('The ULTRA owner channel key location cannot be determined; set OPENAI_ULTRA_STATE_DIR or OPENAI_ULTRA_CHANNEL_KEY_FILE');
   let text;
   try { text = await $.fs.read(path); }

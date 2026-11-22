@@ -3,7 +3,11 @@
 // the Node bridge, so there is exactly one implementation of the canonical
 // encoding and of the signature. Never import a Node module, use dynamic
 // import(), or pass the host `$` here. Only the web APIs the mod VM declares
-// are used: crypto.subtle.digest, crypto.getRandomValues, TextEncoder.
+// are used: crypto.subtle.digest and crypto.getRandomValues, both looked up only when
+// a request is signed. Nothing here touches a global when the module is imported, so a
+// host lacking any of them can still load the mod (legacy workers keep working and ULTRA
+// holds with a clear error); UTF-8 encoding uses TextEncoder when present and an
+// equivalent built-in encoder otherwise.
 //
 // The signature is HMAC-SHA256 (hand-built from the one hash primitive the mod
 // VM offers) over a canonical encoding of the whole request. The owner key
@@ -27,7 +31,26 @@ export const CHANNEL_REJECTED = 'ULTRA_CHANNEL_REJECTED';
 export const CHANNEL_DENIED = 'Native control channel request was not authenticated.';
 const REQUEST_TAG = 'ultra-native/1/request';
 const KEY_ID_TAG = 'ultra-native/1/key-id';
-const encoder = new TextEncoder();
+/**
+ * UTF-8 bytes of a string, identical to TextEncoder (a lone surrogate becomes U+FFFD, as it does in the bridge's Buffer
+ * and TextEncoder). Used instead of a module-level encoder object so importing this file needs no web global.
+ */
+export function utf8(text) {
+  const value = String(text);
+  if (typeof TextEncoder === 'function') return new TextEncoder().encode(value);
+  const out = [];
+  for (let i = 0; i < value.length; i++) {
+    let code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length && value.charCodeAt(i + 1) >= 0xdc00 && value.charCodeAt(i + 1) <= 0xdfff) {
+      code = 0x10000 + ((code - 0xd800) << 10) + (value.charCodeAt(++i) - 0xdc00);
+    } else if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
+    if (code < 0x80) out.push(code);
+    else if (code < 0x800) out.push(0xc0 | code >> 6, 0x80 | code & 63);
+    else if (code < 0x10000) out.push(0xe0 | code >> 12, 0x80 | code >> 6 & 63, 0x80 | code & 63);
+    else out.push(0xf0 | code >> 18, 0x80 | code >> 12 & 63, 0x80 | code >> 6 & 63, 0x80 | code & 63);
+  }
+  return Uint8Array.from(out);
+}
 
 /** JSON-faithful canonical form: sorted keys, undefined/function members omitted, finite numbers only. */
 export function canonicalJson(value) {
@@ -84,7 +107,7 @@ export function parseChannelKey(text) {
 }
 /** Stable, non-secret identifier of an owner key; stored with a mission so a rotated key cannot reopen it. */
 export async function keyIdOf(keyHex) {
-  return bytesToHex(await sha256(encoder.encode(`${KEY_ID_TAG}:${keyHex}`))).slice(0, 32);
+  return bytesToHex(await sha256(utf8(`${KEY_ID_TAG}:${keyHex}`))).slice(0, 32);
 }
 
 /** Exactly what is signed. The bridge reproduces this from the parsed request. */
@@ -99,20 +122,47 @@ export async function signRequest({ keyHex, epoch, name, args, now = Date.now(),
   const plain = JSON.parse(JSON.stringify(args ?? {}));
   if (!plain || typeof plain !== 'object' || Array.isArray(plain) || Object.hasOwn(plain, 'channel')) throw new Error('Invalid native request arguments');
   const ts = Math.trunc(now);
-  const mac = bytesToHex(await hmacSha256(hexToBytes(keyHex), encoder.encode(signedMessage({ epoch, nonce, ts, name, args: plain }))));
+  const mac = bytesToHex(await hmacSha256(hexToBytes(keyHex), utf8(signedMessage({ epoch, nonce, ts, name, args: plain }))));
   return { ...plain, channel: { v: CHANNEL_VERSION, epoch, nonce, ts, mac } };
+}
+
+/**
+ * Is the host Windows? The host reports its own platform vocabulary (`windows`, `linux`, `wsl`, `darwin`...); Node-style
+ * `win32` is accepted too. A recognised non-Windows report is final; an absent or unfamiliar one falls back to evidence that
+ * only a Windows user environment has (LOCALAPPDATA or USERPROFILE with no HOME).
+ */
+export function isWindowsHost({ platform, localAppData, userProfile, home } = {}) {
+  const name = typeof platform === 'string' ? platform.trim().toLowerCase() : '';
+  if (/^(?:win32|windows|windows_nt|win)$/.test(name) || name.startsWith('windows')) return true;
+  if (/^(?:linux|wsl|darwin|macos|mac|freebsd|openbsd|netbsd|sunos|aix|android)/.test(name)) return false;
+  const present = value => typeof value === 'string' && value.trim() !== '' && !value.includes('${user_config.');
+  return (present(localAppData) || present(userProfile)) && !present(home);
+}
+/**
+ * A path the mod can rely on meaning the same file to the bridge: rooted (POSIX), or drive/UNC absolute (Windows). Accepting either
+ * spelling regardless of the reported platform keeps the check independent of how the host names its platform; a relative path
+ * (`key`, `./key`, `..\key`, `C:key`) is refused.
+ */
+export function isAbsoluteHostPath(value) {
+  return /^(?:\/|[a-zA-Z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/.test(value);
 }
 
 /**
  * Where the owner key file lives, from already-read environment values, so the
  * mod and the bridge agree. An explicit file or state directory wins; otherwise
- * the platform default state directory is used. Returns null when undecidable.
+ * the platform default state directory is used. Returns null when undecidable and
+ * THROWS for a relative explicit path (it would resolve against a different working
+ * directory in the mod and in the bridge): the mod then holds ULTRA with that message.
  */
 export function modKeyPath({ file, state, localAppData, userProfile, xdgState, home, windows } = {}) {
   const usable = value => typeof value === 'string' && value.trim() && !value.includes('${user_config.') ? value.trim() : null;
   const join = (...parts) => parts.map((part, i) => i ? part.replace(/^[\\/]+/, '') : part.replace(/[\\/]+$/, '')).join('/');
-  if (usable(file)) return usable(file);
-  if (usable(state)) return join(usable(state), CHANNEL_KEY_FILE);
+  const absolute = (value, name) => {
+    if (!isAbsoluteHostPath(value)) throw new Error(`${name} must be an absolute path; a relative one resolves differently in the mod and in the bridge`);
+    return value;
+  };
+  if (usable(file)) return absolute(usable(file), 'OPENAI_ULTRA_CHANNEL_KEY_FILE');
+  if (usable(state)) return join(absolute(usable(state), 'OPENAI_ULTRA_STATE_DIR'), CHANNEL_KEY_FILE);
   if (windows) { const base = usable(localAppData) ?? usable(userProfile); return base ? join(base, 'ClaudeOpenAIWorkers', CHANNEL_KEY_FILE) : null; }
   const base = usable(xdgState) ?? (usable(home) ? join(usable(home), '.local', 'state') : null);
   return base ? join(base, 'claude-openai-workers', CHANNEL_KEY_FILE) : null;

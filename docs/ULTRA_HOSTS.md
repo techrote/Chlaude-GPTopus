@@ -188,10 +188,26 @@ authority boundary. The ordinary disabled integration remains available.
 The mod opens its session over the authenticated private channel described
 below and keeps the session capability and the owner key only in its closure.
 Every model-origin `ultra_native_*` and raw bridge request is denied by the
-mod's host-side guard, including calls from the primary model, **and** the
-bridge itself refuses any such request that lacks the owner-key proof, so the
-refusal does not depend on that guard running. Desktop Chat never routes this
-namespace. MCP itself does not provide model identity attestation: the installed
+mod's host-side guard, including calls from the primary model. That guard is
+defence in depth; the bridge does not depend on it:
+
+- every `ultra_native_*` request is refused by the bridge unless it carries the
+  owner-key proof;
+- with `OPENAI_ULTRA_ENABLED=1` in the **bridge's** environment the raw legacy
+  `create`, `poll`, `cancel` and `page` tools require the same proof (the ULTRA
+  mod never calls them; it uses `ultra_native_*`), and a refusal tells the owner
+  why on the bridge's stderr; `health` and `usage` stay open as read-only local
+  status and accounting;
+- **without** `OPENAI_ULTRA_ENABLED=1` the original integration is unchanged: the
+  legacy raw tools are reachable by anything that can reach the transport, and the
+  host-side guard is their only protection. If the bridge sees
+  `OPENAI_ULTRA_ENABLED=1` but the mod does not (a half-enabled environment), the
+  mod's legacy workers are refused rather than served unauthenticated; set the
+  variable identically for Claude Code and the bridge, or unset it.
+
+In-process callers (the owner CLI, the Desktop extension's backend) call the
+dispatcher directly and are not part of this transport. Desktop Chat never routes
+this namespace. MCP itself does not provide model identity attestation: the installed
 mod, native host, bridge process, the owner channel key and the owner-controlled
 policy files form the trusted boundary. A hostile same-user external process
 or separately installed malicious plugin is outside that boundary. A failed
@@ -304,8 +320,19 @@ not on the transport. All of this was reproduced against the real stdio server
   (or `OPENAI_ULTRA_CHANNEL_KEY_FILE`), created by the owner with
   `plugins/openai-workers/scripts/provision-ultra-channel.mjs` (Windows:
   `set-ultra-channel.ps1`, which also restricts the ACL). It is never an
-  environment variable, never printed, and the owner state directory is already
-  a protected path that `ultra_read_file` and the permission boundary refuse.
+  environment variable and never printed. Every reader that knows where the
+  owner files are refuses them: the permission boundary of the native controller,
+  the Desktop Chat reader and the runtime boundary all treat the state directory,
+  the policy file, **the key file wherever `OPENAI_ULTRA_CHANNEL_KEY_FILE` puts it**
+  and the usage ledger directory as protected paths. The Desktop extension only
+  knows what its own environment says (the MCPB manifest passes a fixed set of
+  variables), so a key override set only for the Code bridge is invisible to it.
+  The Code bridge therefore also refuses to run native authority when the key file
+  lies inside a configured project root (`permissions.roots` or `desktop.roots`)
+  under a name the boundary does not already refuse (`*.key`, `.claude` and similar
+  are refused by name through any root), and `ultra/cli.mjs validate` and `show`
+  warn about it. Keep the key file outside every project root; if it was ever
+  inside one, rotate it.
 - The mod reads it once into its closure and sends only an HMAC-SHA256 over the
   canonical encoding of the whole request (operation, arguments, a bridge-process
   epoch, a single-use nonce and a timestamp). The mod VM offers only
@@ -344,9 +371,15 @@ not on the transport. All of this was reproduced against the real stdio server
 - The raw Code bridge answers only its advertised tools plus the
   self-authenticating private namespace. Desktop Chat rejects the namespace
   (any case, full-width forms, whitespace/underscore/hyphen/dot separators,
-  zero-width characters) before reading policy, and its exact-match dispatch
-  independently cannot reach it. The mod's name guard
-  is normalised the same way.
+  zero-width and other invisible characters, or no separator at all) before
+  reading policy, and its exact-match dispatch independently cannot reach it.
+  The mod's name guard and the Desktop filter are the same function
+  (`isNativeNamespaceName` in `hooks/ultra.js`): after NFKC folding, dropping
+  control and invisible characters and lower-casing, "ultra" followed by "native"
+  with any run of non-alphanumeric characters between them is the namespace. A
+  test pins that both refuse exactly the same set of spellings. Neither
+  recognises homoglyphs from other scripts; those never equal the real name, so
+  the bridge's exact match answers "Unknown bridge tool".
 
 **Trusted computing base.** The bridge process and the Node runtime; the
 installed mod code and the host's mod runtime; the key file and the permissions
@@ -361,8 +394,12 @@ fields are **not** trusted and convey no authority.
 without replacing an existing key), enable owner policy, set
 `OPENAI_ULTRA_ENABLED=1` and restart Claude Code. `--rotate` replaces the key and
 closes every open native session. If the mod cannot find or read the key it holds
-ULTRA (`/ultra` says why) rather than falling back to the legacy path. Keep the
-state directory absolute if you override `OPENAI_ULTRA_STATE_DIR`.
+ULTRA (`/ultra` says why) rather than falling back to the legacy path.
+`OPENAI_ULTRA_STATE_DIR`, `OPENAI_ULTRA_CHANNEL_KEY_FILE` and `OPENAI_ULTRA_CONFIG`
+must be absolute paths: a relative value is refused by the bridge (an owner
+diagnostic on stderr, the same uniform refusal for callers, nothing loaded from
+the working directory), by the owner CLI and by the mod (`/ultra` shows the
+reason). Set the same variables for Claude Code and for the bridge.
 
 **Residual limitations (not resolved by this change).**
 
@@ -388,9 +425,36 @@ state directory absolute if you override `OPENAI_ULTRA_STATE_DIR`.
   between sessions inside one mod instance is handled.
 - **A bridge restart holds native work.** The reopen blocks running native nodes
   and rotates the capability; in-flight calls from the old epoch fail closed.
-- **Clock and replay.** Requests must be within 120 s of the bridge's clock and
-  at most 20,000 nonces are tracked per window; either failure holds, never
-  admits. Replay protection is per bridge process.
+- **Clock and replay (exact scope).** A request is admitted only if its timestamp
+  is at most 30 s ahead of, and at most 120 s behind, the bridge's clock, and its
+  nonce has not been seen. A nonce is kept until the last instant its timestamp
+  could still pass that check, so no request can be admitted twice. At most 20,000
+  nonces are tracked; saturation and every clock failure hold, never admit. Replay
+  protection is **per bridge process**: every other request is also bound to the
+  process epoch, so a request signed for one process is never admitted by another,
+  but the signed `hello` (which cannot carry an epoch because the caller is asking
+  for it) can be replayed to a second process that holds the same key inside the
+  clock window. That discloses only that process's random epoch, which is not a
+  secret, and yields no authority.
+- **Two live bridge processes cannot share one session id.** A reopen is
+  authorised by the owner-key proof alone when it comes from a different bridge
+  process (a restarted bridge cannot demand a capability the mod may have lost),
+  and the first process's capability then stops working. If two live processes
+  with the same key keep reopening the same host session id (for example resuming
+  one Claude Code session in two terminals, or a lingering old bridge) they take
+  the session from each other, every reopen is audited, and every takeover blocks
+  running native work for reconciliation. Both sides hold the key, so this is a
+  loss of availability, not of integrity. Resume a session in one process only.
+  Refusing a reopen while the previous process is still active was rejected on
+  purpose: it would make recovery from a crashed bridge depend on a timeout.
+- **Mod VM portability (unverified in the real VM).** `hooks/channel.js` touches no
+  web global when it is imported (a host lacking `TextEncoder` still loads the mod
+  and legacy workers; signing uses a byte-identical built-in UTF-8 encoder), and the
+  host's Windows platform is taken from its own report (`windows`, `win32`, ...), with
+  Windows environment evidence only as a fallback. The signed session identity is
+  captured at `session.start` and not re-compared on every request: the bridge
+  binds each request to (session id, capability, epoch), so a request for the wrong
+  session fails closed there.
 - **Key rotation orphans missions.** They cannot be reopened under the new key.
 - The Desktop `.mcpb` bundle embeds the changed bridge sources and must be
   rebuilt (`node scripts/build-desktop.mjs`) after this change is merged.

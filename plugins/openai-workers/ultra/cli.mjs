@@ -6,7 +6,7 @@ import { stdin, stdout } from 'node:process';
 import { readFile } from 'node:fs/promises';
 import { dispatch } from '../bridge/server.mjs';
 import { profileConfig, resolveConfig, validateConfig, policyHash } from './config.mjs';
-import { createService, readOwnerConfig, writeOwnerConfig, ownerPaths } from './service.mjs';
+import { createService, readOwnerConfig, writeOwnerConfig, ownerPaths, keyFileExposure } from './service.mjs';
 import { invariant, digest } from './store.mjs';
 
 export const HELP = `ULTRA — governed OpenAI orchestration (not API reasoning effort)
@@ -49,6 +49,10 @@ Offline acceptance: node scripts/ultra-evaluate.mjs --output <report-directory>
 Policy location can be selected with OPENAI_ULTRA_CONFIG.
 `;
 
+/** Owner-facing configuration problems that are not schema errors. */
+function warnings(config, env) {
+  return keyFileExposure(config, env).map(root => `The owner channel key file lies inside the configured project root ${root}: a worker or Chat reader could return it. Move it outside every root and rotate it (provision-ultra-channel.mjs --rotate); the Code bridge refuses native sessions meanwhile.`);
+}
 async function terminalApproval(record, kind, io = { input: stdin, output: stdout }) {
   invariant(io.input.isTTY && io.output.isTTY, 'Human approval requires an interactive local terminal; no redirected or automatic approval is accepted');
   io.output.write(`\n${kind} — exact proposal\n${JSON.stringify(record, null, 2)}\n`);
@@ -61,8 +65,8 @@ export async function main(argv = process.argv.slice(2), { env = process.env, pr
   const [command = 'help', ...args] = argv;
   if (command === 'help' || command === '--help') { print(HELP); return; }
   if (command === 'init') { const config = profileConfig(args[0] ?? 'Lite'); print({ file: await writeOwnerConfig(config, env), enabled: false, next: 'Run offline evaluator, inspect policy, then set enabled true when ready.' }); return; }
-  if (command === 'show') { print({ paths: ownerPaths(env), policy: await readOwnerConfig(env) }); return; }
-  if (command === 'validate') { const config = args[0] ? resolveConfig(JSON.parse(await readFile(resolve(args[0]), 'utf8'))) : await readOwnerConfig(env); print({ valid: true, policyHash: policyHash(config), enabled: config.enabled }); return; }
+  if (command === 'show') { const policy = await readOwnerConfig(env); print({ paths: ownerPaths(env), policy, warnings: warnings(policy, env) }); return; }
+  if (command === 'validate') { const config = args[0] ? resolveConfig(JSON.parse(await readFile(resolve(args[0]), 'utf8'))) : await readOwnerConfig(env); print({ valid: true, policyHash: policyHash(config), enabled: config.enabled, warnings: warnings(config, env) }); return; }
   if (command === 'set') {
     invariant(args.length === 2, 'set requires a dotted field name and one JSON value');
     const parts = args[0].split('.'); invariant(parts.every(p => /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(p) && !['constructor', 'prototype', '__proto__'].includes(p)), 'Invalid policy field');
