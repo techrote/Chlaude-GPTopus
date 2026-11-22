@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OAI CONFIG</title>
+<style nonce="__NONCE__">
+:root{
+  --bg:#070907;--bg2:#0c100c;--panel:#121712;--panel2:#171e17;--inset:#050705;
+  --hi:#33432f;--lo:#020302;--line:#243024;
+  --lime:#b8ff3c;--lime2:#8fdc1e;--limedim:#4d6b1c;--lcd:#7dff4f;--lcdbg:#041204;
+  --text:#d6e8cc;--mute:#8aa184;--faint:#55684f;
+  --amber:#ffb627;--orange:#ff6b2c;--red:#ff4545;--cyan:#6fd6ff;
+  --mono:ui-monospace,"Cascadia Mono","Cascadia Code",Consolas,"SF Mono",Menlo,"DejaVu Sans Mono",monospace;
+  --row:24px;--g1:2px;--g2:4px;--g3:8px;--pad:6px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:12px/1.3 var(--mono);font-variant-numeric:tabular-nums}
+body{background:radial-gradient(1200px 600px at 80% -10%,#122312 0,transparent 60%),repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.012) 3px 4px),var(--bg);min-height:100vh}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--lime);outline-offset:1px}
+.bevel{background:var(--panel);border:1px solid;border-color:var(--hi) var(--lo) var(--lo) var(--hi);box-shadow:inset 0 0 0 1px #0a0d0a}
+.inset{background:var(--inset);border:1px solid;border-color:var(--lo) var(--hi) var(--hi) var(--lo)}
+.lab{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{height:20px;padding:0 7px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;background:linear-gradient(#222b20,#151b14);border:1px solid;border-color:#3d4e38 #050605 #050605 #3d4e38;color:var(--text);cursor:pointer;white-space:nowrap}
+.btn:hover{color:var(--lime);border-color:var(--limedim) #050605 #050605 var(--limedim)}
+.btn:active{border-color:#050605 #3d4e38 #3d4e38 #050605;background:#0f140e}
+.btn.on{background:linear-gradient(#c4ff58,#8fdc1e);color:#0b1405;border-color:#e2ffb0 #3b5a0c #3b5a0c #e2ffb0;font-weight:700}
+.btn.warn{color:#140d00;background:linear-gradient(#ffd060,#f29b00);border-color:#ffe7a6 #6b4300 #6b4300 #ffe7a6;font-weight:700}
+.btn.ico{width:20px;padding:0;display:inline-grid;place-items:center}
+.btn:disabled{opacity:.4;cursor:default}
+.lcd{background:var(--lcdbg);color:var(--lcd);text-shadow:0 0 4px rgba(125,255,79,.55);border:1px solid;border-color:var(--lo) #2a3b25 #2a3b25 var(--lo);box-shadow:inset 0 0 12px rgba(0,0,0,.8)}
+.led{display:inline-block;width:8px;height:8px;border-radius:50%;background:#1c261a;box-shadow:inset 0 0 0 1px #000;vertical-align:middle}
+.led.ok{background:var(--lime);box-shadow:0 0 6px var(--lime)}
+.led.bad{background:var(--red);box-shadow:0 0 6px var(--red)}
+.led.amb{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+/* header */
+header{position:sticky;top:0;z-index:20;background:linear-gradient(#141b13,#0c110c);border-bottom:1px solid #000;box-shadow:0 1px 0 #2a3826,0 6px 18px rgba(0,0,0,.6)}
+.titlebar{display:flex;align-items:center;gap:var(--g3);padding:4px var(--pad);height:22px;background:repeating-linear-gradient(0deg,#1b2419 0 1px,#111710 1px 3px);border-bottom:1px solid #000}
+.titlebar b{color:var(--lime);letter-spacing:.3em;font-size:11px}
+.titlebar .grip{flex:1;height:6px;background:repeating-linear-gradient(0deg,#2d3c2a 0 1px,transparent 1px 3px);border-top:1px solid #000}
+.titlebar .sub{color:var(--faint);font-size:10px;letter-spacing:.12em}
+.bar{display:flex;flex-wrap:wrap;align-items:stretch;gap:var(--g2);padding:var(--g2) var(--pad)}
+.readout{display:flex;align-items:center;gap:10px;padding:2px 8px;min-height:44px}
+.readout .big{font-size:22px;letter-spacing:.08em;line-height:1}
+.readout .small{font-size:10px;line-height:1.35;letter-spacing:.06em}
+.presets{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g1);padding:3px 4px;max-width:100%;min-width:0}
+.presets select{height:20px;background:var(--inset);border:1px solid var(--line);color:var(--lime);padding:0 4px;min-width:100px;max-width:190px}
+.presets input[type=text]{height:20px;width:110px;background:var(--inset);border:1px solid var(--line);padding:0 4px;color:var(--text)}
+.chk{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--mute);letter-spacing:.05em;text-transform:uppercase;cursor:pointer;padding:0 3px}
+.chk input{accent-color:var(--lime);margin:0}
+/* live strip */
+.live{display:grid;grid-template-columns:minmax(170px,.8fr) minmax(250px,1.6fr) minmax(200px,1.1fr) minmax(210px,1.2fr);gap:var(--g2);padding:0 var(--pad) var(--g2)}
+.cell{padding:3px 6px;min-width:0}
+.cell h4{margin:0 0 2px;font-size:9.5px;letter-spacing:.16em;color:var(--lime2);font-weight:700}
+.kv{display:flex;gap:6px;align-items:center;font-size:11px;min-width:0;white-space:nowrap}
+.kv .lab{flex:0 0 auto}
+.kv .v{color:var(--text);overflow:hidden;text-overflow:ellipsis}
+.qbar{position:relative;height:9px;flex:1;min-width:60px;background:#020402;border:1px solid #263322;overflow:hidden}
+.qbar i{position:absolute;top:0;bottom:0;left:0}
+.qbar .u{background:repeating-linear-gradient(90deg,var(--lime) 0 3px,#6fb81a 3px 4px)}
+.qbar .r{background:repeating-linear-gradient(90deg,var(--amber) 0 3px,#a06a00 3px 4px)}
+.qbar .t{width:1px;background:#fff;opacity:.7}
+.mini{font-size:10px;color:var(--mute)}
+/* pending */
+#pending{display:none;align-items:center;gap:var(--g3);padding:5px var(--pad);background:repeating-linear-gradient(-45deg,#3a0606 0 10px,#2a0404 10px 20px);border-top:1px solid #ff4545;border-bottom:1px solid #000;color:#fff}
+#pending.show{display:flex;flex-wrap:wrap}
+#pending .msg{font-weight:700;letter-spacing:.14em;font-size:13px;color:#ffe9e9;text-shadow:0 0 8px #ff2a2a}
+#pending .led{width:12px;height:12px;background:var(--red);box-shadow:0 0 10px var(--red)}
+#pending .names{flex:1;min-width:120px;font-size:10px;color:#ffb3b3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pending select{height:20px;background:#1a0303;border:1px solid #6b1111;color:#ffd0d0}
+@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.15}}
+#pending .led,#pending .msg{animation:blink 1s steps(1) infinite}
+@media (prefers-reduced-motion:reduce){#pending .led,#pending .msg{animation:none}}
+/* layout */
+main{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:var(--g3);padding:var(--g3) var(--pad) 40px;align-items:start}
+.col{display:grid;gap:var(--g3);align-content:start}
+.workers{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:var(--g3)}
+.panel{min-width:0}
+.ph{display:flex;align-items:center;gap:var(--g2);padding:2px 3px 2px 6px;height:24px;background:linear-gradient(#1d261b,#131912);border-bottom:1px solid #000}
+.ph .name{font-weight:700;letter-spacing:.14em;color:var(--lime);font-size:11.5px;white-space:nowrap}
+.ph .name::before{content:"";display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--lime);box-shadow:0 0 5px var(--lime);vertical-align:0}
+.ph .spacer{flex:1}
+.chip{font-size:9.5px;letter-spacing:.08em;padding:1px 4px;border:1px solid var(--line);color:var(--mute);white-space:nowrap}
+.chip.free{color:var(--cyan);border-color:#1f4a5a}
+.chip.paid{color:var(--amber);border-color:#5a421a}
+.chip.info{color:var(--cyan);border-color:#1f4a5a}
+.ph .btn.lock.on{background:linear-gradient(#ffd060,#f29b00);border-color:#ffe7a6 #6b4300 #6b4300 #ffe7a6;color:#140d00}
+.summary{padding:2px 6px;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:var(--g2) var(--g2) 0}
+.pb{padding:var(--g2) var(--g2) var(--g2)}
+.panel.locked .pb{box-shadow:inset 3px 0 0 var(--amber)}
+/* rows */
+.row{display:grid;grid-template-columns:96px minmax(60px,1fr) 74px 20px 20px;align-items:center;gap:var(--g2);min-height:var(--row);padding:1px 2px;border-bottom:1px solid #0c100c}
+.row:hover{background:rgba(184,255,60,.03)}
+.row .lab{cursor:help}
+.row.set .lab{color:var(--text)}
+.row.set .lab::after{content:" •";color:var(--lime)}
+.row.err{background:rgba(255,69,69,.07)}
+.row .msg{grid-column:1/-1;font-size:10px;color:var(--red);padding:0 0 2px 98px;display:none}
+.row .msg.warn{color:var(--orange)}
+.row .msg.show{display:block}
+.row .msg::before{content:"✖ "}
+.row .msg.warn::before{content:"▲ "}
+.num{height:20px;width:100%;text-align:right;padding:0 4px;background:var(--lcdbg);color:var(--lcd);border:1px solid;border-color:var(--lo) #2a3b25 #2a3b25 var(--lo);font-size:12px}
+.num::placeholder{color:#3f6d34}
+.num.dirty{color:var(--amber);border-color:var(--amber)}
+.num.bad{color:#fff;background:#3a0808;border-color:var(--red)}
+.track{position:relative;height:20px;display:flex;align-items:center}
+.track .flag{position:absolute;top:2px;font-size:9px;color:var(--faint);pointer-events:none}
+.track .flag.l{left:-1px}.track .flag.r{right:-1px}
+.track .flag.lit{color:var(--amber);text-shadow:0 0 4px var(--amber)}
+.ticks{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none}
+.ticks i{position:absolute;top:3px;width:1px;height:4px;background:var(--limedim)}
+.ticks i.def{background:var(--cyan);height:5px}
+.ticks i.hot{background:var(--lime);box-shadow:0 0 3px var(--lime)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;margin:0;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:6px;background:linear-gradient(90deg,var(--limedim),#26341f);border:1px solid;border-color:#000 #2a3826 #2a3826 #000}
+input[type=range]::-moz-range-track{height:6px;background:linear-gradient(90deg,var(--limedim),#26341f);border:1px solid;border-color:#000 #2a3826 #2a3826 #000}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:16px;margin-top:-6px;background:linear-gradient(#e9ffc2,#a7ef33 45%,#5f9a12);border:1px solid;border-color:#f4ffe0 #2f4a08 #2f4a08 #f4ffe0}
+input[type=range]::-moz-range-thumb{width:12px;height:16px;border-radius:0;background:linear-gradient(#e9ffc2,#a7ef33 45%,#5f9a12);border:1px solid;border-color:#f4ffe0 #2f4a08 #2f4a08 #f4ffe0}
+.row.inherit input[type=range]::-webkit-slider-thumb{background:#1a2316;border-color:#6d8f45}
+.row.inherit input[type=range]::-moz-range-thumb{background:#1a2316;border-color:#6d8f45}
+.row.dragging input[type=range]::-webkit-slider-thumb{background:linear-gradient(#fff0c8,#ffb627);border-color:#fff3d6 #6b4300 #6b4300 #fff3d6}
+.unit{font-size:9px;color:var(--faint);text-align:left}
+.eff{font-size:9.5px;color:var(--cyan);white-space:nowrap}
+/* segments */
+.seg{display:flex;gap:1px;min-width:0}
+.seg button{flex:1;min-width:0;height:20px;padding:0 2px;font-size:10px;letter-spacing:.03em;text-transform:uppercase;background:#0b0f0b;color:var(--mute);border:1px solid;border-color:#25311f #000 #000 #25311f;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg button:hover{color:var(--lime)}
+.seg button.inh{color:var(--lime2);border-color:var(--limedim);box-shadow:inset 0 -2px 0 var(--limedim)}
+.seg button.on{background:linear-gradient(#c4ff58,#8fdc1e);color:#0b1405;font-weight:700;border-color:#e2ffb0 #3b5a0c #3b5a0c #e2ffb0}
+.seg button.out{background:repeating-linear-gradient(-45deg,#0b0f0b 0 3px,#151b13 3px 6px);color:#3b4a37}
+.seg button.inrange{color:var(--text)}
+.row.wide{grid-template-columns:96px minmax(0,1fr) 20px 20px}
+.row.wide .msg{padding-left:98px}
+.txt{height:20px;width:100%;padding:0 4px;background:var(--inset);border:1px solid;border-color:var(--lo) var(--hi) var(--hi) var(--lo);color:var(--text)}
+.txt.model{color:var(--lcd);background:var(--lcdbg)}
+.txt.dirty{border-color:var(--amber);color:var(--amber)}
+.txt.bad{border-color:var(--red);background:#3a0808}
+.modelwrap{display:flex;gap:var(--g1);align-items:center;min-width:0}
+.modelwrap .chip{flex:0 0 auto}
+.chip.ok{color:var(--lime);border-color:var(--limedim)}
+.chip.deg{color:var(--orange);border-color:#6a2a10}
+.effort-ruler{display:grid;align-items:center;min-height:14px;grid-template-columns:96px minmax(0,1fr) 20px 20px;gap:var(--g2);padding:1px 2px}
+.effort-ruler .scale{display:flex;gap:1px}
+.effort-ruler .scale span{flex:1;height:3px;background:#1a2316}
+.effort-ruler .scale span.in{background:var(--lime2);box-shadow:0 0 3px var(--limedim)}
+.effort-ruler .scale span.def{background:var(--cyan)}
+/* info pop */
+.info{grid-column:1/-1;margin:2px 0 4px;padding:6px;background:#0a0e0a;border:1px solid var(--limedim);box-shadow:inset 0 0 0 1px #000;display:none}
+.info.show{display:block}
+.info p{margin:0 0 5px;color:var(--text);font-size:11px;line-height:1.4}
+.info .grid{display:grid;grid-template-columns:auto 1fr 1fr auto;gap:3px 6px;align-items:center;font-size:10.5px}
+.info .grid .k{color:var(--mute);text-transform:uppercase;letter-spacing:.05em;font-size:10px}
+.info .grid input{height:18px;width:100%;background:var(--lcdbg);color:var(--lcd);border:1px solid #2a3b25;text-align:right;padding:0 3px}
+.info .grid .ro{color:var(--faint)}
+.info .acts{display:flex;flex-wrap:wrap;gap:var(--g1);margin-top:5px}
+.info .err{color:var(--red);font-size:10px;margin-top:3px}
+details.adv>summary{list-style:none;cursor:pointer}
+details.adv>summary::-webkit-details-marker{display:none}
+details.adv>summary .name::after{content:" ▸";color:var(--mute)}
+details.adv[open]>summary .name::after{content:" ▾"}
+.grpnote{font-size:10px;color:var(--faint);padding:2px 4px 3px;line-height:1.35}
+footer{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;gap:var(--g3);align-items:center;padding:3px var(--pad);background:#0b0f0b;border-top:1px solid #2a3826}
+footer .lcd{flex:1;padding:1px 6px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:18px}
+footer .lcd.err{color:#ff8d8d;text-shadow:0 0 4px rgba(255,69,69,.6)}
+.notips .row .lab{cursor:default}
+@media (max-width:1100px){.live{grid-template-columns:1fr 1fr}}
+@media (max-width:820px){header{position:static}#pending.show{position:fixed;top:0;left:0;right:0;z-index:30}main{grid-template-columns:1fr}.workers{grid-template-columns:1fr}}
+@media (max-width:560px){
+  .live{grid-template-columns:1fr}
+  .row{grid-template-columns:76px minmax(40px,1fr) 64px 20px 20px}
+  .row.wide,.effort-ruler{grid-template-columns:76px minmax(0,1fr) 20px 20px}
+  .row .msg,.row.wide .msg{padding-left:4px}
+  .readout .big{font-size:17px}
+  .titlebar .sub{display:none}
+  .workers{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="titlebar"><b>OAI</b><span class="grip"></span><span class="sub">OPENAI WORKERS · CONFIGURATION DECK</span><span class="grip"></span><span class="sub" id="ver">v—</span></div>
+  <div class="bar">
+    <div class="readout lcd" id="lcd" aria-live="polite">
+      <div class="big" id="clock">--:--</div>
+      <div class="small"><div id="lcdStore">STORE —</div><div id="lcdState">STATE —</div></div>
+    </div>
+    <div class="presets bevel" role="group" aria-label="Presets">
+      <span class="lab">PRESET</span>
+      <select id="presetSel" aria-label="Preset"></select>
+      <button class="btn" id="presetLoad" title="Load the selected preset into all unlocked groups">LOAD</button>
+      <input type="text" id="presetName" placeholder="name…" aria-label="New preset name" maxlength="48">
+      <button class="btn" id="presetSave" title="Save the whole current configuration as a named preset">SAVE</button>
+      <button class="btn ico" id="presetDel" title="Delete the selected user preset" aria-label="Delete preset">−</button>
+      <label class="chk" title="Load ignores group locks this one time; the locks themselves are not changed"><input type="checkbox" id="overrideLocks">G:UNLOCK</label>
+    </div>
+    <div class="presets bevel">
+      <label class="chk"><input type="checkbox" id="tips" checked>TOOLTIPS</label>
+      <button class="btn" id="refresh" title="Re-read the stored values">RELOAD</button>
+    </div>
+  </div>
+  <div id="pending" role="alert">
+    <span class="led"></span>
+    <span class="msg">CHANGES PENDING — RESTART CLAUDE CODE</span>
+    <span class="names" id="pendingNames"></span>
+    <label class="chk">AUTO-CLEAR <select id="autoClear" aria-label="Auto-clear pending marker"><option value="0">NEVER</option><option value="10">10 MIN</option><option value="30">30 MIN</option><option value="60">1 H</option><option value="240">4 H</option></select></label>
+    <button class="btn warn" id="restarted">I RESTARTED</button>
+  </div>
+  <div class="live">
+    <div class="cell bevel"><h4>KEYS</h4><div id="keys"></div></div>
+    <div class="cell bevel"><h4>FREE QUOTA · TODAY (UTC)</h4><div id="quota"></div></div>
+    <div class="cell bevel"><h4>MONTH · LOCAL ESTIMATE</h4><div id="month"></div></div>
+    <div class="cell bevel"><h4>TRACE</h4><div id="trace"></div></div>
+  </div>
+</header>
+<main>
+  <div class="col" id="leftCol"></div>
+  <div class="col"><div class="workers" id="workers"></div><div id="advHost"></div></div>
+</main>
+<footer><span class="lab">STATUS</span><div class="lcd" id="status">READY</div></footer>
+<script nonce="__NONCE__">
+'use strict';
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
+const $ = (sel, root = document) => root.querySelector(sel);
+const h = (tag, attrs = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'class') el.className = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return el;
+};
+let S = null, STATE = null; const ROWS = {}; const PANELS = {};
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+async function api(path, body) {
+  const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'x-oai-token': TOKEN, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+  let data = {}; try { data = await res.json(); } catch {}
+  if (!res.ok && res.status !== 422) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+function status(text, err = false) { const el = $('#status'); el.textContent = text; el.classList.toggle('err', err); }
+const fmtTok = n => n == null ? '—' : n >= 1e6 ? `${+(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}K` : String(n);
+const fmtUsd = n => n == null ? '—' : `$${Number(n).toFixed(Number(n) < 10 ? 3 : 2)}`;
+const fmtBytes = n => n == null ? 'no file today' : n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`;
+
+/* ── value transforms (shared by drawing, notch attraction and keyboard) ── */
+const POS = 1000;
+function win(p) { const u = STATE?.ui?.params?.[p.name] || {}; return u.window || p.window; }
+function caps(p) { const u = STATE?.ui?.params?.[p.name] || {}; return u.caps || p.bounds; }
+function align(p) { return (STATE?.ui?.params?.[p.name] || {}).align || (p.notches ? 'notched' : 'free'); }
+function T(p, v) { const [a, b] = win(p); if (p.log) { const la = Math.log(a), lb = Math.log(b); return (Math.log(Math.max(v, a * 1e-9)) - la) / (lb - la); } return (v - a) / (b - a); }
+function Tinv(p, t) { const [a, b] = win(p); return p.log ? Math.exp(Math.log(a) + t * (Math.log(b) - Math.log(a))) : a + t * (b - a); }
+function tidy(p, v) {
+  if (p.log) { const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(v) || 1)) - 2); v = Math.round(v / mag) * mag; }
+  if (p.kind === 'int') return Math.round(v);
+  return Math.round(v / (p.step || 0.01)) * (p.step || 0.01);
+}
+const fmtVal = (p, v) => v === null || v === undefined || v === '' ? '' : p.kind === 'int' ? String(Math.round(v)) : String(+Number(v).toFixed(4));
+
+/* ── shared row chrome ── */
+function labelEl(p) { const el = h('span', { class: 'lab', id: `l-${p.name}` }, p.label); el.dataset.help = p.help || ''; return el; }
+function infoBtn(row) { return h('button', { class: 'btn ico', 'aria-label': `Info and limits for ${row.p.label}`, 'aria-expanded': 'false', title: 'Info / range', onclick: e => toggleInfo(row, e.currentTarget) }, '↔'); }
+function resetBtn(row) { return h('button', { class: 'btn ico', 'aria-label': `Reset ${row.p.label} to default`, title: 'Reset value to default (unset)', onclick: () => commit(row, '') }, '↺'); }
+function msgEl() { return h('div', { class: 'msg', role: 'status' }); }
+function setMsg(row, text, warn = false) { row.msg.textContent = text || ''; row.msg.classList.toggle('show', !!text); row.msg.classList.toggle('warn', !!warn && !!text); row.el.classList.toggle('err', !!text && !warn); }
+
+function inheritedValue(p) {
+  const eff = STATE.effective;
+  if (p.kind === 'int' || p.kind === 'num') {
+    if (p.inherit) { const iv = STATE.values[p.inherit]; return iv !== '' ? Number(iv) : PARAM[p.inherit].def; }
+    if (p.worker && p.name.endsWith('MAX_USD')) return null; // free worker: no cap
+    return p.def;
+  }
+  return null;
+}
+
+/* ── numeric row: slider + LCD entry + info + reset ── */
+function numericRow(p) {
+  const row = { p, captured: null, editing: false };
+  row.range = h('input', { type: 'range', min: 0, max: POS, step: 1, 'aria-labelledby': `l-${p.name}` });
+  row.ticks = h('div', { class: 'ticks', 'aria-hidden': 'true' });
+  row.fl = h('span', { class: 'flag l', title: 'Value is below the slider window' }, '◂'); row.fr = h('span', { class: 'flag r', title: 'Value is above the slider window' }, '▸');
+  row.num = h('input', { class: 'num', inputmode: 'decimal', 'aria-labelledby': `l-${p.name}`, spellcheck: 'false', autocomplete: 'off' });
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.eff = h('span', { class: 'eff' });
+  const lab = labelEl(p);
+  row.el = h('div', { class: 'row' }, lab, h('div', { class: 'track' }, row.ticks, row.range, row.fl, row.fr), row.num, infoBtn(row), resetBtn(row), row.msg, row.info);
+  row.unitLabel = p.unit;
+  // slider: live display while dragging, commit on release (each write touches the Windows registry)
+  row.range.addEventListener('input', () => { row.el.classList.add('dragging'); const v = sliderValue(row); row.pendingVal = v; row.num.value = fmtVal(p, v); row.num.classList.add('dirty'); markHot(row, v); });
+  row.range.addEventListener('change', () => { row.el.classList.remove('dragging'); row.captured = null; if (row.pendingVal !== undefined) commit(row, fmtVal(p, row.pendingVal)); row.pendingVal = undefined; });
+  row.range.addEventListener('keydown', e => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) return;
+    e.preventDefault();
+    const dir = ['ArrowRight', 'ArrowUp', 'PageUp'].includes(e.key) ? 1 : -1;
+    const cur = currentNumber(row);
+    let v;
+    if (align(p) === 'forced' && p.notches) { const ns = notchesIn(p); const i = ns.findIndex(n => n >= cur - 1e-9); v = dir > 0 ? ns.find(n => n > cur + 1e-9) ?? ns.at(-1) : [...ns].reverse().find(n => n < cur - 1e-9) ?? ns[0]; void i; }
+    else {
+      const stepPos = e.shiftKey ? 1 : e.key.startsWith('Page') ? 100 : 10; // Shift = fine (sensitivity only)
+      const t = Math.min(1, Math.max(0, T(p, cur))) + dir * stepPos / POS;
+      v = tidy(p, Tinv(p, Math.min(1, Math.max(0, t))));
+      if (v === cur) v = tidy(p, cur + dir * (p.kind === 'int' ? 1 : (p.step || 0.01)));
+    }
+    v = Math.min(caps(p)[1], Math.max(caps(p)[0], v));
+    row.num.value = fmtVal(p, v); commit(row, fmtVal(p, v));
+  });
+  // numeric entry: Enter/blur commits, Escape restores the authoritative value
+  row.num.addEventListener('focus', () => { row.editing = true; });
+  row.num.addEventListener('input', () => { row.num.classList.add('dirty'); row.num.classList.remove('bad'); });
+  row.num.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(row, row.num.value); }
+    else if (e.key === 'Escape') { e.preventDefault(); row.localErr = null; row.num.classList.remove('dirty', 'bad'); setMsg(row, ''); row.editing = false; syncNumeric(row, true); row.num.blur(); }
+  });
+  row.num.addEventListener('blur', () => { row.editing = false; if (row.num.classList.contains('dirty')) commit(row, row.num.value); });
+  return row;
+}
+function notchesIn(p) { const [a, b] = win(p); return (p.notches || []).filter(n => n >= a && n <= b); }
+function trackPx(row) { return Math.max(1, row.range.getBoundingClientRect().width - 12); }
+/* Display-space notch attraction: capture within 3 CSS px, release beyond 8 px (hysteresis). */
+function sliderValue(row) {
+  const p = row.p, pos = Number(row.range.value), width = trackPx(row), px = pos / POS * width, mode = align(p);
+  const ns = notchesIn(p).map(n => ({ n, px: T(p, n) * width }));
+  if (mode === 'forced' && ns.length) { const best = ns.reduce((a, b) => Math.abs(b.px - px) < Math.abs(a.px - px) ? b : a); row.range.value = Math.round(T(p, best.n) * POS); return best.n; }
+  if (mode === 'notched' && ns.length) {
+    if (row.captured !== null) { const c = ns.find(x => x.n === row.captured); if (c && Math.abs(c.px - px) <= 8) { row.range.value = Math.round(T(p, c.n) * POS); return c.n; } row.captured = null; }
+    const near = ns.filter(x => Math.abs(x.px - px) <= 3).sort((a, b) => Math.abs(a.px - px) - Math.abs(b.px - px))[0];
+    if (near) { row.captured = near.n; row.range.value = Math.round(T(p, near.n) * POS); return near.n; }
+  }
+  return tidy(p, Tinv(p, pos / POS));
+}
+function markHot(row, v) { for (const t of row.ticks.children) t.classList.toggle('hot', Number(t.dataset.v) === v); }
+function drawTicks(row) {
+  const p = row.p; row.ticks.textContent = '';
+  if (align(p) === 'free') return;
+  const def = inheritedValue(p);
+  for (const n of notchesIn(p)) { const i = h('i', { 'data-v': n, title: String(n) }); i.style.left = `calc(6px + ${T(p, n)} * (100% - 12px))`; if (n === def) i.className = 'def'; row.ticks.append(i); }
+}
+function currentNumber(row) { const p = row.p, raw = STATE.values[p.name]; return raw !== '' ? Number(raw) : inheritedValue(p) ?? Tinv(p, 0); }
+function syncNumeric(row, force = false) {
+  const p = row.p, raw = STATE.values[p.name], set = raw !== '';
+  row.el.classList.toggle('set', set); row.el.classList.toggle('inherit', !set);
+  const inh = inheritedValue(p);
+  row.num.placeholder = inh === null ? (p.worker ? '∞ none' : 'unset') : p.inherit ? `↳${fmtVal(p, inh)}` : `${fmtVal(p, inh) || 'unset'}`;
+  if (!row.editing || force) { row.num.value = set ? raw : ''; row.num.classList.remove('dirty'); }
+  const v = set ? Number(raw) : inh;
+  const [a, b] = win(p);
+  drawTicks(row);
+  if (v === null || v === undefined || Number.isNaN(v)) { row.range.value = 0; row.fl.classList.remove('lit'); row.fr.classList.remove('lit'); }
+  else { row.range.value = Math.round(Math.min(1, Math.max(0, T(p, v))) * POS); row.fl.classList.toggle('lit', v < a); row.fr.classList.toggle('lit', v > b); markHot(row, v); }
+  row.range.setAttribute('aria-valuetext', v === null ? 'none' : `${fmtVal(p, v)} ${p.unit || ''}${set ? '' : ' (default)'}`);
+  const unit = p.unit ? ` ${p.unit}` : '';
+  row.num.title = `${set ? 'Set' : 'Default'}${unit}. Window ${a}..${b}${unit}; caps ${caps(p).join('..')}${unit}`;
+}
+
+/* ── effort ladder rows (forced notches: the domain is six ordered levels) ── */
+function effortRow(p) {
+  const row = { p, seg: h('div', { class: 'seg', role: 'radiogroup', 'aria-labelledby': `l-${p.name}` }) };
+  row.btns = S.efforts.map(level => h('button', { role: 'radio', 'aria-checked': 'false', title: level, onclick: () => commit(row, level), onkeydown: e => effortKey(row, e, level) }, level === 'medium' ? 'med' : level));
+  row.seg.append(...row.btns);
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), row.seg, infoBtn(row), resetBtn(row), row.msg, row.info);
+  return row;
+}
+function effortKey(row, e, level) {
+  const i = S.efforts.indexOf(level), d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+  if (!d) return; e.preventDefault(); const j = Math.min(S.efforts.length - 1, Math.max(0, i + d)); row.btns[j].focus(); commit(row, S.efforts[j]);
+}
+function syncEffort(row) {
+  const p = row.p, raw = STATE.values[p.name], eff = STATE.effective.workers[p.worker].effort;
+  const field = p.name.endsWith('_MIN') ? 'min' : p.name.endsWith('_MAX') ? 'max' : 'default';
+  const active = raw || (eff ? eff[field] : p.builtin);
+  row.el.classList.toggle('set', !!raw);
+  row.btns.forEach((b, i) => {
+    const lvl = S.efforts[i];
+    const out = eff && field === 'default' && (S.efforts.indexOf(lvl) < S.efforts.indexOf(eff.min) || S.efforts.indexOf(lvl) > S.efforts.indexOf(eff.max));
+    b.className = (raw && lvl === raw ? 'on' : !raw && lvl === active ? 'inh' : '') + (out ? ' out' : '');
+    b.setAttribute('aria-checked', String(lvl === active)); b.tabIndex = lvl === active ? 0 : -1;
+    b.title = `${lvl}${lvl === p.builtin ? ' · built-in' : ''}${!raw && lvl === active ? ' · in effect (not set)' : ''}${out ? ' · outside MIN..MAX' : ''}`;
+  });
+}
+function effortRuler(w) {
+  const el = h('div', { class: 'effort-ruler', 'aria-hidden': 'true' }, h('span', { class: 'lab' }, 'RANGE'), h('div', { class: 'scale' }, S.efforts.map(() => h('span'))), h('span'), h('span'));
+  el.sync = () => { const e = STATE.effective.workers[w].effort; [...el.children[1].children].forEach((s, i) => { s.className = !e ? '' : i === S.efforts.indexOf(e.default) ? 'def' : i >= S.efforts.indexOf(e.min) && i <= S.efforts.indexOf(e.max) ? 'in' : ''; }); };
+  return el;
+}
+
+/* ── enum / tier row ── */
+function enumRow(p) {
+  const row = { p, seg: h('div', { class: 'seg', role: 'radiogroup', 'aria-labelledby': `l-${p.name}` }) };
+  row.btns = p.options.map(o => h('button', { role: 'radio', 'aria-checked': 'false', onclick: () => commit(row, o) }, o === '' ? 'INH' : o === 'priority' ? 'prio' : o === 'default' ? 'dflt' : o));
+  row.seg.append(...row.btns);
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), row.seg, infoBtn(row), resetBtn(row), row.msg, row.info);
+  return row;
+}
+function syncEnum(row) {
+  const p = row.p, raw = STATE.values[p.name];
+  let inh = '';
+  if (p.worker) inh = p.builtin || STATE.values.OPENAI_WORKER_SERVICE_TIER || 'project default';
+  else inh = 'project default';
+  row.el.classList.toggle('set', raw !== '');
+  row.btns.forEach((b, i) => {
+    const o = p.options[i];
+    b.className = raw === o && raw !== '' ? 'on' : raw === '' && o === '' ? 'inh' : '';
+    b.setAttribute('aria-checked', String(raw === o));
+    if (o === '') { b.textContent = `↳${inh === 'project default' ? 'proj' : inh === 'priority' ? 'prio' : inh}`; b.title = `Inherit: ${inh}${p.worker && p.builtin ? ' (built-in worker tier)' : ''}`; }
+    else b.title = o;
+  });
+}
+
+/* ── model row ── */
+function modelRow(p) {
+  const row = { p };
+  row.input = h('input', { class: 'txt model', list: 'models', spellcheck: 'false', autocomplete: 'off', 'aria-labelledby': `l-${p.name}`, placeholder: `↳${p.builtin}` });
+  row.chip = h('span', { class: 'chip' });
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), h('div', { class: 'modelwrap' }, row.input, row.chip), infoBtn(row), resetBtn(row), row.msg, row.info);
+  textBehaviour(row, row.input);
+  return row;
+}
+function textBehaviour(row, input) {
+  input.addEventListener('focus', () => { row.editing = true; });
+  input.addEventListener('input', () => input.classList.add('dirty'));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(row, input.value); }
+    else if (e.key === 'Escape') { e.preventDefault(); row.localErr = null; input.classList.remove('dirty', 'bad'); setMsg(row, ''); input.value = STATE.values[row.p.name]; input.blur(); }
+  });
+  input.addEventListener('blur', () => { row.editing = false; if (input.classList.contains('dirty')) commit(row, input.value); });
+  input.addEventListener('change', () => { if (input.classList.contains('dirty') && document.activeElement !== input) commit(row, input.value); });
+}
+function syncModel(row) {
+  const p = row.p, raw = STATE.values[p.name];
+  row.el.classList.toggle('set', raw !== '');
+  if (!row.editing) { row.input.value = raw; row.input.classList.remove('dirty'); }
+  const w = STATE.effective.workers[p.worker], warn = STATE.check.warnings[p.name];
+  row.chip.textContent = warn ? (/quota group/.test(warn) ? 'NO QUOTA' : 'UNPRICED') : 'PRICED';
+  row.chip.className = `chip ${warn ? 'deg' : 'ok'}`;
+  row.chip.title = warn || `${w.model}: local price estimate known`;
+}
+
+/* ── toggle / text rows ── */
+function toggleRow(p) {
+  const row = { p };
+  row.btn = h('button', { class: 'btn', role: 'switch', 'aria-labelledby': `l-${p.name}`, onclick: () => commit(row, STATE.values[p.name] === '1' ? '' : '1') });
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), h('div', {}, row.btn), infoBtn(row), resetBtn(row), row.msg, row.info);
+  return row;
+}
+function syncToggle(row) { const on = STATE.values[row.p.name] === '1'; row.el.classList.toggle('set', on); row.btn.className = `btn${on ? ' on' : ''}`; row.btn.setAttribute('aria-checked', String(on)); row.btn.textContent = on ? '● ON' : '○ OFF'; }
+function textRow(p) {
+  const row = { p };
+  row.input = h('input', { class: 'txt', spellcheck: 'false', autocomplete: 'off', maxlength: p.max || 260, 'aria-labelledby': `l-${p.name}`, placeholder: p.builtin ? `↳ ${p.builtin}` : p.kind === 'path' ? '↳ default per-user state dir' : '' });
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), row.input, infoBtn(row), resetBtn(row), row.msg, row.info);
+  textBehaviour(row, row.input);
+  return row;
+}
+function syncText(row) { const raw = STATE.values[row.p.name]; row.el.classList.toggle('set', raw !== ''); if (!row.editing) { row.input.value = raw; row.input.classList.remove('dirty'); } }
+
+function buildRow(p) {
+  const row = p.kind === 'int' || p.kind === 'num' ? numericRow(p) : p.kind === 'effort' ? effortRow(p) : p.kind === 'enum' ? enumRow(p) : p.kind === 'model' ? modelRow(p) : p.kind === 'toggle' ? toggleRow(p) : textRow(p);
+  row.sync = { int: syncNumeric, num: syncNumeric, effort: syncEffort, enum: syncEnum, model: syncModel, toggle: syncToggle, text: syncText, path: syncText }[p.kind];
+  ROWS[p.name] = row; return row;
+}
+
+/* ── info / range inspector (spec §1, §2, §3, §5) ── */
+function toggleInfo(row, btn) {
+  const open = !row.info.classList.contains('show');
+  for (const r of Object.values(ROWS)) if (r !== row && r.info.classList.contains('show')) { r.info.classList.remove('show'); }
+  row.info.classList.toggle('show', open); btn.setAttribute('aria-expanded', String(open));
+  if (open) renderInfo(row);
+}
+function renderInfo(row) {
+  const p = row.p, info = row.info; info.textContent = '';
+  info.append(h('p', {}, p.help || ''), h('p', { class: 'mini' }, `ENV ${p.name}${p.informational ? ' · INFORMATIONAL ONLY' : ''}`));
+  if (p.kind === 'effort') info.append(h('p', { class: 'mini' }, `Levels ${S.efforts.join(' < ')}. Built-in: ${p.builtin}. Rule: MIN ≤ DEFAULT ≤ MAX; gpt-6.x Sol/Astra refuse "none".`));
+  if (p.builtin && p.kind !== 'effort') info.append(h('p', { class: 'mini' }, `Built-in: ${p.builtin}`));
+  if (p.kind !== 'int' && p.kind !== 'num') return;
+  const u = { ...(STATE.ui.params[p.name] || {}) };
+  const inp = v => h('input', { value: v, inputmode: 'decimal' });
+  const capLo = inp(caps(p)[0]), capHi = inp(caps(p)[1]), wLo = inp(win(p)[0]), wHi = inp(win(p)[1]);
+  const mode = h('select', { 'aria-label': 'Notch alignment mode' }, ['free', 'indicate', 'notched', 'forced'].map(m => h('option', { value: m, selected: align(p) === m }, m.toUpperCase())));
+  const err = h('div', { class: 'err', role: 'alert' });
+  const inh = inheritedValue(p);
+  info.append(h('div', { class: 'grid' },
+    h('span', { class: 'k' }, 'Engineering'), h('span', { class: 'ro' }, p.bounds[0]), h('span', { class: 'ro' }, p.bounds[1]), h('span', { class: 'ro mini' }, 'immutable'),
+    h('span', { class: 'k' }, 'Safety caps'), capLo, capHi, h('span', { class: 'mini' }, 'entry limit'),
+    h('span', { class: 'k' }, 'Slider window'), wLo, wHi, h('span', { class: 'mini' }, p.log ? 'log' : 'linear'),
+    h('span', { class: 'k' }, 'Default'), h('span', { class: 'ro' }, inh === null ? 'none (∞)' : `${fmtVal(p, inh)} ${p.unit || ''}`), h('span', { class: 'k' }, 'Notches'), h('span', {}, mode),
+    h('span', { class: 'k' }, 'Preferred'), h('span', { class: 'ro' }, (p.notches || []).join(' · ') || '—'), h('span'), h('span')));
+  const save = async next => {
+    const doc = structuredClone(STATE.ui); if (Object.keys(next).length) doc.params[p.name] = next; else delete doc.params[p.name];
+    const r = await api('/api/ui', { ui: doc });
+    if (!r.ok) { err.textContent = Object.values(r.errors || {}).join(' ') || 'Refused.'; return; }
+    STATE.ui = r.ui; row.sync(row); renderInfo(row); status(`${p.label}: range settings saved (value unchanged)`);
+  };
+  const nums = (a, b) => [Number(a.value), Number(b.value)];
+  info.append(h('div', { class: 'acts' },
+    h('button', { class: 'btn on', onclick: () => save({ ...u, caps: nums(capLo, capHi), window: nums(wLo, wHi), align: mode.value }) }, 'APPLY'),
+    h('button', { class: 'btn', onclick: () => { const n = { ...u }; delete n.window; save(n); } }, '↺ WINDOW'),
+    h('button', { class: 'btn', onclick: () => { const n = { ...u }; delete n.caps; save(n); } }, '↺ CAPS'),
+    h('button', { class: 'btn', onclick: () => { const n = { ...u }; delete n.align; save(n); } }, '↺ MODE'),
+    h('button', { class: 'btn', onclick: () => commit(row, '') }, '↺ VALUE')), err);
+}
+
+/* ── commit (one authoritative value; server validates with the plugin's parsers) ── */
+async function commit(row, value) {
+  const p = row.p, v = String(value ?? '').trim();
+  if (v === (STATE.values[p.name] || '')) { row.num?.classList.remove('dirty'); row.input?.classList.remove('dirty'); setMsg(row, ''); row.sync(row); return; }
+  status(`WRITING ${p.name}…`);
+  try {
+    const r = await api('/api/set', { changes: { [p.name]: v } });
+    if (!r.ok) {
+      const own = r.errors[p.name] || Object.entries(r.errors).map(([n, m]) => `${n}: ${m}`).join(' ');
+      row.localErr = own; setMsg(row, own); (row.num || row.input)?.classList.add('bad');
+      for (const [n, m] of Object.entries(r.errors)) if (n !== p.name && ROWS[n]) { ROWS[n].localErr = m; setMsg(ROWS[n], m); }
+      status(`REFUSED ${p.name}: ${own}`, true); return;
+    }
+    for (const r2 of Object.values(ROWS)) r2.localErr = null;
+    setMsg(row, ''); (row.num || row.input)?.classList.remove('bad', 'dirty'); row.editing = false;
+    status(r.changed.length ? `SET ${p.name} = ${v || '(unset → default)'} · restart Claude Code to apply` : `${p.name} unchanged`);
+    await refresh();
+  } catch (e) { setMsg(row, e.message); status(e.message, true); }
+}
+
+/* ── panels ── */
+function panel(group, { chips = [], summary = false, note } = {}) {
+  const lock = h('button', { class: 'btn lock', title: 'LOCK protects this group from preset loads (G:UNLOCK overrides once)', 'aria-pressed': 'false', onclick: () => toggleLock(group.id) }, 'OFF');
+  const head = h('div', { class: 'ph' }, h('span', { class: 'name' }, group.label), ...chips, h('span', { class: 'spacer' }), h('span', { class: 'lab' }, 'LOCK'), lock);
+  const body = h('div', { class: 'pb' });
+  if (note) body.append(h('div', { class: 'grpnote' }, note));
+  const el = h('section', { class: 'panel bevel', 'aria-label': group.label }, head);
+  const sum = summary ? h('div', { class: 'summary lcd' }) : null;
+  if (sum) el.append(sum);
+  el.append(body);
+  PANELS[group.id] = { el, body, lock, sum };
+  return PANELS[group.id];
+}
+async function toggleLock(id) {
+  const doc = structuredClone(STATE.ui); if (doc.locks[id]) delete doc.locks[id]; else doc.locks[id] = true;
+  const r = await api('/api/ui', { ui: doc }); if (r.ok) { STATE.ui = r.ui; syncLocks(); status(`${id.replace('w:', '').toUpperCase()} ${r.ui.locks[id] ? 'LOCKED against preset loads' : 'unlocked'}`); }
+}
+function syncLocks() { for (const [id, P] of Object.entries(PANELS)) { const on = !!STATE.ui.locks[id]; P.lock.classList.toggle('on', on); P.lock.textContent = on ? 'LOCK' : 'OFF'; P.lock.setAttribute('aria-pressed', String(on)); P.el.classList.toggle('locked', on); } }
+
+function build() {
+  const byGroup = {}; for (const p of S.params) (byGroup[p.group] ||= []).push(p);
+  const left = $('#leftCol');
+  const notes = { global: 'Defaults for every worker; per-worker values override.', quota: 'Local guardrails for the free-programme key (UTC day). Not an OpenAI entitlement.',
+    spend: 'LIMIT is enforced. ALLOWANCE is a reference figure only and never blocks.', diag: 'Diagnostics read by the bridge and the /oai panel.' };
+  for (const id of ['global', 'quota', 'spend', 'diag']) {
+    const g = S.groups.find(x => x.id === id), P = panel(g, { note: notes[id], chips: id === 'spend' ? [h('span', { class: 'chip info' }, 'ALLOWANCE = INFO')] : [] });
+    for (const p of byGroup[id]) P.body.append(buildRow(p).el);
+    left.append(P.el);
+  }
+  const wrap = $('#workers');
+  for (const w of S.workers) {
+    const g = S.groups.find(x => x.id === `w:${w.name}`);
+    const P = panel(g, { summary: true, chips: [h('span', { class: `chip ${w.key === 'free' ? 'free' : 'paid'}`, title: w.key === 'free' ? 'OPENAI_FREE_API_KEY' : 'OPENAI_API_KEY' }, w.key === 'free' ? 'FREE KEY' : 'PAID KEY')] });
+    P.el.title = ''; P.body.append(h('div', { class: 'grpnote' }, w.description));
+    for (const p of byGroup[`w:${w.name}`]) { if (p.name.endsWith('EFFORT_MIN')) { P.ruler = effortRuler(w.name); P.body.append(P.ruler); } P.body.append(buildRow(p).el); }
+    wrap.append(P.el);
+  }
+  const adv = S.groups.find(x => x.id === 'advanced'), P = panel(adv, { note: 'Rarely needed. Ledger/trace directories, free-ledger concurrency, and the per-worker notes Claude sees when choosing a worker.' });
+  const det = h('details', { class: 'adv panel bevel' }, h('summary', {}, P.el.firstChild), ...[...P.el.childNodes]);
+  PANELS.advanced.el = det;
+  for (const p of byGroup.advanced) P.body.append(buildRow(p).el);
+  $('#advHost').append(det);
+  document.body.append(h('datalist', { id: 'models' }, S.pricedModels.map(m => h('option', { value: m }))));
+}
+
+/* ── live panels ── */
+function renderLive() {
+  const st = STATE;
+  $('#ver').textContent = `v${st.version}`;
+  $('#lcdStore').textContent = `STORE ${st.storage.kind.toUpperCase()}`;
+  $('#lcdStore').title = st.storage.location;
+  const nset = Object.values(st.values).filter(v => v !== '').length, nerr = Object.keys(st.check.errors).length;
+  $('#lcdState').textContent = `${String(nset).padStart(2, '0')} SET · ${nerr ? `${nerr} INVALID` : 'VALID'} · ${Object.keys(st.check.warnings).length} WARN`;
+  $('#keys').replaceChildren(...st.keys.map(k => h('div', { class: 'kv', title: `${k.name}: value never displayed` }, h('span', { class: `led ${k.configured ? 'ok' : 'bad'}` }), h('span', { class: 'lab' }, k.profile === 'free' ? 'FREE' : 'PAID'), h('span', { class: 'v' }, k.configured ? k.source : 'not configured'))));
+  const q = $('#quota');
+  if (st.usage) {
+    q.replaceChildren(...['premium', 'terra'].map(g => {
+      const x = st.usage.groups[g], lim = Math.max(1, x.softLimitTokens), bar = h('div', { class: 'qbar', role: 'img', 'aria-label': `${g} ${x.usedTokens} used of ${x.softLimitTokens}` });
+      const u = h('i', { class: 'u' }), r = h('i', { class: 'r' }), t = h('i', { class: 't' });
+      u.style.width = `${Math.min(100, x.usedTokens / lim * 100)}%`; r.style.left = u.style.width; r.style.width = `${Math.min(100, x.reservedTokens / lim * 100)}%`; t.style.left = `${Math.min(100, x.dailyTargetTokens / lim * 100)}%`;
+      bar.append(u, r, t);
+      return h('div', { class: 'kv' }, h('span', { class: 'lab' }, g === 'premium' ? 'PREM' : 'TERRA'), bar, h('span', { class: 'v' }, `${fmtTok(x.usedTokens)}/${fmtTok(x.softLimitTokens)}`));
+    }), h('div', { class: 'mini' }, `reset ${st.usage.resetAtUtc.slice(11, 16)}Z · +${st.usage.overrunPercent}% overrun · amber = reserved`));
+    $('#month').replaceChildren(
+      h('div', { class: 'kv' }, h('span', { class: 'lab' }, 'ALL KEYS'), h('span', { class: 'v' }, fmtUsd(st.usage.allKeysMonthlyEstimatedUsd)), h('span', { class: 'lab' }, 'FREE'), h('span', { class: 'v' }, fmtUsd(st.usage.monthlyEstimatedUsd))),
+      h('div', { class: 'kv' }, h('span', { class: 'lab' }, 'LIMIT'), h('span', { class: 'v' }, st.usage.monthlyLimitUsd == null ? 'none (no cost blocking)' : `${fmtUsd(st.usage.monthlyLimitUsd)} enforced`)),
+      h('div', { class: 'kv' }, h('span', { class: 'lab' }, 'ALLOWANCE'), h('span', { class: 'v' }, st.usage.monthlyAllowanceUsd == null ? '—' : fmtUsd(st.usage.monthlyAllowanceUsd)), h('span', { class: 'chip info' }, 'INFO ONLY')));
+  } else { q.replaceChildren(h('div', { class: 'mini' }, `ledger unavailable: ${st.usageError || 'unknown'}`)); $('#month').replaceChildren(h('div', { class: 'mini' }, '—')); }
+  $('#trace').replaceChildren(
+    h('div', { class: 'kv' }, h('span', { class: `led ${st.trace.enabled ? 'ok' : ''}` }), h('span', { class: 'lab' }, st.trace.enabled ? 'ON (after restart)' : 'OFF'), h('span', { class: 'v' }, fmtBytes(st.trace.bytes))),
+    h('div', { class: 'kv', title: st.trace.file }, h('span', { class: 'lab' }, 'FILE'), h('span', { class: 'v mini' }, st.trace.file)));
+  // pending marker
+  const pend = st.pending, box = $('#pending');
+  box.classList.toggle('show', !!pend);
+  if (pend) { const names = Object.keys(pend.changes); $('#pendingNames').textContent = `${names.length} changed since ${pend.since.slice(0, 16).replace('T', ' ')}Z: ${names.map(n => n.replace(/^OPENAI_WORKER_/, '')).join(', ')}`; $('#pendingNames').title = names.join('\n'); }
+  $('#autoClear').value = String(st.ui.autoClearMinutes || 0);
+  titleState(!!pend);
+  // presets
+  const sel = $('#presetSel'), keep = sel.value;
+  sel.replaceChildren(...st.presets.map(p => h('option', { value: p.name, title: p.description || p.savedAt || '' }, p.builtin ? `★ ${p.name}` : p.name)));
+  if (keep && st.presets.some(p => p.name === keep)) sel.value = keep;
+  $('#presetDel').disabled = !!st.presets.find(p => p.name === sel.value)?.builtin;
+  $('#tips').checked = st.ui.tooltips !== false; applyTips();
+}
+let blinkTimer = null;
+function titleState(on) {
+  clearInterval(blinkTimer); blinkTimer = null;
+  if (!on) { document.title = 'OAI CONFIG'; return; }
+  document.title = '⚠ RESTART CLAUDE CODE · OAI CONFIG';
+  if (!reduced) { let a = true; blinkTimer = setInterval(() => { a = !a; document.title = a ? '⚠ RESTART CLAUDE CODE · OAI CONFIG' : '■ CHANGES PENDING · OAI CONFIG'; }, 1000); }
+}
+function applyTips() {
+  const on = $('#tips').checked; document.body.classList.toggle('notips', !on);
+  for (const el of document.querySelectorAll('.row .lab')) { if (on) el.title = el.dataset.help || ''; else el.removeAttribute('title'); }
+}
+function renderValues() {
+  for (const row of Object.values(ROWS)) {
+    row.sync(row);
+    const err = STATE.check.errors[row.p.name], warn = STATE.check.warnings[row.p.name];
+    if (row.localErr) setMsg(row, `refused: ${row.localErr}`);
+    else if (!row.editing) setMsg(row, err ? `stored value invalid: ${err}` : warn || '', !err && !!warn);
+  }
+  for (const w of S.workers) {
+    const P = PANELS[`w:${w.name}`], e = STATE.effective.workers[w.name];
+    P.ruler?.sync();
+    P.sum.textContent = e.error ? `⚠ ${e.error}` : `${e.model} · ${e.tier} · ${e.effort.min}..${e.effort.max} ▸${e.effort.default} · ${e.maxSteps} st · ${e.maxUsd == null ? '∞' : `$${e.maxUsd}`}`;
+    P.sum.title = 'Effective runtime values the plugin will use after a restart';
+  }
+  const g = STATE.effective.global, flex = ROWS.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES;
+  if (flex && Number(STATE.values.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES) > 120) setMsg(flex, `effective ${g.flexMinutes} min (plugin caps at 120)`, true);
+  syncLocks();
+}
+async function refresh() {
+  try { STATE = await api('/api/state'); renderLive(); renderValues(); const t = new Date(); $('#clock').textContent = t.toTimeString().slice(0, 5); }
+  catch (e) { status(`OFFLINE: ${e.message} — relaunch /oai:config`, true); }
+}
+
+/* ── wiring ── */
+$('#restarted').addEventListener('click', async () => { await api('/api/restarted', {}); status('Pending marker cleared'); refresh(); });
+$('#autoClear').addEventListener('change', async e => { const doc = structuredClone(STATE.ui); doc.autoClearMinutes = Number(e.target.value); const r = await api('/api/ui', { ui: doc }); if (r.ok) { STATE.ui = r.ui; status(`Auto-clear: ${e.target.value === '0' ? 'never' : e.target.value + ' min after the last change'}`); refresh(); } });
+$('#tips').addEventListener('change', async e => { applyTips(); const doc = structuredClone(STATE.ui); doc.tooltips = e.target.checked; const r = await api('/api/ui', { ui: doc }); if (r.ok) STATE.ui = r.ui; });
+$('#refresh').addEventListener('click', () => { for (const r of Object.values(ROWS)) r.editing = false; refresh().then(() => status('Reloaded stored values')); });
+$('#presetSel').addEventListener('change', () => { $('#presetDel').disabled = !!STATE.presets.find(p => p.name === $('#presetSel').value)?.builtin; });
+$('#presetLoad').addEventListener('click', async () => {
+  const name = $('#presetSel').value; if (!name) return;
+  const r = await api('/api/preset/load', { name, overrideLocks: $('#overrideLocks').checked });
+  $('#overrideLocks').checked = false;
+  if (r.ok === false) { status(`Preset ${name} refused: ${Object.entries(r.errors || {}).map(([n, m]) => `${n}: ${m}`).join(' ')}`, true); return; }
+  status(`Loaded ${name}: ${r.changed.length} changed${r.skipped.length ? `, ${r.skipped.length} kept by locks` : ''}`); refresh();
+});
+$('#presetSave').addEventListener('click', async () => {
+  const name = $('#presetName').value.trim(); if (!name) { status('Type a preset name first', true); $('#presetName').focus(); return; }
+  try { const r = await api('/api/preset/save', { name }); if (r.error) throw new Error(r.error); status(`Saved preset ${name} (${r.count} values)`); $('#presetName').value = ''; await refresh(); $('#presetSel').value = name; }
+  catch (e) { status(e.message, true); }
+});
+$('#presetDel').addEventListener('click', async () => {
+  const name = $('#presetSel').value; if (!name || !confirm(`Delete preset ${name}?`)) return;
+  try { await api('/api/preset/delete', { name }); status(`Deleted preset ${name}`); refresh(); } catch (e) { status(e.message, true); }
+});
+(async () => {
+  try { S = await api('/api/schema'); } catch (e) { status(`Cannot reach the config server: ${e.message}`, true); return; }
+  window.PARAM = Object.fromEntries(S.params.map(p => [p.name, p]));
+  STATE = await api('/api/state');
+  build(); renderLive(); renderValues();
+  status(`READY · ${S.params.length} parameters · values are ${STATE.storage.kind === 'windows-user-env' ? 'Windows user environment variables' : STATE.storage.location}`);
+  setInterval(() => api('/api/heartbeat', {}).catch(() => {}), 20000);
+  setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+  setInterval(() => { $('#clock').textContent = new Date().toTimeString().slice(0, 5); }, 15000);
+  $('#clock').textContent = new Date().toTimeString().slice(0, 5);
+})();
+</script>
+</body>
+</html>

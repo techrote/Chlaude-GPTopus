@@ -152,6 +152,7 @@ export function renderStatus(data) {
   rule();
   row(`${paint('cyan', '»')} /oai:a <worker> [low|medium|high|xhigh|max] <task>   ${paint('dim', 'e.g.')} /oai:a sol6-2 xhigh fix the test`);
   row(`${paint('cyan', '»')} OAI_TRACE=1 + scripts/oai-trace.ps1   ${paint('dim', 'live transcript of OpenAI traffic')}`);
+  row(`${paint('cyan', '»')} /oai:config   ${paint('dim', 'web config panel: efforts, tiers, guardrails, quotas, trace')}`);
   row(paint('dim', 'main conversation stays on Claude · keys are never displayed'));
   out.push(paint('magenta', `╚${'═'.repeat(WIDTH - 2)}╝`));
   return out.join('\n');
