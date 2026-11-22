@@ -3,6 +3,7 @@ import { resolveConfig, evaluateRecruitment, policyHash } from './policy-api.mjs
 import { combineApprovals, orchestratorIdentity } from './policy.mjs';
 import { assessRisk, riskInput } from './risk.mjs';
 import { clone, digest, invariant } from './store.mjs';
+import { staleUnconsumedActions } from './actions.mjs';
 
 const terminal = new Set(['completed', 'failed', 'cancelled', 'blocked']);
 const reviewRoles = new Set(['reviewer', 'second_opinion', 'gap_inspector', 'judge', 'supervisor']);
@@ -369,8 +370,8 @@ export class RecruitmentBroker {
       const record = { id: randomUUID(), nodeId, policyHash: m.policyHash, original: clone(original), previous: clone(node.risk), replacement: riskInput(replacement), assessment: assessRisk(replacement, m.config.risk), rationale: grant.rationale, principal: clone(principal), createdAt: this.now(), expiresAt: this.now() + grant.ttlMs };
       node.riskOverride = record; node.risk = record.assessment; node.riskRevision = (node.riskRevision ?? 0) + 1;
       m.riskOverrides ??= {}; m.riskOverrides[record.id] = record;
-      for (const workflow of Object.values(m.workflows)) if (workflow.authors.includes(nodeId)) { workflow.status = 'held'; workflow.approval = null; workflow.reason = 'Risk classification changed; start a fresh source-bound review workflow'; }
-      for (const action of Object.values(m.actions)) if (action.status !== 'executed' && (action.nodeId === nodeId || m.workflows[action.workflowId]?.authors.includes(nodeId))) action.status = 'stale';
+      for (const workflow of Object.values(m.workflows)) if (workflow.authors.includes(nodeId) && workflow.status !== 'superseded') { workflow.status = 'held'; workflow.approval = null; workflow.reason = 'Risk classification changed; start a fresh source-bound review workflow'; }
+      staleUnconsumedActions(m, action => action.nodeId === nodeId || m.workflows[action.workflowId]?.authors.includes(nodeId));
       event('risk.overridden', missionId, record); return record;
     });
   }

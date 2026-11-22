@@ -4,6 +4,18 @@ import { combineApprovals, executionRequirements, orchestratorIdentity } from '.
 import { assessRisk, assertWorkflowRisk } from './risk.mjs';
 const ACTION_CAPABILITY = Object.freeze({ test: 'run_test', command: 'run_command', write: 'stage_write', delete: 'delete', merge: 'merge', deploy: 'deploy', external: 'external' });
 
+/**
+ * Authority that has not been spent yet. Evidence, plan, waiver, source or risk changes revoke exactly these. An action that was
+ * already consumed ('executing') or finished ('executed') keeps its state: the effect may already be happening, so it must still be
+ * able to record its result, and a terminal decision ('rejected', 'escalated', 'expired') has no authority left to revoke.
+ */
+export const REVOCABLE_ACTION_STATES = Object.freeze(['pending', 'approved']);
+export function staleUnconsumedActions(m, applies = () => true) {
+  const revoked = [];
+  for (const action of Object.values(m.actions)) if (REVOCABLE_ACTION_STATES.includes(action.status) && applies(action)) { action.status = 'stale'; revoked.push(action.id); }
+  return revoked;
+}
+
 /** Code, tests, destructive execution and merge are different immutable requests. */
 export class ActionGate {
   constructor(broker) { this.broker = broker; this.store = broker.store; }
@@ -76,10 +88,13 @@ export class ActionGate {
       invariant(capability === ACTION_CAPABILITY[action.kind], 'Claimed capability does not authorise this action class');
       invariant(n?.permissions.tools.includes(capability), 'Execution approval cannot enlarge tool permissions');
       if (a.workflowId) { const w = m.workflows[a.workflowId]; invariant(w?.status === 'code_approved' && w.source.hash === action.sourceHash, 'Code evidence changed after approval'); assertWorkflowRisk(m, w, this.broker.now()); }
-      a.status = 'executing'; a.consumedAt = this.broker.now(); event('action.consumed', missionId, { actionId, hash: a.hash }); return a;
+      // Remember exactly which approval the effect ran under: later evidence changes cannot rewrite or revoke this record.
+      const w = a.workflowId ? m.workflows[a.workflowId] : null;
+      a.executedUnder = w ? { workflowId: w.id, sourceHash: w.source.hash, planHash: w.approval?.planHash ?? null, approvedAt: w.approval?.at ?? null } : null;
+      a.status = 'executing'; a.consumedAt = this.broker.now(); event('action.consumed', missionId, { actionId, hash: a.hash, executedUnder: a.executedUnder }); return a;
     });
   }
   async complete(missionId, actionId, result) {
-    return this.store.transaction((state, event) => { const a = state.missions[missionId]?.actions[actionId]; invariant(a?.status === 'executing', 'Action is not executing'); a.status = 'executed'; a.result = clone(result); event('action.completed', missionId, { actionId, resultHash: digest(result) }); return a; });
+    return this.store.transaction((state, event) => { const a = state.missions[missionId]?.actions[actionId]; invariant(a?.status === 'executing', 'Action is not executing'); a.status = 'executed'; a.result = clone(result); a.completedAt = this.broker.now(); event('action.completed', missionId, { actionId, resultHash: digest(result), executedUnder: a.executedUnder ?? null }); return a; });
   }
 }

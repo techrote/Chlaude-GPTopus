@@ -25,15 +25,15 @@ const UNIT = { id: 'unit:path-scope', description: 'Path scoping unit tests' };
 const REGRESSION = { id: 'regression:junction', description: 'Junction traversal regression' };
 const MANUAL = { id: 'manual:windows-ui', description: 'Manual Windows UI pass', executable: false };
 
-async function fixture(t, { review = {}, mission: missionConfig = {}, risk = HIGH, authorRisk = risk, orchestrator = 'opus', plan, principal } = {}) {
+async function fixture(t, { review = {}, mission: missionConfig = {}, risk = HIGH, authorRisk = risk, orchestrator = 'opus', plan, principal, tools = [] } = {}) {
   const dir = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'ultra-required-tests-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   let now = Date.parse('2026-11-21T12:00:00Z');
   const store = new ExecutionStore(path.join(dir, 'ledger.json'), { now: () => now });
-  const broker = new RecruitmentBroker(store, { config: { enabled: true, review, mission: missionConfig, risk: { uncertainAuthority: 'user' } }, now: () => now });
+  const broker = new RecruitmentBroker(store, { config: { enabled: true, review, mission: missionConfig, risk: { uncertainAuthority: 'user' }, ...(tools.length && { permissions: { tools } }) }, now: () => now });
   const mission = await broker.createMission({ id: 'required_tests', task: 'Synthetic required-test manifest', orchestrator: { model: orchestrator, trusted: true, source: 'test-host' } });
   const ctx = { store, broker, mid: mission.id, reviews: new ReviewController(broker), actions: new ActionGate(broker), risk };
-  const request = await broker.request(ctx.mid, 'root', { worker: 'luna', role: 'implementation', task: 'Author the synthetic change', risk: authorRisk }, 'author');
+  const request = await broker.request(ctx.mid, 'root', { worker: 'luna', role: 'implementation', task: 'Author the synthetic change', risk: authorRisk, ...(tools.length && { permissions: { tools } }) }, 'author');
   ctx.author = request.nodeId; await complete(ctx, ctx.author);
   now += 1000;
   ctx.workflow = await ctx.reviews.start(ctx.mid, { authorId: ctx.author, source: source(), risk, ...(plan ? { testPlan: plan, principal: principal ?? owner } : {}) });
@@ -547,4 +547,167 @@ test('evidence volume per workflow is bounded', async t => {
   const w = await get(ctx), base = { name: 'noise', passed: true, details: 'x', sourceHash: w.source.hash, planHash: w.requiredTests.planHash };
   await ctx.store.transaction(state => { state.missions[ctx.mid].workflows[ctx.wid].tests = Array.from({ length: 1000 }, (_, i) => ({ id: `e${i}`, testId: 'noise', passed: true, sourceHash: w.source.hash, planHash: w.requiredTests.planHash, provenance: 'unattested-runner' })); });
   await assert.rejects(ctx.reviews.recordTest(ctx.mid, ctx.wid, base, runner), /evidence limit/);
+});
+// ---- ACT-01: a consumed action is in flight; only unconsumed authority is revoked by later evidence/plan/source changes ----
+const WRITE = (ctx, w, description) => ({ kind: 'write', description, workflowId: ctx.wid, sourceHash: w.source.hash });
+async function approvedAction(ctx, description) {
+  const w = await get(ctx), action = await ctx.actions.propose(ctx.mid, ctx.author, WRITE(ctx, w, description));
+  const decided = await ctx.actions.decide(ctx.mid, action.id, { actionHash: action.hash, approved: true, rationale: 'The owner approves this exact action.' }, owner);
+  assert.equal(decided.status, 'approved');
+  return action;
+}
+async function executingAction(ctx, description) {
+  const action = await approvedAction(ctx, description);
+  const consumed = await ctx.actions.consume(ctx.mid, action.id, action.action, { nodeId: ctx.author, capability: 'stage_write' });
+  assert.equal(consumed.status, 'executing');
+  return action;
+}
+
+test('ACT-01: evidence, plan, waiver and source changes stale only unconsumed actions; an executing action still completes and records its result', async t => {
+  const ctx = await fixture(t, { review: { requiredTests: [UNIT] }, tools: ['stage_write'] });
+  await toAdjudication(ctx); await ran(ctx, UNIT.id);
+  assert.equal((await judge(ctx)).status, 'code_approved');
+  const done = await executingAction(ctx, 'Already executed write');
+  await ctx.actions.complete(ctx.mid, done.id, { ok: true });
+  const pending = await ctx.actions.propose(ctx.mid, ctx.author, WRITE(ctx, await get(ctx), 'Pending write'));
+  const approved = await approvedAction(ctx, 'Approved but unconsumed write');
+  const running = await executingAction(ctx, 'In-flight write');
+  const all = [['done', done], ['pending', pending], ['approved', approved], ['running', running]];
+  const now = async () => { const m = await mission(ctx); return Object.fromEntries(all.map(([label, a]) => [label, m.actions[a.id].status])); };
+  assert.deepEqual(await now(), { done: 'executed', pending: 'pending', approved: 'approved', running: 'executing' });
+
+  // 1. contradicting executed evidence revokes the approval
+  await ran(ctx, UNIT.id, false);
+  assert.equal((await get(ctx)).status, 'held');
+  assert.deepEqual(await now(), { done: 'executed', pending: 'stale', approved: 'stale', running: 'executing' });
+  // 2. plan addition, 3. owner waiver of the new non-executable requirement, 4. owner removal of it
+  await ctx.reviews.addRequiredTests(ctx.mid, ctx.wid, [MANUAL], owner);
+  assert.equal((await now()).running, 'executing');
+  const w = await get(ctx);
+  await ctx.reviews.waiveTest(ctx.mid, ctx.wid, { testId: MANUAL.id, rationale: 'Cannot be run safely here', sourceHash: w.source.hash, planHash: w.requiredTests.planHash }, owner);
+  assert.equal((await now()).running, 'executing');
+  await ctx.reviews.changeRequiredTests(ctx.mid, ctx.wid, { remove: [MANUAL.id], reason: 'No longer applicable' }, owner);
+  assert.equal((await now()).running, 'executing');
+  // 5. the source changes outside authorised rework
+  await ctx.reviews.invalidate(ctx.mid, ctx.wid, source('function plan(p) { return [p]; }\n'));
+  assert.deepEqual(await now(), { done: 'executed', pending: 'stale', approved: 'stale', running: 'executing' });
+
+  // The executor can still report what it ran, and the ledger records the source and plan the action was consumed under.
+  const completed = await ctx.actions.complete(ctx.mid, running.id, { changed: ['cleanup.js'] });
+  assert.equal(completed.status, 'executed'); assert.deepEqual(completed.result, { changed: ['cleanup.js'] });
+  assert.equal(completed.executedUnder.sourceHash, w.source.hash);
+  assert.match(completed.executedUnder.planHash, /^[a-f0-9]{64}$/);
+  assert.notEqual(completed.executedUnder.sourceHash, (await get(ctx)).source.hash, 'the record keeps the evidence it ran under, not the later source');
+  assert.equal((await now()).running, 'executed');
+  await assert.rejects(ctx.actions.complete(ctx.mid, running.id, { again: true }), /not executing/);
+  // A stale action can never be consumed, and nothing new can be proposed on the revoked approval.
+  await assert.rejects(ctx.actions.consume(ctx.mid, approved.id, approved.action, { nodeId: ctx.author, capability: 'stage_write' }), /missing, consumed, stale or expired/);
+  await assert.rejects(ctx.actions.propose(ctx.mid, ctx.author, WRITE(ctx, w, 'Same effect again')), /lacks independent code approval/);
+});
+
+test('ACT-01: an owner risk override stales unconsumed actions but not one already executing, and rejected actions stay rejected', async t => {
+  const ctx = await fixture(t, { review: { requiredTests: [UNIT] }, tools: ['stage_write'] });
+  await toAdjudication(ctx); await ran(ctx, UNIT.id);
+  assert.equal((await judge(ctx)).status, 'code_approved');
+  const approved = await approvedAction(ctx, 'Approved but unconsumed write');
+  const running = await executingAction(ctx, 'In-flight write');
+  const w = await get(ctx), rejected = await ctx.actions.propose(ctx.mid, ctx.author, WRITE(ctx, w, 'Rejected write'));
+  await ctx.actions.decide(ctx.mid, rejected.id, { actionHash: rejected.hash, approved: false, rationale: 'No.' }, owner);
+  await ctx.broker.overrideRisk(ctx.mid, ctx.author, { ...HIGH, impact: 'critical' }, { rationale: 'Owner reclassifies the work as critical', ttlMs: 600000 }, owner);
+  const m = await mission(ctx);
+  assert.equal(m.workflows[ctx.wid].status, 'held');
+  assert.equal(m.actions[approved.id].status, 'stale'); assert.equal(m.actions[running.id].status, 'executing'); assert.equal(m.actions[rejected.id].status, 'rejected');
+  assert.equal((await ctx.actions.complete(ctx.mid, running.id, { ok: true })).status, 'executed');
+});
+
+// ---- REQ-02 / TEST-01: the retry bound is real, its hold is described truthfully and the owner has a way out ----
+async function exhausted(t, { plan, review = { requiredTests: [UNIT] } } = {}) {
+  const ctx = await fixture(t, { review, mission: { maxRetries: 0 }, ...(plan && { plan }) });
+  await toAdjudication(ctx);
+  assert.equal((await judge(ctx)).status, 'held');
+  await ran(ctx, UNIT.id);
+  return ctx;
+}
+
+test('REQ-02: with the retry budget exhausted the hold says the manifest is satisfied and names the owner remedy, never "missing"', async t => {
+  const ctx = await exhausted(t);
+  let w = await get(ctx);
+  assert.equal(w.status, 'held'); assert.equal(w.requiredTests.state, 'satisfied'); assert.equal(w.requiredTests.accepted, true);
+  assert.match(w.reason, /satisfied but fresh adjudication cannot run/);
+  assert.match(w.reason, /retry limit is reached \(mission 0 of 0 retries used/);
+  assert.match(w.reason, /Owner remedy: restart the workflow/);
+  assert.doesNotMatch(w.reason, /missing|failing/, 'the stale "missing [unit]" diagnostic is gone');
+  // The hold keeps following the evidence: a later failure is reported as a test problem again, not as a budget problem.
+  await ran(ctx, UNIT.id, false);
+  w = await get(ctx);
+  assert.equal(w.status, 'held'); assert.match(w.reason, /Required independent test evidence is missing or failing: contradictory \[unit:path-scope\]/);
+});
+
+test('TEST-01: the retry bound itself decides whether late evidence can trigger another fresh adjudication', async t => {
+  // The same story under two budgets: late pass -> approved -> later failure -> explicit superseding pass. Only the bound differs.
+  for (const [maxRetries, finalStatus, used] of [[1, 'held', 1], [2, 'adjudication', 2]]) {
+    const ctx = await fixture(t, { review: { requiredTests: [UNIT] }, mission: { maxRetries } });
+    await toAdjudication(ctx);
+    assert.equal((await judge(ctx)).status, 'held');
+    await ran(ctx, UNIT.id);                                           // first re-adjudication draws on the budget
+    assert.equal((await get(ctx)).status, 'adjudication'); assert.equal((await mission(ctx)).retryCount, 1);
+    assert.equal((await judge(ctx)).status, 'code_approved');
+    const failure = await ran(ctx, UNIT.id, false);                    // approval is revoked: contradiction
+    assert.equal((await get(ctx)).status, 'held');
+    await ran(ctx, UNIT.id, true, { supersedes: [failure.id], reason: 'Flaky runner; failure re-run and explained' });
+    const w = await get(ctx);
+    assert.equal(w.requiredTests.state, 'satisfied');
+    assert.equal(w.status, finalStatus, `maxRetries ${maxRetries}`);
+    assert.equal((await mission(ctx)).retryCount, used);
+    if (finalStatus === 'held') assert.match(w.reason, /retry limit is reached \(mission 1 of 1/);
+    else assert.equal(w.judgementGeneration, 2);
+  }
+});
+
+test('REQ-02: the local owner can restart a held workflow; the successor is an independent fresh review and the old one is closed', async t => {
+  const ctx = await exhausted(t, { plan: { entries: [REGRESSION] } });
+  const before = await get(ctx);
+  assert.equal(before.status, 'held');
+  const dead = before.id, hash = before.source.hash;
+  await assert.rejects(ctx.reviews.restart(ctx.mid, dead, { reason: 'x' }, runner), /trusted local owner/);
+  await assert.rejects(ctx.reviews.restart(ctx.mid, dead, { reason: 'x' }, { trusted: true, source: 'native-host', authority: 'trusted-orchestrator' }), /trusted local owner/);
+  await assert.rejects(ctx.reviews.restart(ctx.mid, dead, {}, owner), /needs a reason/);
+  await assert.rejects(ctx.reviews.restart(ctx.mid, 'unknown', { reason: 'x' }, owner), /Unknown workflow/);
+  assert.equal((await get(ctx)).status, 'held', 'refused restarts change nothing');
+  const fresh = await ctx.reviews.restart(ctx.mid, dead, { reason: 'Retry budget spent; owner accepts a new review' }, owner);
+  const m = await mission(ctx), old = m.workflows[dead];
+  assert.equal(old.status, 'superseded'); assert.equal(old.supersededBy, fresh.id); assert.equal(old.approval, null);
+  assert.match(old.reason, /Restarted by the local owner: Retry budget spent/);
+  assert.notEqual(fresh.id, dead); assert.equal(fresh.restartOf, dead); assert.equal(fresh.source.hash, hash);
+  assert.equal(fresh.status, 'review'); assert.deepEqual(fresh.tests, []); assert.equal(fresh.judgementGeneration ?? 0, 0);
+  assert.deepEqual(fresh.requiredTests.tests.map(x => x.id), [REGRESSION.id, UNIT.id], 'owner policy and owner-registered plan entries carry over; no evidence does');
+  assert.ok(fresh.authors.includes(ctx.author));
+  assert.equal(m.retryCount, 0, 'a restart is an owner decision, not a draw on the exhausted retry budget');
+  // The closed workflow accepts nothing further and a restart cannot be repeated on it.
+  await assert.rejects(ctx.reviews.recordTest(ctx.mid, dead, { name: UNIT.id, testId: UNIT.id, passed: true, details: 'late', sourceHash: hash, planHash: old.requiredTests.planHash }, runner), /superseded/);
+  await assert.rejects(ctx.reviews.restart(ctx.mid, dead, { reason: 'again' }, owner), /superseded/);
+  await assert.rejects(ctx.reviews.addRequiredTests(ctx.mid, dead, [MANUAL], owner), /superseded/);
+  await assert.rejects(ctx.reviews.invalidate(ctx.mid, dead, source('changed')), /superseded/);
+  // The successor runs the normal path to approval under its own plan hash.
+  ctx.wid = fresh.id;
+  await ran(ctx, UNIT.id); await ran(ctx, REGRESSION.id);
+  await toAdjudication(ctx);
+  const approved = await judge(ctx);
+  assert.equal(approved.status, 'code_approved'); assert.equal(approved.approval.sourceHash, hash);
+  assert.notEqual(approved.requiredTests.planHash, old.requiredTests.planHash);
+});
+
+test('REQ-02: restart only applies to a held workflow, and cancels unfinished review work for the superseded one', async t => {
+  const ctx = await fixture(t, { review: { requiredTests: [UNIT] } });
+  await assert.rejects(ctx.reviews.restart(ctx.mid, ctx.wid, { reason: 'not stuck' }, owner), /Only a held workflow/);
+  const assigned = await ctx.reviews.assign(ctx.mid, ctx.wid);
+  // an unfinished reviewer exists when the source is replaced outside rework and the workflow is held
+  await ctx.reviews.invalidate(ctx.mid, ctx.wid, source('function plan(p) { return [p, p]; }\n'));
+  assert.equal((await get(ctx)).status, 'held');
+  const fresh = await ctx.reviews.restart(ctx.mid, ctx.wid, { reason: 'Review the changed source afresh', testPlan: { entries: [REGRESSION] } }, owner);
+  const m = await mission(ctx);
+  assert.equal(m.workflows[ctx.wid].status, 'superseded');
+  assert.equal(m.nodes[assigned[0].nodeId].status, 'cancelled'); assert.equal(m.requests[assigned[0].requestId].status, 'cancelled');
+  assert.equal(fresh.source.content, 'function plan(p) { return [p, p]; }\n', 'the successor reviews the current source');
+  assert.deepEqual(fresh.requiredTests.tests.map(x => x.id), [REGRESSION.id, UNIT.id]);
 });
