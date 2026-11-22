@@ -14,7 +14,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { applyReconciliation, normalizeProposal, reconciliationStatus, renderStatus, parseUsd, proposalId, confirmationPhrase, ReconcileRefusal } from '../bridge/usage-reconcile.mjs';
+import { applyReconciliation, assertAsOfCoversUnknownPeriod, normalizeProposal, previewLocalSpendAfterAsOf, formatUsd, reconciliationStatus, renderStatus, parseUsd, proposalId, confirmationPhrase, ReconcileRefusal } from '../bridge/usage-reconcile.mjs';
 import { utcDay } from '../bridge/usage.mjs';
 
 export const HELP = `Local usage ledger reconciliation (owner terminal only)
@@ -62,6 +62,14 @@ export async function main(argv = process.argv.slice(2), { env = process.env, io
   const proposal = normalizeProposal({ entries: parsed.entries, source: parsed.source, asOf: parsed.asOf ?? utcDay(now) }, now);
   const status = await reconciliationStatus(options);
   print(renderStatus(status));
+  if (status.scope.migration) assertAsOfCoversUnknownPeriod(status, proposal.asOf);
+  const today = utcDay(now);
+  if (proposal.asOf < today) {
+    const after = await previewLocalSpendAfterAsOf(proposal.entries, proposal.asOf, options);
+    print(`\nNOTE: the figure is dated ${proposal.asOf}, before today (${today} UTC). Spend after that date is NOT in the figure; the ledger adds the local spend it recorded after ${proposal.asOf}:\n` +
+      proposal.entries.map(e => `  ${e.month}: local spend recorded after ${proposal.asOf}: ${formatUsd(after[e.month])}`).join('\n') +
+      '\nSpend the ledger could not see (anything not made through this plugin) is not added. Prefer a fresh reading dated today.');
+  }
   const id = proposalId(status.digest, proposal.entries, proposal.source, proposal.asOf);
   print(`\nProposed owner attestation (as of ${proposal.asOf}, source: ${proposal.source}):\n` +
     proposal.entries.map(e => `  ${e.month}: authoritative month-to-date $${e.authoritativeUsd}`).join('\n') +

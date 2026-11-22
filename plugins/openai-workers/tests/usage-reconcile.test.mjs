@@ -149,7 +149,7 @@ test('owner reconciliation admits the migration month, records audit evidence an
   assert.equal(audit.decision, 'reconciled'); assert.equal(audit.source, 'OpenAI billing dashboard'); assert.equal(audit.asOf, '2026-11-21');
   assert.deepEqual(audit.scope, { months: ['2026-11'], keys: 'free+standard' });
   assert.equal(audit.at, '2026-11-21T01:00:00.000Z'); assert.equal(audit.attestedBy, 'local-owner-terminal');
-  assert.deepEqual(audit.entries, [{ month: '2026-11', suppliedAuthoritativeUsd: 49.5, appliedBaselineUsd: 49.5, raisedToLocalFloor: false,
+  assert.deepEqual(audit.entries, [{ month: '2026-11', suppliedAuthoritativeUsd: 49.5, localAfterAsOfUsd: 0, appliedBaselineUsd: 49.5, raisedToLocalFloor: false,
     localFreeUsd: 0.03, localStandardUsd: 0, localTotalUsd: 0.03, priorBaselineUsd: null }]);
   assert.ok(existsSync(join(f.dir, audit.preReconcileEvidence)), 'pre-reconcile ledger copy kept');
   assert.equal(doc.months['2026-11'].free.estimatedUsd, 0.03, 'real local usage is untouched');
@@ -550,4 +550,55 @@ test('a corrupt, empty or non-contiguous migration scope is refused instead of s
   }
   const doc = { migration: { historicalTotalsMayBeIncomplete: true, affectedMonths: [] }, baselines: {}, months: {} };
   assert.notEqual(unreconciledMonth(doc, '2026-11'), null, 'the guard itself fails closed on a malformed scope');
+});
+
+// ---- F7: --as-of is validated and actually used ----
+
+const at = day => `${day}T10:00:00Z`;
+async function settleOn(f, day, usd, id) {
+  const ticket = await reserveRequest({ ...paid, requestId: `req-${id}` }, plain(f, at(day)));
+  await accountResponse(ticket, { id: `resp_settle_${id}`, status: 'completed', usage: { input: 10, output: 10, total: 20 }, estimatedUsd: usd }, plain(f, at(day)));
+}
+
+test('as-of must be a recent date that does not predate the unknown period it is meant to cover', async t => {
+  const f = fixture(t);
+  writeV1(f.env, { '2026-11-02': 0.02 });
+  await upgradeAt(f, '2026-11-10T01:00:00Z'); // the unknown period ends on 2026-11-10
+  const entries = [{ month: '2026-11', authoritativeUsd: 5 }];
+  // More than three UTC days old: a fresh dashboard reading is required.
+  await assert.rejects(ownerRequest(f, '2026-11-20T10:00:00Z', entries, { asOf: '2026-11-16' }), refused('stale-as-of'));
+  assert.ok(await ownerRequest(f, '2026-11-20T10:00:00Z', entries, { asOf: '2026-11-17' }), 'exactly three days old is still accepted');
+  // Recent enough, but dated before the upgrade day: spend between the reading and the upgrade is untracked.
+  const early = await ownerRequest(f, '2026-11-12T10:00:00Z', entries, { asOf: '2026-11-09' });
+  await assert.rejects(apply(f, '2026-11-12T10:00:00Z', early), refused('stale-as-of'));
+  await assert.rejects(cli(f, '2026-11-12T10:00:00Z', ['reconcile', '--month', '2026-11', '--usd', '5', '--source', 'billing dashboard', '--as-of', '2026-11-09']), refused('stale-as-of'));
+  assert.equal(ledger(f).reconciliations.length, 0);
+  const ok = await ownerRequest(f, '2026-11-12T10:00:00Z', entries, { asOf: '2026-11-10' });
+  assert.equal((await apply(f, '2026-11-12T10:00:00Z', ok)).applied, true, 'dated on the upgrade day is acceptable');
+});
+
+test('a dashboard figure dated before today also gets the locally tracked spend recorded after that date', async t => {
+  const f = fixture(t);
+  writeV1(f.env, { '2026-11-02': 0.02 });
+  await upgradeAt(f, '2026-11-19T01:00:00Z');
+  await settleOn(f, '2026-11-19', 1, 'a');   // the as-of day itself is assumed to be inside the figure
+  await settleOn(f, '2026-11-20', 3, 'b');   // after the as-of date: not in the figure
+  await settleOn(f, '2026-11-21', 2, 'c');
+  const now = '2026-11-21T12:00:00Z';
+  const out = await cli(f, now, ['reconcile', '--month', '2026-11', '--usd', '10', '--source', 'billing dashboard', '--as-of', '2026-11-19']);
+  assert.equal(out.recorded, true);
+  assert.match(out.text, /dated 2026-11-19, before today \(2026-11-21 UTC\)/);
+  assert.match(out.text, /local spend recorded after 2026-11-19: \$5\.00/);
+  const entry = ledger(f).reconciliations[0].entries[0];
+  assert.equal(entry.localAfterAsOfUsd, 5);
+  assert.equal(entry.appliedBaselineUsd, 15, 'figure + spend the dashboard could not have shown');
+  assert.equal((await usageSnapshot(plain(f, now))).monthlyCommittedUsd, 15);
+  // A figure read today adds nothing: the behaviour for the normal, current case is unchanged.
+  const g = fixture(t);
+  writeV1(g.env, { '2026-11-02': 0.02 }); await upgradeAt(g, '2026-11-19T01:00:00Z');
+  await settleOn(g, '2026-11-20', 3, 'd');
+  const fresh = await cli(g, now, ['reconcile', '--month', '2026-11', '--usd', '10', '--source', 'billing dashboard']);
+  assert.equal(fresh.recorded, true);
+  assert.equal(ledger(g).reconciliations[0].entries[0].appliedBaselineUsd, 10);
+  assert.doesNotMatch(fresh.text, /before today/);
 });

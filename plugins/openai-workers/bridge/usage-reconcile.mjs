@@ -21,6 +21,8 @@ const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_USD = 10_000_000;
 const MAX_ENTRIES = 60;
+/** A dashboard reading older than this many UTC days must be repeated, not attested. */
+export const MAX_AS_OF_AGE_DAYS = 3;
 export class ReconcileRefusal extends Error {
   constructor(message, code) { super(message); this.name = 'ReconcileRefusal'; this.code = code; }
 }
@@ -55,8 +57,28 @@ function normalizeSource(source) {
 }
 function normalizeAsOf(asOf, now) {
   if (typeof asOf !== 'string' || !DAY_KEY.test(asOf) || Number.isNaN(Date.parse(`${asOf}T00:00:00Z`)) || new Date(`${asOf}T00:00:00Z`).toISOString().slice(0, 10) !== asOf) refuse('bad-date', 'as-of must be a real UTC date YYYY-MM-DD.');
-  if (asOf > utcDay(now)) refuse('bad-date', 'as-of cannot be in the future.');
+  const today = utcDay(now);
+  if (asOf > today) refuse('bad-date', 'as-of cannot be in the future.');
+  const age = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${asOf}T00:00:00Z`)) / 86_400_000;
+  if (age > MAX_AS_OF_AGE_DAYS) refuse('stale-as-of', `as-of ${asOf} is ${age} days old (limit ${MAX_AS_OF_AGE_DAYS}). Read a fresh figure from the billing dashboard and use today's date: spend after the as-of date is not in a stale figure.`);
   return asOf;
+}
+/** The figure must have been read no earlier than the day the unknown period ended: spend between the
+ * reading and that day was never tracked locally, so an older reading would silently omit it. */
+export function assertAsOfCoversUnknownPeriod(status, asOf) {
+  const end = status.scope.migration?.unknownPeriod?.end;
+  if (typeof end === 'string' && asOf < end.slice(0, 10)) refuse('stale-as-of', `as-of ${asOf} is before the unknown period ended (${end.slice(0, 10)}); spend between your reading and then was never tracked locally. Read a fresh figure and use today's date.`);
+}
+/** Locally tracked spend (both keys) on UTC days strictly after `asOf` within a month: it happened after the
+ * figure was read, so the figure cannot contain it. The as-of day itself is taken to be inside the figure. */
+function localSpendAfter(doc, month, asOf) {
+  let usd = 0;
+  for (const [day, entry] of Object.entries(doc.days)) if (day > asOf && day.startsWith(`${month}-`)) usd += entry.totalEstimatedUsd;
+  return Number(usd.toFixed(7));
+}
+/** Read-only preview for the CLI prompt: what applyReconciliation will add for a dated figure. */
+export async function previewLocalSpendAfterAsOf(entries, asOf, options = {}) {
+  return ledgerTransaction(doc => ({ dirty: false, value: Object.fromEntries(entries.map(e => [e.month, localSpendAfter(doc, e.month, asOf)])) }), options);
 }
 
 function monthView(doc, month) {
@@ -103,7 +125,7 @@ export function normalizeProposal({ entries, source, asOf }, now = new Date()) {
 export const proposalId = (statusDigest, entries, source, asOf) => sha256Hex(canonicalJson({ statusDigest, entries, source, asOf }));
 export const confirmationPhrase = id => `RECONCILE ${id.slice(0, 16)}`;
 
-const usd = n => `$${n.toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00')}`;
+export const formatUsd = n => `$${n.toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00')}`;
 export function renderStatus(status) {
   const { scope, live } = status, m = scope.migration, lines = [];
   lines.push('Local usage ledger reconciliation status', `Status digest: ${status.digest}`);
@@ -115,9 +137,9 @@ export function renderStatus(status) {
     `v1 pending requests at migration: ${m.v1Pending ?? 'unknown'}`, '', 'Affected months:');
   for (const [month, v] of Object.entries(scope.months)) {
     const v1 = m.v1FreeTotals?.[month];
-    lines.push(`  ${month}  ${v.reconciled ? 'RECONCILED' : 'UNRECONCILED'}  local total ${usd(v.localTotalUsd)} (free ${usd(v.localFreeUsd)}, standard ${usd(v.localStandardUsd)})` +
-      `${v1 ? `; v1 free total ${usd(v1.estimatedUsd)} over ${v1.requests} requests` : ''}` +
-      `${v.reconciled ? `; baseline ${usd(v.baselineUsd)} at local ${usd(v.localAtReconciliationUsd)}; guard assumes ${usd(v.committedUsd)}` : ''}` +
+    lines.push(`  ${month}  ${v.reconciled ? 'RECONCILED' : 'UNRECONCILED'}  local total ${formatUsd(v.localTotalUsd)} (free ${formatUsd(v.localFreeUsd)}, standard ${formatUsd(v.localStandardUsd)})` +
+      `${v1 ? `; v1 free total ${formatUsd(v1.estimatedUsd)} over ${v1.requests} requests` : ''}` +
+      `${v.reconciled ? `; baseline ${formatUsd(v.baselineUsd)} at local ${formatUsd(v.localAtReconciliationUsd)}; guard assumes ${formatUsd(v.committedUsd)}` : ''}` +
       `${v.unknownPriceRequests ? `; ${v.unknownPriceRequests} unknown-price requests (still block the cap)` : ''}`);
   }
   lines.push('', `Current UTC month: ${live.currentUtcMonth}. Monthly cap currently blocked by unreconciled history: ${live.blockingNow ? 'YES' : 'no'}.`,
@@ -146,11 +168,14 @@ export async function applyReconciliation(request, options = {}) {
     const affected = status.scope.migration?.affectedMonths;
     if (!affected) refuse('nothing-to-reconcile', 'No unknown historical usage is recorded for this ledger.');
     for (const e of entries) if (!affected.includes(e.month)) refuse('bad-month', `Month ${e.month} is not in the unknown scope (${affected.join(', ')}).`);
+    assertAsOfCoversUnknownPeriod(status, asOf);
     const applied = entries.map(e => {
       const view = status.scope.months[e.month], prior = doc.baselines[e.month] ?? null;
-      // Never below what the guard already assumes, so a lower figure cannot reduce committed spend.
-      const baselineUsd = Math.max(e.authoritativeUsd, view.committedUsd);
-      return { month: e.month, suppliedAuthoritativeUsd: e.authoritativeUsd, appliedBaselineUsd: baselineUsd, raisedToLocalFloor: baselineUsd > e.authoritativeUsd,
+      // The figure plus locally tracked spend after its as-of date, and never below what the guard already
+      // assumes, so a lower or stale figure cannot reduce committed spend.
+      const localAfterAsOfUsd = localSpendAfter(doc, e.month, asOf), dated = Number((e.authoritativeUsd + localAfterAsOfUsd).toFixed(7));
+      const baselineUsd = Math.max(dated, view.committedUsd);
+      return { month: e.month, suppliedAuthoritativeUsd: e.authoritativeUsd, localAfterAsOfUsd, appliedBaselineUsd: baselineUsd, raisedToLocalFloor: baselineUsd > dated,
         localFreeUsd: view.localFreeUsd, localStandardUsd: view.localStandardUsd, localTotalUsd: view.localTotalUsd,
         priorBaselineUsd: prior?.baselineUsd ?? null };
     });
