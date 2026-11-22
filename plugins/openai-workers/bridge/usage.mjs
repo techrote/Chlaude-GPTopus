@@ -48,6 +48,8 @@ function optionalDollars(raw) {
   if (!Number.isFinite(n) || n < 0) throw new Error('Invalid local monthly spending limit.');
   return n;
 }
+/** The enforceable monthly limit alone (null = not configured); reads nothing else, in particular not the allowance. */
+export const monthlyLimitFromEnv = env => optionalDollars(env.OPENAI_WORKER_MONTHLY_LIMIT_USD);
 export function settings(env = process.env) {
   const allowance = Number(env.OPENAI_WORKER_MONTHLY_ALLOWANCE_USD);
   return {
@@ -501,7 +503,7 @@ export async function usageSnapshot(options = {}) {
       pendingResponseIds: [...new Set(outstanding.filter(p => p.profile === 'free' && p.responseId).map(p => p.responseId))].slice(0, 50),
       pendingResponses: outstanding.filter(p => p.responseId).map(p => ({ id: p.responseId, profile: p.profile, workerType: p.workerType, status: p.status })).slice(0, 100),
       unresolvedRequests: outstanding.filter(p => ['usage_unknown', 'ambiguous'].includes(p.status)).map(p => ({ requestId: p.requestId, responseId: p.responseId, day: p.day, profile: p.profile, status: p.status })),
-      reminder: 'Local estimates for participating clients only, never authoritative OpenAI billing. Free daily groups exclude standard-key usage. The monthly allowance reference is informational; only the separately configured monthly limit enforces admission. Reconciling unknown pre-upgrade history is an owner-only local terminal action that no worker tool can perform.',
+      reminder: 'Local estimates for participating clients only, never authoritative OpenAI billing. Free daily groups exclude standard-key usage. The monthly allowance reference is informational; only the separately configured monthly limit enforces admission. Unknown pre-upgrade history is reconciled only by the local interactive owner script; no worker or MCP tool exposes it (a terminal session is checked, not authenticated).',
     } };
   }, options);
 }

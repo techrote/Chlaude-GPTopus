@@ -130,7 +130,13 @@ test('status shows the unknown period, standard-key blind spot, totals and evide
   assert.match(out.text, /2026-11\s+UNRECONCILED/);
   assert.match(out.text, new RegExp(`sha256 ${sha256(raw)}`));
   assert.match(out.text, /v1 pending requests at migration: 1/);
-  assert.match(out.text, /Monthly cap currently blocked by unreconciled history: YES/);
+  // No limit is configured here, so the status must not claim anything is being blocked (it used to say YES regardless).
+  assert.match(out.text, /Monthly spend limit: NOT set in this terminal/);
+  assert.doesNotMatch(out.text, /blocked by unreconciled history: YES/);
+  assert.ok(out.text.includes(`Ledger file: ${usagePath(f.env)}`), 'status names the ledger it resolved');
+  const capped = await cli({ ...f, env: { ...f.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50' } }, NOV, ['status']);
+  assert.match(capped.text, /Monthly spend limit: \$50\.00 .*blocked by unreconciled history: YES/);
+  assert.equal(capped.status.digest, out.status.digest, 'display-only context never changes the digest');
   assert.match(out.text, /Status digest: [0-9a-f]{64}/);
   assert.ok(existsSync(join(f.dir, ledger(f).migration.evidence.file)), 'status persists the evidence copy');
   assert.deepEqual(ledger(f).migration.affectedMonths, ['2026-10', '2026-11']);
@@ -148,7 +154,7 @@ test('owner reconciliation admits the migration month, records audit evidence an
   const audit = doc.reconciliations[0];
   assert.equal(audit.decision, 'reconciled'); assert.equal(audit.source, 'OpenAI billing dashboard'); assert.equal(audit.asOf, '2026-11-21');
   assert.deepEqual(audit.scope, { months: ['2026-11'], keys: 'free+standard' });
-  assert.equal(audit.at, '2026-11-21T01:00:00.000Z'); assert.equal(audit.attestedBy, 'local-owner-terminal');
+  assert.equal(audit.at, '2026-11-21T01:00:00.000Z'); assert.equal(audit.attestedBy, 'tty-session-unverified', 'the audit record claims a TTY session, not a verified owner');
   assert.deepEqual(audit.entries, [{ month: '2026-11', suppliedAuthoritativeUsd: 49.5, localAfterAsOfUsd: 0, appliedBaselineUsd: 49.5, raisedToLocalFloor: false,
     localFreeUsd: 0.03, localStandardUsd: 0, localTotalUsd: 0.03, priorBaselineUsd: null }]);
   assert.ok(existsSync(join(f.dir, audit.preReconcileEvidence)), 'pre-reconcile ledger copy kept');
@@ -315,7 +321,8 @@ test('MCP bridge, Desktop facade and Desktop bundle expose no reconciliation pat
   for (const file of readdirSync(join(root, 'bridge')).filter(n => n.endsWith('.mjs') && n !== 'usage-reconcile.mjs')) {
     assert.equal(/usage-reconcile|applyReconciliation|persistMigration|ledgerTransaction/.test(readFileSync(join(root, 'bridge', file), 'utf8')) && file !== 'usage.mjs', false, file);
   }
-  for (const dir of ['hooks']) for (const file of readdirSync(join(root, dir))) assert.equal(/reconcil/i.test(readFileSync(join(root, dir, file), 'utf8')), false, file);
+  // Hooks may DESCRIBE the owner action in status text (/openai-workers tells the owner what is blocked), but must never reference the module, its functions or the script file.
+  for (const dir of ['hooks']) for (const file of readdirSync(join(root, dir))) assert.equal(/usage-reconcile|applyReconciliation|reconciliationStatus|persistMigration|reconcile-usage.(mjs|ps1)/.test(readFileSync(join(root, dir, file), 'utf8')), false, file);
   assert.equal(/usage-reconcile/.test(readFileSync(join(root, '..', '..', 'scripts', 'build-desktop.mjs'), 'utf8')), false);
   assert.equal(/reconcil/i.test(readFileSync(join(root, '..', '..', 'desktop-extension', 'manifest.json'), 'utf8')), false);
   assert.equal(/\$env:/i.test(readFileSync(join(root, 'scripts', 'reconcile-usage.ps1'), 'utf8')), false, 'wrapper never takes amounts or consent from the environment');
@@ -460,11 +467,16 @@ test('the $88 credit reference stays informational and is never read by limit or
   const status = await reconciliationStatus(o);
   const request = { statusDigest: status.digest, entries: [{ month: '2026-11', authoritativeUsd: 7 }], source: 'billing dashboard', asOf: '2026-11-21' };
   request.confirmation = confirmationPhrase(proposalId(status.digest, request.entries, request.source, request.asOf));
+  // The read-only status display now shows whether a limit is configured (display only); the digest and the
+  // recorded figures must still never depend on the allowance or the limit.
+  touched.clear();
   await applyReconciliation(request, { ...o, io: tty() });
+  assert.equal(touched.has('OPENAI_WORKER_MONTHLY_ALLOWANCE_USD'), false, 'applying a reconciliation never consults the allowance');
+  assert.equal(touched.has('OPENAI_WORKER_MONTHLY_LIMIT_USD'), false, 'nor the enforceable limit: figures come only from the owner gesture');
+  touched.clear();
   const out = await cli({ env }, NOV, ['status']);
   assert.match(out.text, /RECONCILED/);
-  assert.equal(touched.has('OPENAI_WORKER_MONTHLY_ALLOWANCE_USD'), false, 'reconciliation never consults the allowance');
-  assert.equal(touched.has('OPENAI_WORKER_MONTHLY_LIMIT_USD'), false, 'nor the enforceable limit: figures come only from the owner gesture');
+  assert.equal(touched.has('OPENAI_WORKER_MONTHLY_ALLOWANCE_USD'), false, 'status never consults the allowance');
   // Admission: the allowance value changes nothing; only the separate limit enforces.
   for (const allowance of ['1', '88', '1000000']) {
     const env2 = { ...f.env, OPENAI_WORKER_MONTHLY_ALLOWANCE_USD: allowance };

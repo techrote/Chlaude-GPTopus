@@ -2,10 +2,19 @@
  * Owner-authorised reconciliation of the local usage ledger's unknown history.
  *
  * A v1 -> v2 ledger upgrade cannot know what the standard key spent (v1 never
- * tracked it) or what pruned free-key days cost. Rather than trusting a model,
- * an environment variable or a stale number, the owner supplies authoritative
+ * tracked it) or what pruned free-key days cost. Rather than trusting an
+ * environment variable or a stale number, the owner supplies authoritative
  * month-to-date USD (for example from the OpenAI billing dashboard) at an
  * interactive terminal, bound to a digest of the exact status the owner saw.
+ *
+ * What the consent gate is: a TTY check (stdin and stdout must report isTTY) plus a typed
+ * phrase derived from the exact proposal. It stops piped, redirected, scripted and
+ * accidental invocations and any MCP/Desktop/hook path. It is NOT authentication: a process
+ * of the same user that can allocate a pseudo-terminal (winpty, script, python pty, ssh -tt, a
+ * terminal tool) can read the printed phrase and type it back, and `options.io` below is a
+ * test/embedding seam that accepts any object reporting isTTY. The ledger is plain unauthenticated
+ * JSON, so such a process could equally edit it directly; this gate is a guard against
+ * accidents and non-interactive automation, not a security boundary.
  *
  * This module is deliberately NOT part of the Desktop bundle and is imported
  * by no MCP tool: only scripts/reconcile-usage.mjs reaches it. Reconciliation
@@ -14,7 +23,7 @@
  * counter, or removes a pending/ambiguous reservation.
  */
 import { readFileSync } from 'node:fs';
-import { ledgerTransaction, migrationSummary, committedMonthlyUsd, unreconciledMonth, preserveEvidence,
+import { ledgerTransaction, monthlyLimitFromEnv, migrationSummary, committedMonthlyUsd, unreconciledMonth, preserveEvidence,
   sha256Hex, canonicalJson, utcDay, utcMonth } from './usage.mjs';
 
 const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -100,7 +109,7 @@ function auditChainIntact(list) {
   return true;
 }
 /** The digest covers everything the owner is shown that bears on the decision, and nothing time-dependent. */
-export function buildStatus(doc, now = new Date()) {
+export function buildStatus(doc, now = new Date(), context = {}) {
   const summary = migrationSummary(doc, utcMonth(now));
   const { blockingMonth: _timeDependent, ...stable } = summary ?? {};
   const migration = summary ? stable : null, months = {};
@@ -110,13 +119,16 @@ export function buildStatus(doc, now = new Date()) {
   const outstanding = Object.values(doc.pending);
   return { digest: sha256Hex(canonicalJson(scope)), scope,
     live: { currentUtcMonth: utcMonth(now), blockingNow: unreconciledMonth(doc, utcMonth(now)) !== null,
+      // Display-only (never in the digest): which ledger this terminal resolved and whether a cap is configured here.
+      ledgerPath: context.path ?? null, monthlyLimitUsd: context.monthlyLimitUsd ?? null,
       auditChainIntact: auditChainIntact(doc.reconciliations),
       outstandingReservations: outstanding.length, unknownPriceReservations: outstanding.filter(p => p.reservedUsd === null).length,
       unresolvedRequests: outstanding.filter(p => ['usage_unknown', 'ambiguous'].includes(p.status)).length } };
 }
 /** Read-only for the ledger contents; persists the v1 upgrade (and its evidence copy) so the digest is stable. */
 export async function reconciliationStatus(options = {}) {
-  return ledgerTransaction(doc => ({ dirty: false, value: buildStatus(doc, options.now ?? new Date()) }), { ...options, persistMigration: true });
+  const monthlyLimitUsd = monthlyLimitFromEnv(options.env ?? process.env);
+  return ledgerTransaction((doc, meta) => ({ dirty: false, value: buildStatus(doc, options.now ?? new Date(), { path: meta?.path, monthlyLimitUsd }) }), { ...options, persistMigration: true });
 }
 /** Validate and canonicalise the owner-supplied figures (used by the CLI before it prompts, and again under the lock). */
 export function normalizeProposal({ entries, source, asOf }, now = new Date()) {
@@ -128,7 +140,8 @@ export const confirmationPhrase = id => `RECONCILE ${id.slice(0, 16)}`;
 export const formatUsd = n => `$${n.toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00')}`;
 export function renderStatus(status) {
   const { scope, live } = status, m = scope.migration, lines = [];
-  lines.push('Local usage ledger reconciliation status', `Status digest: ${status.digest}`);
+  lines.push('Local usage ledger reconciliation status', `Status digest: ${status.digest}`,
+    `Ledger file: ${live.ledgerPath ?? 'unknown'} (resolved from OPENAI_WORKER_USAGE_DIR or the per-user default in THIS terminal; the bridge must use the same one)`);
   if (!m) { lines.push('No v1 ledger migration is recorded: nothing to reconcile.'); return lines.join('\n'); }
   lines.push(`Migrated from ledger v${m.from} at: ${m.migratedAt ?? 'UNKNOWN (record predates evidence preservation)'}`,
     `Unknown period: ${m.unknownPeriod.start ?? 'UNKNOWN start'}  ->  ${m.unknownPeriod.end}${m.legacyRecord ? ' (first observation, not the true migration time)' : ''}`,
@@ -142,7 +155,10 @@ export function renderStatus(status) {
       `${v.reconciled ? `; baseline ${formatUsd(v.baselineUsd)} at local ${formatUsd(v.localAtReconciliationUsd)}; guard assumes ${formatUsd(v.committedUsd)}` : ''}` +
       `${v.unknownPriceRequests ? `; ${v.unknownPriceRequests} unknown-price requests (still block the cap)` : ''}`);
   }
-  lines.push('', `Current UTC month: ${live.currentUtcMonth}. Monthly cap currently blocked by unreconciled history: ${live.blockingNow ? 'YES' : 'no'}.`,
+  const capLine = live.monthlyLimitUsd == null
+    ? `Monthly spend limit: NOT set in this terminal (OPENAI_WORKER_MONTHLY_LIMIT_USD); without it nothing is blocked on cost. Unreconciled history would ${live.blockingNow ? 'block the current month' : 'not affect the current month'} if a limit were set.`
+    : `Monthly spend limit: ${formatUsd(live.monthlyLimitUsd)} (local estimate, both keys). Requests in the current month are blocked by unreconciled history: ${live.blockingNow ? 'YES' : 'no'}.`;
+  lines.push('', `Current UTC month: ${live.currentUtcMonth}.`, capLine,
     `Outstanding reservations: ${live.outstandingReservations} (${live.unknownPriceReservations} unknown-price, ${live.unresolvedRequests} unresolved); reconciliation never clears these.`,
     `Reconciliations recorded: ${scope.auditCount}; audit chain ${live.auditChainIntact ? 'intact' : 'BROKEN (ledger was edited)'}.`);
   return lines.join('\n');
@@ -155,7 +171,7 @@ export function renderStatus(status) {
  */
 export async function applyReconciliation(request, options = {}) {
   const now = options.now ?? new Date(), io = options.io ?? { input: process.stdin, output: process.stdout };
-  if (io?.input?.isTTY !== true || io?.output?.isTTY !== true) refuse('not-interactive', 'Reconciliation requires an interactive local terminal; no redirected, automatic or tool-driven path is accepted.');
+  if (io?.input?.isTTY !== true || io?.output?.isTTY !== true) refuse('not-interactive', 'Reconciliation requires an interactive local terminal (stdin and stdout must be a TTY); piped, redirected and non-interactive invocations are refused.');
   if (!request || typeof request !== 'object') refuse('bad-request', 'Missing reconciliation request.');
   if (typeof request.statusDigest !== 'string' || !/^[0-9a-f]{64}$/.test(request.statusDigest)) refuse('bad-digest', 'statusDigest must be the 64-hex digest of the displayed status.');
   const { entries, source, asOf } = normalizeProposal(request, now);
@@ -185,7 +201,7 @@ export async function applyReconciliation(request, options = {}) {
     options.beforeLedgerWrite?.('pre-reconcile-evidence-preserved');
     // 2. One atomic ledger replacement: baselines and the append-only audit record together.
     const prev = doc.reconciliations.at(-1)?.hash ?? null;
-    const body = { id, seq: doc.reconciliations.length + 1, at: new Date(now).toISOString(), asOf, decision: 'reconciled', attestedBy: 'local-owner-terminal',
+    const body = { id, seq: doc.reconciliations.length + 1, at: new Date(now).toISOString(), asOf, decision: 'reconciled', attestedBy: 'tty-session-unverified',
       source, scope: { months: entries.map(e => e.month), keys: 'free+standard' }, statusDigest: status.digest, entries: applied,
       preReconcileEvidence: `free-usage-ledger.pre-reconcile-${sha256Hex(raw).slice(0, 32)}.json`, prevHash: prev };
     doc.reconciliations.push({ ...body, hash: sha256Hex(canonicalJson(body)) });

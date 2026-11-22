@@ -5,9 +5,12 @@
  *   node scripts/reconcile-usage.mjs status
  *   node scripts/reconcile-usage.mjs reconcile --month 2026-11 --usd 12.34 --source "OpenAI billing dashboard" [--as-of 2026-11-21]
  *
- * `reconcile` needs a real interactive terminal and a typed confirmation bound to a
+ * `reconcile` needs stdin and stdout to be a TTY and a typed confirmation bound to a
  * digest of the exact status and figures shown. There is no --yes switch, and no
- * environment variable, file, pipe or MCP tool can supply the amounts or the consent.
+ * environment variable, file, plain pipe or MCP tool can supply the amounts or the consent.
+ * That is a guard against accidents and non-interactive automation, not authentication:
+ * a process of the same user that can allocate a pseudo-terminal can still type the
+ * phrase this script prints, and could equally edit the (unauthenticated) ledger file.
  * Nothing here reads OPENAI_WORKER_MONTHLY_ALLOWANCE_USD or any API key.
  */
 import { resolve } from 'node:path';
@@ -26,6 +29,8 @@ export const HELP = `Local usage ledger reconciliation (owner terminal only)
 AMOUNT is the authoritative month-to-date USD for BOTH worker keys (plain digits, dot decimals).
 Reconciliation never lowers local totals and never removes pending requests. It is an owner
 attestation recorded in an append-only audit list, not a bill. Run it in a local terminal.
+--as-of must be today or at most 3 UTC days ago and not before the unknown period ended; spend the
+ledger recorded after that date is added to your figure. Read a fresh figure and use today's date.
 Ledger location: OPENAI_WORKER_USAGE_DIR (default: the per-user state directory).
 `;
 
