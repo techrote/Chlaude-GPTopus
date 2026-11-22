@@ -138,7 +138,7 @@ async function mod(t, f, bridge, { sessionId = 'victim-session', model = 'opus',
   }
   const texts = new Map(); let spawns = 0;
   async function spawnWorker(worker, { parentAgentId, toolUseId, prompt = taskPrompt() } = {}) {
-    const event = { tool_use_id: toolUseId ?? `spawn_${spawns + 1}`, subagentType: `openai-workers:${worker}`, prompt, description: 'Synthetic child', parentAgentId, parentModel: model, background: false, fork: false };
+    const event = { tool_use_id: toolUseId ?? `spawn_${spawns + 1}`, subagentType: `oai:${worker}`, prompt, description: 'Synthetic child', parentAgentId, parentModel: model, background: false, fork: false };
     let started;
     const result = await run('agent.spawn', event, async rewritten => {
       const agentId = `native_agent_${++spawns}`;
@@ -177,9 +177,9 @@ test('transport: a fabricated Opus identity cannot obtain a capability, orchestr
   const f = await fixture(t), b = f.bridge(), before = await f.ledger();
   const init = await b.call('ultra_native_init', fabricated({ sessionId: 'attacker-session', model: 'opus' }));
   const common = { sessionId: 'attacker-session', capability: init.json?.capability ?? 'f'.repeat(64), primaryModel: 'opus', effectivePrimaryModel: 'opus' };
-  const admit = await b.call('ultra_native_admit', { ...common, parentModel: 'opus', toolUseId: 'forged-spawn', subagentType: 'openai-workers:astra', prompt: taskPrompt() });
+  const admit = await b.call('ultra_native_admit', { ...common, parentModel: 'opus', toolUseId: 'forged-spawn', subagentType: 'oai:astra6-2', prompt: taskPrompt() });
   const promote = await b.call('ultra_native_tool', { ...common, toolUseId: 'forged-promote', tool: `${NATIVE_PREFIX}ultra_promote`,
-    input: { nodeId: 'root', worker: 'astra', role: 'reviewer', relations: [], reviewOnly: true, uses: 1, ttlMs: 60000 } });
+    input: { nodeId: 'root', worker: 'astra6-2', role: 'reviewer', relations: [], reviewOnly: true, uses: 1, ttlMs: 60000 } });
   const diagnostics = await b.call('ultra_native_diagnostics', common);
   const root = (tool, input) => b.call('ultra_native_tool', { ...common, toolUseId: `forged-${tool}`, tool: `${NATIVE_PREFIX}ultra_${tool}`, input });
   const forged = {
@@ -232,7 +232,7 @@ test('transport: a captured request or a leaked capability alone cannot be repla
 
 test('transport: one live session cannot borrow a different session capability, bindings or signed requests on the raw channel', async t => {
   const f = await fixture(t), b = f.bridge(), a = await mod(t, f, b, { sessionId: 'session-a' }), other = await mod(t, f, b, { sessionId: 'session-b' });
-  const worker = await a.spawn('luna'); assert.ok(worker.agentId, worker.deny);
+  const worker = await a.spawn('luna6'); assert.ok(worker.agentId, worker.deny);
   assert.ok(live(await a.ultra()) && live(await other.ultra()));
   const before = await f.ledger(), captured = a.sent.filter(c => c.name === 'ultra_native_diagnostics').at(-1).args, theirs = other.sent.filter(c => c.name === 'ultra_native_diagnostics').at(-1).args;
   const { channel, ...bare } = captured;
@@ -297,7 +297,7 @@ test('transport: the Desktop public facade cannot operate on a native mission', 
   assert.ok(live(await victim.ultra()));
   const before = await f.ledger();
   for (const [name, args] of [['ultra_diagnostics', { mission_id: victim.missionId }], ['ultra_cancel', { mission_id: victim.missionId }],
-    ['ultra_recruit', { mission_id: victim.missionId, worker: 'astra', task: 'Launder native authority', risk, request_key: 'launder' }],
+    ['ultra_recruit', { mission_id: victim.missionId, worker: 'astra6-2', task: 'Launder native authority', risk, request_key: 'launder' }],
     ['ultra_start', { task: 'Take over', mission_id: victim.missionId }]]) {
     assert.equal((await desktop.call(name, args)).isError, true, `${name} reached a native mission`);
   }
@@ -428,7 +428,7 @@ async function controllerFixture(t, { config = {} } = {}) {
   const init = (host, sessionId = 'ctl-session', extra = {}) => host.signed('ultra_native_init', { sessionId, model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, ...extra });
   const recruit = async (host, opened, sessionId = 'ctl-session', toolUseId = 'ctl-spawn') => {
     const common = { sessionId, capability: opened.capability, primaryModel: 'opus', parentModel: 'opus' };
-    const admitted = await host.signed('ultra_native_admit', { ...common, toolUseId, subagentType: 'openai-workers:luna', prompt: taskPrompt() });
+    const admitted = await host.signed('ultra_native_admit', { ...common, toolUseId, subagentType: 'oai:luna6', prompt: taskPrompt() });
     await host.signed('ultra_native_bind', { ...common, toolUseId, nodeId: admitted.nodeId, hostAgentId: `agent-${toolUseId}` });
     return { ...admitted, hostAgentId: `agent-${toolUseId}` };
   };
@@ -626,7 +626,7 @@ test('dispatcher: even hello needs the key, and the exported stdio handler refus
 test('mod: the legitimate protected flow works end to end over real stdio, every private request is signed and the key never leaves the mod', async t => {
   const f = await fixture(t), b = f.bridge(), m = await mod(t, f, b);
   assert.ok(live(await m.ultra()), 'session.start opened the session through hello + signed init');
-  const child = await m.spawn('luna'); assert.ok(child.agentId, child.deny);
+  const child = await m.spawn('luna6'); assert.ok(child.agentId, child.deny);
   const diagnostics = await m.execute(undefined, tool('diagnostics'), {}, 'root-diagnostics');
   const state = JSON.parse(diagnostics.result);
   assert.equal(state.orchestrator.model, 'opus'); assert.equal(state.nativeBindings.length, 1);
@@ -647,7 +647,7 @@ test('mod: the legitimate protected flow works end to end over real stdio, every
 
 test('mod: the host-side name guard denies model-origin private calls without reaching the bridge, and is not the control', async t => {
   const f = await fixture(t), b = f.bridge(), m = await mod(t, f, b), calls = m.sent.length;
-  for (const name of ['mcp__plugin_openai-workers_bridge__ultra_native_init', 'MCP__X__ULTRA_NATIVE_INIT', 'mcp__x__ultra-native-init', 'mcp__x__ultra\u200b_native_init', 'mcp__x__\uff55ltra_native_init']) {
+  for (const name of ['mcp__plugin_oai_bridge__ultra_native_init', 'MCP__X__ULTRA_NATIVE_INIT', 'mcp__x__ultra-native-init', 'mcp__x__ultra\u200b_native_init', 'mcp__x__\uff55ltra_native_init']) {
     assert.equal((await m.run('tool.check', { tool: name, input: {} }, async () => ({ decision: 'allow' }))).decision, 'deny', name);
     assert.ok((await m.run('tool.run', { tool: name }, async () => ({ result: 'BAD' }))).deny, name);
   }
@@ -660,7 +660,7 @@ test('mod: the host-side name guard denies model-origin private calls without re
 
 test('mod: a bridge restart is recognised as stale, the session is reopened once by owner-key proof, and running work is held', async t => {
   const f = await fixture(t), holder = { current: f.bridge(), call(...args) { return this.current.call(...args); } };
-  const m = await mod(t, f, holder), child = await m.spawn('luna'); assert.ok(child.agentId, child.deny);
+  const m = await mod(t, f, holder), child = await m.spawn('luna6'); assert.ok(child.agentId, child.deny);
   const first = (await readLedger(f.dir)).missions[m.missionId];
   await holder.current.close(); holder.current = f.bridge();
   const text = await m.ultra();
@@ -678,7 +678,7 @@ test('mod: a second mod instance for a live session (lost closure) is refused an
   assert.ok(live(await first.ultra()));
   const before = await f.ledger(), second = await mod(t, f, b);
   assert.match(await second.ultra(), /ULTRA is HOLD: .*already open/);
-  assert.match((await second.spawn('luna')).deny, /held/);
+  assert.match((await second.spawn('luna6')).deny, /held/);
   assert.equal(await f.ledger(), before, 'the refused reopen wrote nothing');
   assert.ok(live(await first.ultra()), 'the genuine session keeps its capability');
 });
@@ -686,7 +686,7 @@ test('mod: a second mod instance for a live session (lost closure) is refused an
 test('mod: a missing, unreadable or malformed owner key holds ULTRA instead of falling back, and sends nothing', async t => {
   const f = await fixture(t, { key: false }), b = f.bridge(), m = await mod(t, f, b);
   assert.match(await m.ultra(), /ULTRA is HOLD: .*owner channel key is not readable/);
-  assert.match((await m.spawn('luna')).deny, /held/);
+  assert.match((await m.spawn('luna6')).deny, /held/);
   assert.deepEqual(m.sent, [], 'nothing, not even hello, is sent without a key');
   await writeFile(f.keyFile, 'garbage\n', { mode: 0o600 });
   const malformed = await mod(t, f, b);

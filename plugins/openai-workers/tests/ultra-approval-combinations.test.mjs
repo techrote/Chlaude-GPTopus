@@ -120,7 +120,7 @@ test('truth table: malformed, conflicting and duplicate decisions fail closed wi
 
 test('truth table: MODIFY and ESCALATE precedence is deterministic and carries the senior modification', () => {
   const rules = [req('helicop-sol', { m: true, p: 50 }), req('helicop-astra', { m: true, p: 100 })];
-  const sol = dec('helicop-sol', 'MODIFY', { modification: { worker: 'luna' } }), astra = dec('helicop-astra', 'MODIFY', { modification: { worker: 'terra' } });
+  const sol = dec('helicop-sol', 'MODIFY', { modification: { worker: 'luna6' } }), astra = dec('helicop-astra', 'MODIFY', { modification: { worker: 'terra' } });
   for (const order of permutations([sol, astra])) {
     const result = combineApprovals(rules, order, 'AND');
     assert.equal(result.decision, 'MODIFY'); assert.deepEqual(result.modification, { worker: 'terra' }, 'the senior authority modification prevails');
@@ -464,7 +464,7 @@ async function recruitSession(directory, helicop) {
   const rules = (helicop.rules ?? [['sol', 'helicop-sol', {}], ['astra', 'helicop-astra', {}]]).map(([id, authority, flags]) => rule(id, authority, flags));
   const broker = new RecruitmentBroker(store, { config: { enabled: true, helicop: { combination: helicop.combination, rules } }, now: () => now });
   await broker.createMission({ id: 'r', task: 'Recruitment approval fixture', orchestrator: { model: 'opus', trusted: true, source: 'offline-fixture' } });
-  const request = await broker.request('r', 'root', { worker: 'astra', role: 'implementation', task: 'Independent implementation of the proposal.', risk: RISK }, 'request');
+  const request = await broker.request('r', 'root', { worker: 'astra6-2', role: 'implementation', task: 'Independent implementation of the proposal.', risk: RISK }, 'request');
   assert.equal(request.status, 'pending');
   return { broker, store, request, principals: {}, advance: ms => { now += ms; },
     async principalsFor(authorities) {
@@ -476,7 +476,7 @@ async function recruitSession(directory, helicop) {
       return principals;
     },
     vote: (authority, decision, principals) => broker.decide('r', request.id, { decision, rationale: `${authority} ${decision}`,
-      ...(decision === 'MODIFY' && { modification: { worker: 'luna', task: 'Narrower scope.', budget: { tokens: 8000, usd: 0.5 } } }) }, principals[authority]),
+      ...(decision === 'MODIFY' && { modification: { worker: 'luna6', task: 'Narrower scope.', budget: { tokens: 8000, usd: 0.5 } } }) }, principals[authority]),
     status: async () => (await store.snapshot('r')).requests[request.id].status };
 }
 async function runRecruitment(directory, helicop, order, ballot) {
@@ -548,9 +548,9 @@ test('recruitment: the shipped default HELICOP rules remain mandatory and unaffe
   const store = new ExecutionStore(path.join(directory, 'default.json'), { now: () => now });
   const broker = new RecruitmentBroker(store, { config: { enabled: true, recruitment: { mode: 'SKYNET' } }, now: () => now });
   const mission = await broker.createMission({ id: 'd', task: 'Default rules', orchestrator: { model: 'opus', trusted: true, source: 'offline-fixture' } });
-  const parent = await broker.request(mission.id, 'root', { worker: 'sol', role: 'exploration', task: 'Keep the parent active.', risk: RISK }, 'parent');
+  const parent = await broker.request(mission.id, 'root', { worker: 'sol6-2', role: 'exploration', task: 'Keep the parent active.', risk: RISK }, 'parent');
   await broker.claim(mission.id, 'fixture-parent', { nodeId: parent.nodeId });
-  const child = await broker.request(mission.id, parent.nodeId, { worker: 'astra', role: 'exploration', task: 'Senior exploration.', risk: RISK }, 'child');
+  const child = await broker.request(mission.id, parent.nodeId, { worker: 'astra6-2', role: 'exploration', task: 'Senior exploration.', risk: RISK }, 'child');
   assert.equal(child.status, 'pending');
   assert.ok(child.evaluation.requiredApprovals.every(a => a.mandatory && a.veto));
   const node = await broker.appointSupervisor(mission.id, child.id, ASTRA);
@@ -562,10 +562,10 @@ test('recruitment: the shipped default HELICOP rules remain mandatory and unaffe
 /* ------------------------------------------------------------------ VOTE-01: a lapsed recruitment vote never strands the request */
 
 const OWNER = { source: 'local-user', trusted: true, authority: 'user' };
-const BOTH_MANDATORY = { combination: 'AND', rules: [['sol', SOL, { mandatory: true, veto: true }], ['astra', ASTRA, { mandatory: true, veto: true }]] };
+const BOTH_MANDATORY = { combination: 'AND', rules: [['sol6-2', SOL, { mandatory: true, veto: true }], ['astra6-2', ASTRA, { mandatory: true, veto: true }]] };
 const outstanding = async session => Object.values((await session.store.snapshot('r')).requests).filter(r => ['pending', 'queued', 'running'].includes(r.status)).length;
 const VOTE_TTL = 15 * 60 * 1000 + 1;
-const ORIGINAL = { worker: 'astra', role: 'implementation', task: 'Independent implementation of the proposal.', risk: RISK };
+const ORIGINAL = { worker: 'astra6-2', role: 'implementation', task: 'Independent implementation of the proposal.', risk: RISK };
 
 test('VOTE-01: an authority whose vote lapsed may decide again, so the slow co-approver no longer strands the request', async t => {
   const session = await recruitSession(await scratch(t), BOTH_MANDATORY), principals = await session.principalsFor([SOL, ASTRA]);

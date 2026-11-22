@@ -232,8 +232,8 @@ test('F9: the mod guard and the Desktop namespace filter refuse exactly the same
   }
   assert.deepEqual(disagreements, []);
   assert.equal(normalizeToolName('ULTRA\u200b_native'), 'ultra_native');
-  assert.equal(isPrivateBridgeTool('mcp__plugin_openai-workers_bridge__create'), true, 'raw legacy tools are still denied to model-origin calls');
-  assert.equal(isPrivateBridgeTool('mcp__plugin_openai-workers_bridge__cre\u00adate'), true);
+  assert.equal(isPrivateBridgeTool('mcp__plugin_oai_bridge__create'), true, 'raw legacy tools are still denied to model-origin calls');
+  assert.equal(isPrivateBridgeTool('mcp__plugin_oai_bridge__cre\u00adate'), true);
   assert.equal(isPrivateBridgeTool(undefined), false);
 });
 
@@ -331,8 +331,8 @@ const childEnv = extra => { const env = {}; for (const [name, value] of Object.e
 test('F1: with ULTRA enabled the raw create/poll/cancel/page need the owner-key proof on the stdio server; health and usage stay open', async t => {
   const h = await bridgeHost(t), env = childEnv({ OPENAI_ULTRA_ENABLED: '1', OPENAI_ULTRA_STATE_DIR: h.dir, OPENAI_ULTRA_CONFIG: join(h.dir, 'ultra-policy.json'), OPENAI_WORKER_USAGE_DIR: join(h.dir, 'usage') });
   const b = new Stdio(env); t.after(() => b.close());
-  const create = { worker_type: 'sol', model: 'gpt-6.2-sol', input: 'x', instructions: 'x', tools: [] };
-  const raw = { create, poll: { id: 'resp_abcdef', worker_type: 'sol' }, cancel: { id: 'resp_abcdef', worker_type: 'sol' }, page: { id: 'resp_abcdef', page: 0 } };
+  const create = { worker_type: 'sol6-2', model: 'gpt-6.2-sol', input: 'x', instructions: 'x', tools: [] };
+  const raw = { create, poll: { id: 'resp_abcdef', worker_type: 'sol6-2' }, cancel: { id: 'resp_abcdef', worker_type: 'sol6-2' }, page: { id: 'resp_abcdef', page: 0 } };
   for (const [name, args] of Object.entries(raw)) {
     const answer = await b.call(name, args);
     assert.deepEqual([answer.isError, answer.text], [true, CHANNEL_DENIED], `${name} must be refused without proof, with the uniform text`);
@@ -359,7 +359,7 @@ test('F1: without OPENAI_ULTRA_ENABLED the legacy integration is unchanged: raw 
   const h = await bridgeHost(t), env = childEnv({ OPENAI_ULTRA_STATE_DIR: h.dir, OPENAI_ULTRA_CONFIG: join(h.dir, 'ultra-policy.json'), OPENAI_WORKER_USAGE_DIR: join(h.dir, 'usage') });
   const b = new Stdio(env); t.after(() => b.close());
   assert.match((await b.call('page', { id: 'resp_abcdef', page: 0 })).text, /Paged response not found/);
-  assert.match((await b.call('create', { worker_type: 'sol', model: 'gpt-6.2-sol', input: 'x', instructions: 'x', tools: [] })).text, /Missing standard OpenAI key|key/i);
+  assert.match((await b.call('create', { worker_type: 'sol6-2', model: 'gpt-6.2-sol', input: 'x', instructions: 'x', tools: [] })).text, /Missing standard OpenAI key|key/i);
   assert.ok(!(await b.call('health')).isError);
   assert.ok(!b.stderr.includes('refused: OPENAI_ULTRA_ENABLED'), 'no spurious diagnostic');
 });

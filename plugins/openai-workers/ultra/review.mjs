@@ -145,7 +145,7 @@ export class ReviewController {
     invariant(w?.status === 'selection_required', 'Selection is not pending');
     invariant(m.config.helicop.sol, 'Required reviewer-selection supervisor is unavailable');
     const request = await this.broker.request(missionId, m.rootAgentId, {
-      worker: 'sol', role: 'supervisor', budget: { tokens: 12000, usd: 3 }, risk: w.risk,
+      worker: 'sol6-2', role: 'supervisor', budget: { tokens: 12000, usd: 3 }, risk: w.risk,
       task: JSON.stringify({ workflowId, risk: w.assessment, source: w.source, permittedWorkers: Object.keys(m.config.workers), instruction: 'Choose an independent reviewer appropriate for consequence and evidence. Return JSON {worker,rationale}.' }),
       permissions: { tools: [], roots: [], recruit: { lower: false, equal: false, higher: false }, reviewHigher: false },
     }, `selector:${workflowId}`, { originId: w.authorId, protectedAuthority: 'helicop-sol', binding: { selectsWorkflow: workflowId } });

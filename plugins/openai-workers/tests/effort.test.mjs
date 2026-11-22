@@ -21,7 +21,7 @@ function mockedMod(worker, vars = {}) {
     return { catch() { return this; } };
   });
   const context = {
-    agent: { list: async () => [{ id: 'ag_1', type: `openai-workers:${worker}`, status: 'running' }], register: async x => registrations.push(x) },
+    agent: { list: async () => [{ id: 'ag_1', type: `oai:${worker}`, status: 'running' }], register: async x => registrations.push(x) },
     command: { register: async () => {} },
     env: { get: async key => vars[key] },
     session: { cwd: async () => '/tmp', messages: async x => x?.as === 'api' ? [] : [{ role: 'user', text: 'Review this snippet' }] },
@@ -40,11 +40,11 @@ function mockedMod(worker, vars = {}) {
 }
 
 test('defaults: Luna Max only, Terra high..max, other workers bounded with short notes', () => {
-  assert.deepEqual(Object.keys(DEFAULT_EFFORT_POLICIES).sort(), ['astra', 'daily-astrafree', 'daily-terrafree', 'flex6-1', 'luna', 'sol'].sort());
-  assert.equal(effortPolicy('luna', {}).min, 'max');
-  assert.equal(effortPolicy('luna', {}).max, 'max');
-  assert.equal(effortPolicy('daily-terrafree', {}).min, 'high');
-  assert.equal(effortPolicy('daily-terrafree', {}).default, 'high');
+  assert.deepEqual(Object.keys(DEFAULT_EFFORT_POLICIES).sort(), ['astra6-2', 'astra6free', 'terra5-6free', 'sol6-1flex', 'luna6', 'luna6fast', 'luna6flex', 'sol6-2'].sort());
+  assert.equal(effortPolicy('luna6', {}).min, 'max');
+  assert.equal(effortPolicy('luna6', {}).max, 'max');
+  assert.equal(effortPolicy('terra5-6free', {}).min, 'high');
+  assert.equal(effortPolicy('terra5-6free', {}).default, 'high');
   for (const name of Object.keys(DEFAULT_EFFORT_POLICIES)) {
     const p = effortPolicy(name, {});
     assert(p.note.length >= 25 && p.note.length <= 240);
@@ -54,48 +54,48 @@ test('defaults: Luna Max only, Terra high..max, other workers bounded with short
 });
 
 test('effort constraints clamp both low and high requests and respect chosen defaults', () => {
-  assert.deepEqual(selectWorkerEffort('luna', 'low', {}).effective, 'max');
-  assert.equal(selectWorkerEffort('daily-terrafree', 'none', {}).effective, 'high');
-  assert.equal(selectWorkerEffort('daily-terrafree', 'max', {}).effective, 'max');
-  assert.equal(selectWorkerEffort('daily-terrafree', undefined, {}).effective, 'high');
-  const env = { OPENAI_WORKER_SOL_EFFORT_MIN: 'high', OPENAI_WORKER_SOL_EFFORT_MAX: 'xhigh', OPENAI_WORKER_SOL_EFFORT_DEFAULT: 'high' };
-  assert.equal(selectWorkerEffort('sol', 'max', env).effective, 'xhigh');
-  assert.equal(selectWorkerEffort('sol', 'medium', env).effective, 'high');
-  assert.equal(selectWorkerEffort('sol', undefined, env).effective, 'high');
+  assert.deepEqual(selectWorkerEffort('luna6', 'low', {}).effective, 'max');
+  assert.equal(selectWorkerEffort('terra5-6free', 'none', {}).effective, 'high');
+  assert.equal(selectWorkerEffort('terra5-6free', 'max', {}).effective, 'max');
+  assert.equal(selectWorkerEffort('terra5-6free', undefined, {}).effective, 'high');
+  const env = { OPENAI_WORKER_SOL6_2_EFFORT_MIN: 'high', OPENAI_WORKER_SOL6_2_EFFORT_MAX: 'xhigh', OPENAI_WORKER_SOL6_2_EFFORT_DEFAULT: 'high' };
+  assert.equal(selectWorkerEffort('sol6-2', 'max', env).effective, 'xhigh');
+  assert.equal(selectWorkerEffort('sol6-2', 'medium', env).effective, 'high');
+  assert.equal(selectWorkerEffort('sol6-2', undefined, env).effective, 'high');
 });
 
 test('changing only the minimum adjusts the built-in default; invalid explicit default is rejected', () => {
-  const env = { OPENAI_WORKER_DAILY_TERRAFREE_EFFORT_MIN: 'max' };
-  assert.equal(effortPolicy('daily-terrafree', env).default, 'max');
-  assert.throws(() => effortPolicy('daily-terrafree', { ...env, OPENAI_WORKER_DAILY_TERRAFREE_EFFORT_DEFAULT: 'high' }), /falls outside/);
-  assert.throws(() => effortPolicy('sol', { OPENAI_WORKER_SOL_EFFORT_MIN: 'max', OPENAI_WORKER_SOL_EFFORT_MAX: 'high' }), /exceeds/);
-  assert.throws(() => effortPolicy('sol', { OPENAI_WORKER_SOL_EFFORT_NOTE: 'x'.repeat(241) }), /240 characters/);
-  assert.throws(() => selectWorkerEffort('sol', 'ultra', {}), /not ultra/);
-  assert.throws(() => effortPolicy('sol', { OPENAI_WORKER_SOL_EFFORT_MIN: 'none' }), /does not support/);
-  assert.throws(() => effortPolicy('flex6-1', { OPENAI_WORKER_FLEX6_1_EFFORT_MIN: 'none' }), /does not support/);
+  const env = { OPENAI_WORKER_TERRA5_6FREE_EFFORT_MIN: 'max' };
+  assert.equal(effortPolicy('terra5-6free', env).default, 'max');
+  assert.throws(() => effortPolicy('terra5-6free', { ...env, OPENAI_WORKER_TERRA5_6FREE_EFFORT_DEFAULT: 'high' }), /falls outside/);
+  assert.throws(() => effortPolicy('sol6-2', { OPENAI_WORKER_SOL6_2_EFFORT_MIN: 'max', OPENAI_WORKER_SOL6_2_EFFORT_MAX: 'high' }), /exceeds/);
+  assert.throws(() => effortPolicy('sol6-2', { OPENAI_WORKER_SOL6_2_EFFORT_NOTE: 'x'.repeat(241) }), /240 characters/);
+  assert.throws(() => selectWorkerEffort('sol6-2', 'ultra', {}), /not ultra/);
+  assert.throws(() => effortPolicy('sol6-2', { OPENAI_WORKER_SOL6_2_EFFORT_MIN: 'none' }), /does not support/);
+  assert.throws(() => effortPolicy('sol6-1flex', { OPENAI_WORKER_SOL6_1FLEX_EFFORT_MIN: 'none' }), /does not support/);
 });
 
 test('Desktop Chat exposes selection guidance and clamps effort before the API call', async () => {
   const calls = [];
   const backend = async (name, args) => { calls.push({ name, args }); return payload; };
   const workers = await invoke('list_openai_workers', {}, backend, {});
-  const luna = workers.workers.find(x => x.name === 'luna');
+  const luna = workers.workers.find(x => x.name === 'luna6');
   assert.equal(luna.effort_policy.min, 'max');
   assert.match(luna.effort_policy.note, /Always Max/);
-  const response = await invoke('ask_openai_worker', { worker: 'daily-terrafree', task: 'Inspect', reasoning_effort: 'low' }, backend, {});
+  const response = await invoke('ask_openai_worker', { worker: 'terra5-6free', task: 'Inspect', reasoning_effort: 'low' }, backend, {});
   assert.equal(calls[0].args.effort, 'high');
   assert.equal(response.reasoning_effort, 'high');
   assert.equal(response.effort_adjusted_from, 'low');
-  const lunaResponse = await invoke('ask_openai_worker', { worker: 'luna', task: 'Inspect' }, backend, {});
+  const lunaResponse = await invoke('ask_openai_worker', { worker: 'luna6', task: 'Inspect' }, backend, {});
   assert.equal(calls[1].args.effort, 'max');
   assert.equal(calls[1].args.max_output_tokens, 32000);
   assert.equal(lunaResponse.reasoning_effort, 'max');
 });
 
 test('native mod shows policy to Claude and enforces it on real model step', async () => {
-  const fake = mockedMod('daily-terrafree');
+  const fake = mockedMod('terra5-6free');
   await fake.handlers.get('session.start')(fake.context, {}, async () => {});
-  const descriptor = fake.registrations.find(x => x.name === 'daily-terrafree');
+  const descriptor = fake.registrations.find(x => x.name === 'terra5-6free');
   assert.match(descriptor.description, /high\.\.max/);
   assert.match(descriptor.description, /High for everyday inspection/);
   await fake.step('low');
@@ -104,21 +104,21 @@ test('native mod shows policy to Claude and enforces it on real model step', asy
 
 test('native mod respects custom range and maps host ultra to API max', async () => {
   const vars = {
-    OPENAI_WORKER_SOL_EFFORT_MIN: 'medium',
-    OPENAI_WORKER_SOL_EFFORT_MAX: 'max',
-    OPENAI_WORKER_SOL_EFFORT_DEFAULT: 'high',
-    OPENAI_WORKER_SOL_EFFORT_NOTE: 'Max for deep investigations.',
+    OPENAI_WORKER_SOL6_2_EFFORT_MIN: 'medium',
+    OPENAI_WORKER_SOL6_2_EFFORT_MAX: 'max',
+    OPENAI_WORKER_SOL6_2_EFFORT_DEFAULT: 'high',
+    OPENAI_WORKER_SOL6_2_EFFORT_NOTE: 'Max for deep investigations.',
   };
-  const fake = mockedMod('sol', vars);
+  const fake = mockedMod('sol6-2', vars);
   await fake.handlers.get('session.start')(fake.context, {}, async () => {});
-  assert.match(fake.registrations.find(x => x.name === 'sol').description, /Max for deep investigations/);
+  assert.match(fake.registrations.find(x => x.name === 'sol6-2').description, /Max for deep investigations/);
   await fake.step('ultra');
   assert.equal(fake.calls.at(-1).args.effort, 'max');
   assert.equal(fake.calls.at(-1).args.max_output_tokens, 32000);
 });
 
 test('invalid policy fails before native model dispatch, no Anthropic fallback', async () => {
-  const fake = mockedMod('sol', { OPENAI_WORKER_SOL_EFFORT_MIN: 'max', OPENAI_WORKER_SOL_EFFORT_MAX: 'low' });
+  const fake = mockedMod('sol6-2', { OPENAI_WORKER_SOL6_2_EFFORT_MIN: 'max', OPENAI_WORKER_SOL6_2_EFFORT_MAX: 'low' });
   const result = await fake.step('high');
   assert.match(result.answer, /Invalid effort range/);
   assert.equal(fake.calls.length, 0);

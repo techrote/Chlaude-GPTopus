@@ -10,12 +10,14 @@ Claude remains the lead. In Claude Code, workers can read, edit and run commands
 
 | Worker | Model | Good for | API key |
 |---|---|---|---|
-| `daily-terrafree` | `gpt-5.6-terra` | High-volume everyday work | Free-programme |
-| `daily-astrafree` | `gpt-6-astra` | Harder thinking and review | Free-programme |
-| `flex6-1` | `gpt-6.1-sol` | Cheaper work that can take its time | Standard |
-| `luna` | `gpt-6-luna` | Quick investigations | Standard |
-| `sol` | `gpt-6.2-sol` | Coding and implementation | Standard |
-| `astra` | `gpt-6.2-astra` | Difficult engineering and second opinions | Standard |
+| `terra5-6free` | `gpt-5.6-terra` | High-volume everyday work | Free-programme |
+| `astra6free` | `gpt-6-astra` | Harder thinking and review | Free-programme |
+| `sol6-1flex` | `gpt-6.1-sol` | Cheaper work that can take its time | Standard |
+| `luna6` | `gpt-6-luna` | Quick investigations | Standard |
+| `luna6fast` | `gpt-6-luna`, fast tier | Quick investigations, answered sooner (Fast costs more) | Standard |
+| `luna6flex` | `gpt-6-luna`, flex tier | Cheapest economical work that can wait | Standard |
+| `sol6-2` | `gpt-6.2-sol` | Coding and implementation | Standard |
+| `astra6-2` | `gpt-6.2-astra` | Difficult engineering and second opinions | Standard |
 
 **Set each worker's thinking range.** Luna defaults to **Max only**; daily Terra to **High–Max**. Claude sees a short note explaining when to use each effort, while the plugin enforces the limits. Change a worker with `scripts/set-worker-effort.ps1` or see [configuration](docs/CONFIGURATION.md#per-worker-reasoning-effort-new-in-v07).
 
@@ -31,7 +33,7 @@ cd Chlaude-GPTopus
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-The installer prompts for your keys privately and saves them with Windows DPAPI. Restart Claude Code and run `/openai-workers` to see your workers and local usage.
+The installer prompts for your keys privately and saves them with Windows DPAPI. Restart Claude Code and run `/oai` to see your workers and local usage.
 
 **Claude Desktop works too**, but its tabs have different powers:
 
@@ -56,7 +58,7 @@ With ULTRA enabled, Desktop Chat can remain think-only (**A**), read explicitly 
 
 For a first try, ask Claude Code:
 
-> Have `daily-terrafree` look for repetitive code, ask `daily-astrafree` to check its findings, then tell me what you'd change. Don't edit anything yet.
+> Have `terra5-6free` look for repetitive code, ask `astra6free` to check its findings, then tell me what you'd change. Don't edit anything yet.
 
 ## The small print that actually matters
 

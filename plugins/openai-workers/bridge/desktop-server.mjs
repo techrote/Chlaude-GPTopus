@@ -25,9 +25,9 @@ const SERVER_INFO_META = 'io.modelcontextprotocol/serverInfo';
 const SERVER_INFO = Object.freeze({ name: 'chlaude-gptopus-desktop', version: '0.8.0' });
 const SERVER_CAPABILITIES = Object.freeze({ tools: Object.freeze({ listChanged: false }) });
 export const definitions = [
-  { name: 'list_openai_workers', description: 'List the six available OpenAI workers, chosen models, tier and two-key configuration. Never returns secrets.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'list_openai_workers', description: 'List the eight available OpenAI workers, chosen models, tier and two-key configuration. Never returns secrets.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'ask_openai_worker', description: 'Delegate a bounded text task to an OpenAI worker. Free workers use a separate free-programme API key and a persistent daily token guardrail; other workers use the straight API key. Returns a response ID to poll if the task is still running. This tool does not read or edit local files.', inputSchema: { type: 'object', properties: {
-    worker: { type: 'string', enum: agentEnum, description: 'One of six OpenAI worker profiles.' },
+    worker: { type: 'string', enum: agentEnum, description: 'One of eight OpenAI worker profiles.' },
     task: { type: 'string', description: 'Your question or task. Include any relevant source code or context explicitly.' },
     context: { type: 'string', description: 'Optional additional context to pass to OpenAI; no files are read automatically.' },
     reasoning_effort: { type: 'string', enum: [...EFFORTS], description: 'Optional API reasoning effort. Claude should choose within the selected worker’s advertised min..max range; out-of-range requests are clamped.' },

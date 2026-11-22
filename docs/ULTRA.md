@@ -2,7 +2,7 @@
 
 ULTRA is the repository's opt-in orchestration system for bounded, recursive OpenAI workers. It separates **recruitment, implementation, review, approval and consequential execution**. A small model can author a straightforward change while stronger, independent models review its consequences. Increasing a model's rank or a fleet's capacity does not grant tools or start additional agents.
 
-ULTRA is **disabled by default**. The six existing worker profiles, separate standard/free keys, Windows DPAPI setup, reasoning policies and Desktop think-only integration remain available. ULTRA is not an OpenAI `reasoning.effort` value.
+ULTRA is **disabled by default**. The eight worker profiles, separate standard/free keys, Windows DPAPI setup, reasoning policies and Desktop think-only integration remain available. ULTRA is not an OpenAI `reasoning.effort` value.
 
 The implemented control plane can be exercised offline with real policy, scheduling, review, filesystem and recovery code. That evidence is distinct from live OpenAI calls, installed Claude Code validation and physical Windows/Desktop acceptance. Profile C currently supports **private staged patches**; this distribution does not provide a qualified general operating-system executor or automatic application to a live project. See [host boundaries](ULTRA_HOSTS.md) and [owner acceptance](ULTRA_ACCEPTANCE.md) before enabling it.
 
@@ -133,18 +133,20 @@ Live ULTRA provider calls additionally require `OPENAI_ULTRA_ALLOW_API=1` in the
 
 ## Models, reasoning and recruitment
 
-### Six worker routes remain explicit
+### Eight worker routes remain explicit
 
 These defaults come from [`bridge/workers.mjs`](../plugins/openai-workers/bridge/workers.mjs). They are local configured model IDs, not a promise of availability for a particular API account.
 
 | Worker | Default exact model | Family | Key route | Default processing tier | Reasoning minimum / maximum / default |
 |---|---|---|---|---|---|
-| `sol` | `gpt-6.2-sol` | Sol | Standard | Project default | medium / max / high |
-| `astra` | `gpt-6.2-astra` | Astra | Standard | Project default | medium / max / high |
-| `luna` | `gpt-6-luna` | Luna | Standard | Project default | max / max / max |
-| `flex6-1` | `gpt-6.1-sol` | Sol | Standard | flex | medium / max / high |
-| `daily-astrafree` | `gpt-6-astra` | Astra | Free programme | default | medium / max / high |
-| `daily-terrafree` | `gpt-5.6-terra` | Terra | Free programme | default | high / max / high |
+| `sol6-2` | `gpt-6.2-sol` | Sol | Standard | Project default | medium / max / high |
+| `astra6-2` | `gpt-6.2-astra` | Astra | Standard | Project default | medium / max / high |
+| `luna6` | `gpt-6-luna` | Luna | Standard | Project default | max / max / max |
+| `luna6fast` | `gpt-6-luna` | Luna | Standard | fast | max / max / max |
+| `luna6flex` | `gpt-6-luna` | Luna | Standard | flex | max / max / max |
+| `sol6-1flex` | `gpt-6.1-sol` | Sol | Standard | flex | medium / max / high |
+| `astra6free` | `gpt-6-astra` | Astra | Free programme | default | medium / max / high |
+| `terra5-6free` | `gpt-5.6-terra` | Terra | Free programme | default | high / max / high |
 
 The family hierarchy defaults to Astra 4, Sol 3, Luna 2, Terra 1. Exact models inherit the family's rank when their `models` entry has `rank: null`; an owner can set an explicit rank exception. Paid and daily Astra therefore have equal rank, as do standard and Flex Sol. Reasoning effort, processing speed and price do not alter rank. Unknown IDs receive no inferred privileges.
 
@@ -172,7 +174,7 @@ For example, this owner fragment allows lower and equal recruitment globally, wi
     "custom": { "lower": true, "equal": true, "higher": false },
     "reviewHigher": true
   },
-  "workers": { "sol": { "mode": "REPLICATOR" } }
+  "workers": { "sol6-2": { "mode": "REPLICATOR" } }
 }
 ```
 
@@ -209,8 +211,8 @@ This example retains the default gates explicitly. Replacing the `rules` array r
 ```json
 {
   "helicop": {
-    "sol": true,
-    "astra": true,
+    "sol6-2": true,
+    "astra6-2": true,
     "combination": "AND",
     "denial": "revise",
     "maxRevisions": 1,
@@ -291,12 +293,12 @@ The default role assignments are explicit and editable:
 {
   "review": {
     "selection": "B",
-    "primary": "astra",
-    "reworker": "sol",
-    "rereviewer": "astra",
-    "secondOpinion": "sol",
-    "gapInspector": "luna",
-    "judge": "astra",
+    "primary": "astra6-2",
+    "reworker": "sol6-2",
+    "rereviewer": "astra6-2",
+    "secondOpinion": "sol6-2",
+    "gapInspector": "luna6",
+    "judge": "astra6-2",
     "maxRounds": 3,
     "secondOpinionImpacts": ["high", "critical"],
     "gapInspectionImpacts": ["high", "critical"],
@@ -388,7 +390,7 @@ Shared optional ceilings cover tokens, estimated dollars, wall time, outstanding
 
 Default B thresholds are 16,000 allocated tokens and $0.25 estimated allocation. These are permission thresholds, not promises of provider charges. Controllers retain the originating key route for review/rework decisions so calling through the root does not conceal a free-to-paid transition. Paid supervisory allocations are also subject to the transition policy.
 
-A missing free key never falls back to the standard key. `daily-astrafree` and `daily-terrafree` always retain the free route; the other four named workers retain the standard route. Polling, cancellation and continuations verify the stored worker/key/model binding.
+A missing free key never falls back to the standard key. `astra6free` and `terra5-6free` always retain the free route; the other four named workers retain the standard route. Polling, cancellation and continuations verify the stored worker/key/model binding.
 
 ### Two durable records, different purposes
 
@@ -444,7 +446,7 @@ Save the following as `proposal.json` and use it with `recruit`. It contains the
 
 ```json
 {
-  "worker": "luna",
+  "worker": "luna6",
   "role": "exploration",
   "task": "Read the supplied text and return three concrete edge cases. Do not execute or modify anything.",
   "mode": "SWARM",
@@ -466,7 +468,7 @@ Use a stable `REQUEST_KEY` for the same proposal. Reusing it for changed work is
 ```json
 {
   "parentId": "root",
-  "workers": ["luna", "daily-terrafree"],
+  "workers": ["luna6", "terra5-6free"],
   "roles": ["exploration"],
   "maxInvocations": 3,
   "budget": { "tokens": 120000, "usd": 12 },
@@ -482,7 +484,7 @@ A review-only promotion can be as narrow as:
 
 ```json
 {
-  "worker": "astra",
+  "worker": "astra6-2",
   "role": "reviewer",
   "relations": [],
   "reviewOnly": true,
@@ -538,7 +540,7 @@ Protected native mode uses the actual mod hooks for spawn admission, effective m
 
 The primary Claude orchestrator is also inside the mission boundary in protected mode. Governed native `Agent` recruitment, approved scoped reads, private stages and configured review/decision operations are available. Arbitrary shell, live native file mutation, unknown external tools, raw bridge access and untracked intermediary agents are denied. Native host deny/ask decisions still apply. When ULTRA is disabled, the original worker integration remains available with its existing native permission behavior.
 
-Useful native commands are `/ultra`, `/openai-workers`, `/ultra supervise` and `/ultra review <native-author-id>`. `supervise` runs one shared bounded tick; `review` starts review of preserved completed work. Registered tools use `mcp__openai-workers__` prefixes. They provide scoped reads/stages, workflow creation, exact configured recruitment/action votes, and full-root scoped promotion, escalation and risk override. They cannot forge user or independent supervisor authority. See the exact table in [ULTRA_HOSTS.md](ULTRA_HOSTS.md#implemented-native-workflow).
+Useful native commands are `/ultra`, `/oai`, `/ultra supervise` and `/ultra review <native-author-id>`. `supervise` runs one shared bounded tick; `review` starts review of preserved completed work. Registered tools use `mcp__oai__` prefixes. They provide scoped reads/stages, workflow creation, exact configured recruitment/action votes, and full-root scoped promotion, escalation and risk override. They cannot forge user or independent supervisor authority. See the exact table in [ULTRA_HOSTS.md](ULTRA_HOSTS.md#implemented-native-workflow).
 
 The installed mod, host and bridge form the trusted channel, and the bridge authenticates it itself: every controller-only request carries an HMAC proof of the owner channel key, so reaching the bridge is not authority. The mod keeps the key and its private capability in its closure and also rejects every model-origin call to controller-only endpoints, as defence in depth. MCP metadata or a hidden tool name is not authentication; residual limitations are listed in [ULTRA_HOSTS.md](ULTRA_HOSTS.md#private-native-control-channel). Host hook failures have explicit refusal handlers, so an unavailable guard cannot silently fall back to an unrestricted path.
 
@@ -588,7 +590,7 @@ For example, this disabled owner fragment prepares one disposable Windows root f
   "permissions": { "tools": ["read_file", "stage_write"], "roots": ["C:/ULTRA/Synthetic"] },
   "desktop": { "profile": "C", "enableExecutionBridge": true, "roots": ["C:/ULTRA/Synthetic"] },
   "workers": {
-    "astra": {
+    "astra6-2": {
       "permissions": {
         "recruit": { "lower": false, "equal": false, "higher": false },
         "reviewHigher": false,
@@ -636,7 +638,7 @@ One runtime tick recovers expired leases, schedules eligible workflow/supervisor
 
 ### Answer “why was this agent allowed?”
 
-Use `/openai-workers`, `/ultra`, Desktop `ultra_diagnostics` or local `status`. The diagnostics expose effective worker/reasoning settings, mode, identity trust, fleets, lineage, budgets/reservations, pending decisions, review state and blocked reasons. Follow a node's `requestId` to its stored proposal and evaluation trace; approvals identify authority, input/policy hashes, rationale, scope and expiry. Workflow records identify source hash, reviewer allocations, findings, tests and final judgement.
+Use `/oai`, `/ultra`, Desktop `ultra_diagnostics` or local `status`. The diagnostics expose effective worker/reasoning settings, mode, identity trust, fleets, lineage, budgets/reservations, pending decisions, review state and blocked reasons. Follow a node's `requestId` to its stored proposal and evaluation trace; approvals identify authority, input/policy hashes, rationale, scope and expiry. Workflow records identify source hash, reviewer allocations, findings, tests and final judgement.
 
 Every agent has a mission, recorded parent, role, worker, exact model, key route, processing tier, inherited permissions and resource allocation. Ordinary reviews, supervisors and reworkers are separately identifiable. A human can determine why the model was chosen, whether it used a review exception, who approved recruitment and what tools were actually granted. Preserved evidence includes useful intermediate results even when final acceptance fails.
 

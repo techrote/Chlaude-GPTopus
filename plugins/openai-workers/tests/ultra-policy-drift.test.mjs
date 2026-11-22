@@ -68,7 +68,7 @@ test('POLICY-01: lowering a mission budget or fleet allowance is enforced before
   // Fleet allowance: the open mission already holds its allocation; one fewer slot than it uses blocks new recruitment.
   const second = await opened(t, { transport: recordingTransport() });
   await second.writePolicy({ ...CODE_B(second.project), fleets: { core: { maxDepth: 2, maxInvocations: 1, concurrency: 4, reserved: 0 } } });
-  const admitted = await second.call('ultra_native_admit', { ...second.s.common, toolUseId: 'spawn-2', primaryModel: 'opus', parentModel: 'opus', subagentType: 'openai-workers:luna',
+  const admitted = await second.call('ultra_native_admit', { ...second.s.common, toolUseId: 'spawn-2', primaryModel: 'opus', parentModel: 'opus', subagentType: 'oai:luna6',
     prompt: JSON.stringify({ task: 'Second fixture', ultra: { role: 'implementation', risk: { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95, rationale: 'fixture' }, budget: { tokens: 1000, usd: 0.05 } } }) }).catch(error => ({ allowed: false, reason: error.message }));
   assert.equal(admitted.allowed, false, `recruitment under a lowered fleet allowance must be refused: ${JSON.stringify(admitted)}`);
 });

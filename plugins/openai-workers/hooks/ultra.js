@@ -1,13 +1,13 @@
 // Portable data/helpers: this file is imported by Claude Code's non-Node mod VM.
 // Never import a Node module, use dynamic import(), or pass the host `$` here.
 export const NATIVE_MIN_VERSION = '2.1.326';
-export const NATIVE_PREFIX = 'mcp__openai-workers__';
+export const NATIVE_PREFIX = 'mcp__oai__';
 const text = { type: 'string' };
 const object = properties => ({ type: 'object', properties, additionalProperties: false });
 const spec = (description, properties, required) => ({ description, properties, required });
 
 export const ULTRA_NATIVE_SPECS = {
-  Agent: spec('Recruit a native OpenAI child. Use subagent_type openai-workers:<worker>. Put a JSON envelope in prompt: {"task":"bounded task","ultra":{"role":"implementation|reviewer|reworker|exploration","mode":"SWARM|REPLICATOR|SKYNET","risk":{"complexity":"low","impact":"low","verifiability":"high","confidence":0.9,"rationale":"evidence"},"budget":{"tokens":40000,"usd":4}}}. Metadata is a proposal, never authority. Missing risk is held for scrutiny. Foreground calls release the parent running slot.', {
+  Agent: spec('Recruit a native OpenAI child. Use subagent_type oai:<worker>. Put a JSON envelope in prompt: {"task":"bounded task","ultra":{"role":"implementation|reviewer|reworker|exploration","mode":"SWARM|REPLICATOR|SKYNET","risk":{"complexity":"low","impact":"low","verifiability":"high","confidence":0.9,"rationale":"evidence"},"budget":{"tokens":40000,"usd":4}}}. Metadata is a proposal, never authority. Missing risk is held for scrutiny. Foreground calls release the parent running slot.', {
     subagent_type: text, prompt: text, description: text, run_in_background: { type: 'boolean' },
   }, ['subagent_type', 'prompt', 'description']),
   [`${NATIVE_PREFIX}ultra_read_file`]: spec('Read bounded UTF-8 source from an approved root. Relative paths only; native permission checks and ULTRA scopes both apply.', { rootId: text, path: text }, ['rootId', 'path']),
@@ -69,7 +69,7 @@ export function isPrivateBridgeTool(name) {
   return isNativeNamespaceName(name) || /^mcp__.*(?:openai|bridge).*__(?:create|poll|cancel|page)$/.test(normalizeToolName(name));
 }
 export function nativeWorker(type) {
-  const match = /^openai-workers:(sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree)$/.exec(String(type ?? ''));
+  const match = /^oai:(sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free)$/.exec(String(type ?? ''));
   return match?.[1] ?? null;
 }
 export function nativeProposal(event) {

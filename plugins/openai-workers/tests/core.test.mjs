@@ -127,7 +127,7 @@ test('poll returns a completed saved OpenAI response', async () => {
   assert.equal(configuredKey({ OPENAI_API_KEY: 'fake' }), 'environment');
 });
 
-function makeEngine(responses, agent = 'openai-workers:sol', config = {}) {
+function makeEngine(responses, agent = 'oai:sol6-2', config = {}) {
   const handlers = new Map();
   register((event, filter, handler) => {
     if (typeof filter === 'function') handler = filter;
@@ -166,7 +166,7 @@ test('real mod handler dispatches OpenAI agent, never calls parent Claude model'
   const output = await consume(fake.handlers.get('turn.step')(fake.context, { agentId: 'ag_1', turnId: 'turn1', index: 0 }, next));
   assert.equal(output.result.answer, 'Review done.');
   assert.equal(fake.sent[0].name, 'create');
-  assert.equal(fake.sent[0].args.worker_type, 'sol');
+  assert.equal(fake.sent[0].args.worker_type, 'sol6-2');
   assert.equal(fellBack, false);
   assert.equal(fake.getState().responseId, 'resp_good');
   assert.equal(fake.getState().steps, 1);
@@ -174,8 +174,8 @@ test('real mod handler dispatches OpenAI agent, never calls parent Claude model'
 
 test('per-agent tier overrides global tier; priority passes to every model step', async () => {
   const fake = makeEngine([{ id: 'resp_11111', status: 'completed', text: 'First', estimatedUsd: 0 },
-    { id: 'resp_22222', status: 'completed', text: 'Second', estimatedUsd: 0 }], 'openai-workers:sol', {
-    OPENAI_WORKER_SERVICE_TIER: 'flex', OPENAI_WORKER_SOL_SERVICE_TIER: 'Priority',
+    { id: 'resp_22222', status: 'completed', text: 'Second', estimatedUsd: 0 }], 'oai:sol6-2', {
+    OPENAI_WORKER_SERVICE_TIER: 'flex', OPENAI_WORKER_SOL6_2_SERVICE_TIER: 'Priority',
   });
   const hook = fake.handlers.get('turn.step');
   const noFallback = async function* () { throw new Error('Anthropic fallback'); };
@@ -187,13 +187,13 @@ test('per-agent tier overrides global tier; priority passes to every model step'
 });
 
 test('unconfigured agent tier inherits global flex; invalid tier fails closed', async () => {
-  const flex = makeEngine([{ id: 'resp_12345', status: 'completed', text: 'OK' }], 'openai-workers:luna', {
+  const flex = makeEngine([{ id: 'resp_12345', status: 'completed', text: 'OK' }], 'oai:luna6', {
     OPENAI_WORKER_SERVICE_TIER: 'flex',
   });
   const noFallback = async function* () { throw new Error('Anthropic fallback'); };
   await consume(flex.handlers.get('turn.step')(flex.context, { agentId: 'ag_1', turnId: 'turnA', index: 0 }, noFallback));
   assert.equal(flex.sent[0].args.service_tier, 'flex');
-  const bad = makeEngine([], 'openai-workers:sol', { OPENAI_WORKER_SERVICE_TIER: 'faster' });
+  const bad = makeEngine([], 'oai:sol6-2', { OPENAI_WORKER_SERVICE_TIER: 'faster' });
   const output = await consume(bad.handlers.get('turn.step')(bad.context,
     { agentId: 'ag_1', turnId: 'turnA', index: 0 }, noFallback));
   assert.match(output.result.answer, /Invalid OPENAI_WORKER_SERVICE_TIER/);
@@ -243,12 +243,12 @@ test('stdio MCP worker responds to initialization, tool listing and health witho
 
 test('new worker presets register and enforce their intended defaults despite global overrides', async () => {
   for (const [type, model, tier] of [
-    ['flex6-1', 'gpt-6.1-sol', 'flex'],
-    ['daily-astrafree', 'gpt-6-astra', 'default'],
-    ['daily-terrafree', 'gpt-5.6-terra', 'default'],
+    ['sol6-1flex', 'gpt-6.1-sol', 'flex'],
+    ['astra6free', 'gpt-6-astra', 'default'],
+    ['terra5-6free', 'gpt-5.6-terra', 'default'],
   ]) {
     const fake = makeEngine([{ id: 'resp_12345', status: 'completed', text: 'Done' }],
-      `openai-workers:${type}`, { OPENAI_WORKER_SERVICE_TIER: 'priority' });
+      `oai:${type}`, { OPENAI_WORKER_SERVICE_TIER: 'priority' });
     const next = async function* () { throw new Error('unexpected Anthropic fallback'); };
     await consume(fake.handlers.get('turn.step')(fake.context, { agentId: 'ag_1', turnId: 'turnA', index: 0 }, next));
     assert.equal(fake.sent[0].args.worker_type, type);
@@ -258,9 +258,9 @@ test('new worker presets register and enforce their intended defaults despite gl
 });
 
 test('new named worker supports explicit service tier override', async () => {
-  const fake = makeEngine([{ id: 'resp_abcde', status: 'completed', text: 'Done' }], 'openai-workers:daily-terrafree', {
-    OPENAI_WORKER_DAILY_TERRAFREE_SERVICE_TIER: 'flex',
-    OPENAI_WORKER_DAILY_TERRAFREE_MODEL: 'gpt-5.6-terra',
+  const fake = makeEngine([{ id: 'resp_abcde', status: 'completed', text: 'Done' }], 'oai:terra5-6free', {
+    OPENAI_WORKER_TERRA5_6FREE_SERVICE_TIER: 'flex',
+    OPENAI_WORKER_TERRA5_6FREE_MODEL: 'gpt-5.6-terra',
   });
   const next = async function* () { throw new Error('unexpected Anthropic fallback'); };
   await consume(fake.handlers.get('turn.step')(fake.context, { agentId: 'ag_1', turnId: 'turnA', index: 0 }, next));
@@ -269,10 +269,10 @@ test('new named worker supports explicit service tier override', async () => {
 
 
 test('exactly two API key profiles: free daily workers and all straight-API workers', () => {
-  for (const type of ['daily-astrafree', 'daily-terrafree']) {
+  for (const type of ['astra6free', 'terra5-6free']) {
     assert.equal(keyProfileForWorker(type), 'free');
   }
-  for (const type of ['sol', 'astra', 'luna', 'flex6-1', undefined]) {
+  for (const type of ['sol6-2', 'astra6-2', 'luna6', 'sol6-1flex', undefined]) {
     assert.equal(keyProfileForWorker(type), 'standard');
   }
   const env = { OPENAI_API_KEY: 'sk-straight', OPENAI_FREE_API_KEY: 'sk-free' };
@@ -303,12 +303,12 @@ test('bridge create, poll, cancel all use the matching worker key (never cross t
       return { ok: true, json: async () => ({ id, model: responses.get(id), status: 'completed', output: [], usage: { input_tokens: 20, output_tokens: 5, total_tokens: 25 } }) };
     };
     for (const [type, expected] of [
-      ['daily-astrafree', 'Bearer sk-free-test'],
-      ['daily-terrafree', 'Bearer sk-free-test'],
-      ['flex6-1', 'Bearer sk-straight-test'],
-      ['sol', 'Bearer sk-straight-test'],
+      ['astra6free', 'Bearer sk-free-test'],
+      ['terra5-6free', 'Bearer sk-free-test'],
+      ['sol6-1flex', 'Bearer sk-straight-test'],
+      ['sol6-2', 'Bearer sk-straight-test'],
     ]) {
-      const created = await dispatch('create', { worker_type: type, model: type === 'daily-terrafree' ? 'gpt-5.6-terra' : type === 'daily-astrafree' ? 'gpt-6-astra' : type === 'sol' ? 'gpt-6.2-sol' : 'gpt-6.1-sol', input: 'Hi', instructions: 'Test', tools: [] });
+      const created = await dispatch('create', { worker_type: type, model: type === 'terra5-6free' ? 'gpt-5.6-terra' : type === 'astra6free' ? 'gpt-6-astra' : type === 'sol6-2' ? 'gpt-6.2-sol' : 'gpt-6.1-sol', input: 'Hi', instructions: 'Test', tools: [] });
       await dispatch('poll', { id: created.id, worker_type: type, wait_ms: 0 });
       await dispatch('cancel', { id: created.id, worker_type: type });
       assert.deepEqual(headers.slice(-3), [expected, expected, expected]);
@@ -335,7 +335,7 @@ test('missing free API key fails closed rather than falling back to straight API
   delete process.env.OPENAI_FREE_API_KEY;
   try {
     await assert.rejects(dispatch('create', {
-      worker_type: 'daily-astrafree', model: 'gpt-6-astra', input: 'Hi', instructions: 'Test', tools: [],
+      worker_type: 'astra6free', model: 'gpt-6-astra', input: 'Hi', instructions: 'Test', tools: [],
     }), /Missing free OpenAI key/);
   } finally {
     if (oldStandard === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = oldStandard;
@@ -364,10 +364,10 @@ test('free-key daily threshold pauses only its worker; straight API continues', 
         usage: { total_tokens: 25, input_tokens: 20, output_tokens: 5 }, output: [] }) };
     };
     const args = { input: 'hello', instructions: 'test', tools: [] };
-    await dispatch('create', { ...args, worker_type: 'daily-astrafree', model: 'gpt-6-astra' });
-    await assert.rejects(dispatch('create', { ...args, worker_type: 'daily-astrafree', model: 'gpt-6-astra' }), /paused at its soft daily allowance/);
+    await dispatch('create', { ...args, worker_type: 'astra6free', model: 'gpt-6-astra' });
+    await assert.rejects(dispatch('create', { ...args, worker_type: 'astra6free', model: 'gpt-6-astra' }), /paused at its soft daily allowance/);
     assert.equal(calls, 1, 'quota must fail before making another request');
-    await dispatch('create', { ...args, worker_type: 'flex6-1', model: 'gpt-6.1-sol', service_tier: 'flex' });
+    await dispatch('create', { ...args, worker_type: 'sol6-1flex', model: 'gpt-6.1-sol', service_tier: 'flex' });
     assert.equal(calls, 2, 'straight key must remain available');
     const usage = await dispatch('usage');
     assert.equal(usage.groups.premium.usedTokens, 25);
@@ -378,4 +378,28 @@ test('free-key daily threshold pauses only its worker; straight API continues', 
     }
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('/oai:a effort marker: stripped before OpenAI, used as requested effort (clamped), and kept for later steps', async () => {
+  const fake = makeEngine([{ id: 'resp_eff11', status: 'completed', text: 'One', estimatedUsd: 0 },
+    { id: 'resp_eff22', status: 'completed', text: 'Two', estimatedUsd: 0 }], 'oai:sol6-2');
+  fake.setMessages([{ role: 'user', text: '[oai-effort:xhigh]\nFix the flaky test' }]);
+  const hook = fake.handlers.get('turn.step');
+  const next = async function* () { throw new Error('must not fall back'); };
+  await consume(hook(fake.context, { agentId: 'ag_1', turnId: 't1', index: 0, effort: 'medium' }, next));
+  const first = fake.sent.find(s => s.name === 'create').args;
+  assert.equal(first.effort, 'xhigh');
+  assert.doesNotMatch(JSON.stringify(first.input), /oai-effort/);
+  assert.match(JSON.stringify(first.input), /Fix the flaky test/);
+  assert.equal(fake.getState().effort, 'xhigh');
+  // A later step without the marker in view still uses the persisted effort.
+  fake.setMessages([{ role: 'user', text: 'Fix the flaky test' }, { role: 'user', text: 'Continue' }]);
+  await consume(hook(fake.context, { agentId: 'ag_1', turnId: 't2', index: 0 }, next));
+  assert.equal(fake.sent.filter(s => s.name === 'create').at(-1).args.effort, 'xhigh');
+
+  // Clamped to the worker range: luna6 is max-only.
+  const luna = makeEngine([{ id: 'resp_eff33', status: 'completed', text: 'L', estimatedUsd: 0 }], 'oai:luna6');
+  luna.setMessages([{ role: 'user', text: '[oai-effort:low]\nScan the repo' }]);
+  await consume(luna.handlers.get('turn.step')(luna.context, { agentId: 'ag_1', turnId: 't1', index: 0 }, next));
+  assert.equal(luna.sent.find(s => s.name === 'create').args.effort, 'max');
 });

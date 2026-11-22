@@ -52,7 +52,7 @@ test('SURF-01: the shared grant is real: a Chat worker reads a root that was add
   await assert.rejects(() => service.invoke('ultra_read_project', { root: '0', path: 'source.txt' }), /./, 'the public Chat read tool DOES require desktop.roots');
   const broker = new RecruitmentBroker(store, { config: resolveConfig(config) }), runtime = new UltraRuntime(broker, { backend: Object.assign(async () => ({}), { offline: true }) });
   const mission = await broker.createMission({ id: 'grants', task: 'Chat worker', surface: 'desktop-chat' });
-  const request = await broker.request(mission.id, 'root', { worker: 'luna', role: 'exploration', task: 'read', risk: { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95 } }, 'r');
+  const request = await broker.request(mission.id, 'root', { worker: 'luna6', role: 'exploration', task: 'read', risk: { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95 } }, 'r');
   const m = await store.snapshot(mission.id);
   const boundary = runtime.boundary(m, m.nodes[request.nodeId]);
   assert.equal((await boundary.readFile('0', 'source.txt')).content, 'shared source\n', 'a Chat worker reads the root that was never in desktop.roots');

@@ -49,10 +49,10 @@ export async function bridgeHost(t, { policy = {}, env: extraEnv = {}, transport
   const call = signedDispatcher(dispatch, options, keyHex);
   const ledger = async () => new ExecutionStore(join(dir, 'ultra-execution.json')).read();
   /** Open a native session and admit + bind one worker, as session.start / agent.spawn / turn.start do. */
-  async function session(sessionId = 'host-session', { worker = 'luna', surfaces = ['terminal'], prompt = nativePrompt(), toolUseId = 'spawn-1', hostAgentId = 'host-agent-1', model = 'opus' } = {}) {
+  async function session(sessionId = 'host-session', { worker = 'luna6', surfaces = ['terminal'], prompt = nativePrompt(), toolUseId = 'spawn-1', hostAgentId = 'host-agent-1', model = 'opus' } = {}) {
     const init = await call('ultra_native_init', { sessionId, model, version: '2.1.326', platform: 'linux', isHosted: false, surfaces });
     const common = { sessionId, capability: init.capability };
-    const admitted = await call('ultra_native_admit', { ...common, toolUseId, primaryModel: model, parentModel: model, subagentType: `openai-workers:${worker}`, prompt });
+    const admitted = await call('ultra_native_admit', { ...common, toolUseId, primaryModel: model, parentModel: model, subagentType: `oai:${worker}`, prompt });
     if (!admitted.allowed) return { init, common, admitted, missionId: init.missionId };
     await call('ultra_native_bind', { ...common, toolUseId, nodeId: admitted.nodeId, hostAgentId, bindingTicket: admitted.bindingTicket, hostWorker: worker });
     return { init, common, admitted, missionId: init.missionId, nodeId: admitted.nodeId, hostAgentId, worker };

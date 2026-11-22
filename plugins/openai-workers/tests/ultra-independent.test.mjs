@@ -21,7 +21,7 @@ import { provisionChannelKey } from '../bridge/native-channel.mjs';
 import { nativeTransport, signedDispatcher } from './native-host.mjs';
 
 const risk = { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95, reversibility: 'reversible', testsAvailable: true };
-const proposal = (worker = 'luna', extra = {}) => ({ worker, task: 'Bounded synthetic engineering task', risk, budget: { tokens: 1000, usd: 0.05 }, ...extra });
+const proposal = (worker = 'luna6', extra = {}) => ({ worker, task: 'Bounded synthetic engineering task', risk, budget: { tokens: 1000, usd: 0.05 }, ...extra });
 async function fixture(t, config = {}, options = {}) {
   // Match the owner state-directory contract: Windows TEMP may be an 8.3
   // alias, while the execution boundary deliberately requires canonical paths.
@@ -33,7 +33,7 @@ async function fixture(t, config = {}, options = {}) {
   return { store, broker, mission, review: new ReviewController(broker), actions: new ActionGate(broker) };
 }
 async function completeAuthor(f, extra = {}) {
-  const r = await f.broker.request(f.mission.id, 'root', proposal('luna', extra), 'author');
+  const r = await f.broker.request(f.mission.id, 'root', proposal('luna6', extra), 'author');
   const n = await f.broker.claim(f.mission.id);
   assert.equal(n.id, r.nodeId);
   await f.broker.finish(f.mission.id, n.id, { lease: n.lease.token, result: 'safe implementation', usage: { tokens: 20, usd: 0.001 } });
@@ -42,8 +42,8 @@ async function completeAuthor(f, extra = {}) {
 
 test('independent: native orchestrator cannot impersonate a mandatory HELICOP authority', async t => {
   const f = await fixture(t);
-  const p = await f.broker.request(f.mission.id, 'root', proposal('sol', { mode: 'REPLICATOR' }), 'parent-sol');
-  const child = await f.broker.request(f.mission.id, p.nodeId, proposal('sol'), 'peer');
+  const p = await f.broker.request(f.mission.id, 'root', proposal('sol6-2', { mode: 'REPLICATOR' }), 'parent-sol');
+  const child = await f.broker.request(f.mission.id, p.nodeId, proposal('sol6-2'), 'peer');
   assert.equal(child.status, 'pending');
   await assert.rejects(() => f.broker.decide(f.mission.id, child.id, { decision: 'APPROVE', rationale: 'I am the main orchestrator' },
     { trusted: true, source: 'native-host', authority: 'helicop-sol' }), /authority|principal|impersonat|configured|independent/i);
@@ -61,11 +61,11 @@ test('independent: dynamic policy gates added during approval wait require their
   const rules = [...resolveConfig().helicop.rules, { id: 'population-gate', enabled: true, authority: 'helicop-astra', mandatory: true, veto: true, priority: 100,
     when: { parentFamilies: ['sol'], childFamilies: ['sol'], minimumAgents: 3 } }];
   const f = await fixture(t, { helicop: { rules } });
-  const p = await f.broker.request(f.mission.id, 'root', proposal('sol', { mode: 'REPLICATOR' }), 'parent-sol');
-  const child = await f.broker.request(f.mission.id, p.nodeId, proposal('sol'), 'peer');
+  const p = await f.broker.request(f.mission.id, 'root', proposal('sol6-2', { mode: 'REPLICATOR' }), 'parent-sol');
+  const child = await f.broker.request(f.mission.id, p.nodeId, proposal('sol6-2'), 'peer');
   assert.equal(child.evaluation.requiredApprovals.some(a => a.authority === 'helicop-astra'), false);
   const supervisor = await f.broker.appointSupervisor(f.mission.id, child.id, 'helicop-sol');
-  await f.broker.request(f.mission.id, 'root', proposal('luna'), 'another-agent');
+  await f.broker.request(f.mission.id, 'root', proposal('luna6'), 'another-agent');
   const running = await f.broker.claim(f.mission.id, 'supervisor-process', { pool: 'review' });
   assert.equal(running.id, supervisor.id);
   await f.broker.finish(f.mission.id, running.id, { lease: running.lease.token, result: { decision: 'APPROVE', rationale: 'Synthetic bounded approval' }, usage: { tokens: 20, usd: 0.001 } });
@@ -102,12 +102,12 @@ test('independent: review reports cannot overwrite provenance or become two inde
 });
 
 test('independent: destructive low-complexity work uses effective impact and owner review configuration', async t => {
-  const f = await fixture(t, { review: { primary: 'sol', maxRounds: 4 } });
+  const f = await fixture(t, { review: { primary: 'sol6-2', maxRounds: 4 } });
   const authorId = await completeAuthor(f);
   const w = await f.review.start(f.mission.id, { authorId, source: { content: 'cleanup candidate' }, risk: { ...risk, destructive: true } });
   assert.equal(w.policy.secondOpinion, true);
   assert.equal(w.policy.gapReview, true);
-  assert.equal(w.policy.reviewer, 'sol');
+  assert.equal(w.policy.reviewer, 'sol6-2');
   assert.equal(w.policy.maxRounds, 4);
 });
 
@@ -122,8 +122,8 @@ test('independent: changed verification evidence invalidates an otherwise identi
 
 test('independent: one rejected request cannot generate unbounded revised sibling proposals', async t => {
   const f = await fixture(t, { helicop: { denial: 'revise', maxRevisions: 1 }, mission: { maxRetries: 1 } });
-  const p = await f.broker.request(f.mission.id, 'root', proposal('luna'), 'parent');
-  const denied = await f.broker.request(f.mission.id, p.nodeId, proposal('astra'), 'denied-upward');
+  const p = await f.broker.request(f.mission.id, 'root', proposal('luna6'), 'parent');
+  const denied = await f.broker.request(f.mission.id, p.nodeId, proposal('astra6-2'), 'denied-upward');
   assert.equal(denied.status, 'rejected');
   await f.broker.revise(f.mission.id, denied.id, p.nodeId, { task: 'Still prohibited revised proposal' }, 'revision-1');
   await assert.rejects(() => f.broker.revise(f.mission.id, denied.id, p.nodeId, { task: 'Another sibling bypassing retry count' }, 'revision-2'), /revis|retry|limit|consum/i);
@@ -151,10 +151,10 @@ test('independent: risk-required second opinions cannot be disabled by workflow-
 
 test('independent: child completion before cooperative wait cannot strand the parent', async t => {
   const f = await fixture(t);
-  const p = await f.broker.request(f.mission.id, 'root', proposal('sol'), 'parent');
+  const p = await f.broker.request(f.mission.id, 'root', proposal('sol6-2'), 'parent');
   const runningParent = await f.broker.claim(f.mission.id, 'parent-process', { pool: 'core' });
   assert.equal(runningParent.id, p.nodeId);
-  const c = await f.broker.request(f.mission.id, p.nodeId, proposal('luna'), 'child');
+  const c = await f.broker.request(f.mission.id, p.nodeId, proposal('luna6'), 'child');
   const child = await f.broker.claim(f.mission.id, 'child-process', { pool: 'core' });
   assert.equal(child.id, c.nodeId);
   await f.broker.finish(f.mission.id, child.id, { lease: child.lease.token, result: 'completed before parent waits', usage: { tokens: 20, usd: 0.001 } });
@@ -164,9 +164,9 @@ test('independent: child completion before cooperative wait cannot strand the pa
 
 test('independent: cancelling a waited-for child releases its parent without replaying work', async t => {
   const f = await fixture(t);
-  const p = await f.broker.request(f.mission.id, 'root', proposal('sol'), 'parent');
+  const p = await f.broker.request(f.mission.id, 'root', proposal('sol6-2'), 'parent');
   const runningParent = await f.broker.claim(f.mission.id, 'parent-process', { pool: 'core' });
-  const c = await f.broker.request(f.mission.id, p.nodeId, proposal('luna'), 'child');
+  const c = await f.broker.request(f.mission.id, p.nodeId, proposal('luna6'), 'child');
   await f.broker.waitFor(f.mission.id, runningParent.id, [c.nodeId], runningParent.lease.token);
   await f.broker.cancel(f.mission.id, c.nodeId);
   const m = await f.store.snapshot(f.mission.id);
@@ -176,7 +176,7 @@ test('independent: cancelling a waited-for child releases its parent without rep
 
 test('independent: known API overrun stays in mission accounting even when the worker is blocked', async t => {
   const f = await fixture(t);
-  const r = await f.broker.request(f.mission.id, 'root', proposal('luna', { budget: { tokens: 20000, usd: 1 } }), 'overrun');
+  const r = await f.broker.request(f.mission.id, 'root', proposal('luna6', { budget: { tokens: 20000, usd: 1 } }), 'overrun');
   let calls = 0;
   const backend = async () => { calls++; return { id: 'resp_independent_overrun', status: 'completed', text: 'Already incurred response', usage: { total: 50 }, estimatedUsd: 2, calls: [] }; };
   backend.offline = true;
@@ -190,7 +190,7 @@ test('independent: known API overrun stays in mission accounting even when the w
 
 test('independent: cancellation while API awaits prevents subsequent filesystem tool effects', async t => {
   const f = await fixture(t, { desktop: { profile: 'C', enableExecutionBridge: true }, permissions: { tools: ['read_file', 'stage_write'] } });
-  const r = await f.broker.request(f.mission.id, 'root', proposal('luna', { budget: { tokens: 20000, usd: 1 } }), 'cancel-before-tools');
+  const r = await f.broker.request(f.mission.id, 'root', proposal('luna6', { budget: { tokens: 20000, usd: 1 } }), 'cancel-before-tools');
   let effects = 0;
   const backend = async () => {
     await f.broker.cancel(f.mission.id, r.nodeId);
@@ -204,7 +204,7 @@ test('independent: cancellation while API awaits prevents subsequent filesystem 
 
 test('independent: a completed polled response enters a non-replayable phase before staged side effects', async t => {
   const f = await fixture(t, { desktop: { profile: 'C', enableExecutionBridge: true }, permissions: { tools: ['read_file', 'stage_write'] } });
-  const r = await f.broker.request(f.mission.id, 'root', proposal('luna', { budget: { tokens: 20000, usd: 1 } }), 'poll-tools');
+  const r = await f.broker.request(f.mission.id, 'root', proposal('luna6', { budget: { tokens: 20000, usd: 1 } }), 'poll-tools');
   const backend = async name => name === 'create'
     ? { id: 'resp_independent_poll', status: 'in_progress' }
     : { id: 'resp_independent_poll', status: 'completed', text: '', usage: { total: 50 }, estimatedUsd: 0.001,
@@ -225,8 +225,8 @@ test('independent: a completed polled response enters a non-replayable phase bef
 test('independent: paid HELICOP bootstrap cannot bypass a pending explicit free-to-paid approval', async t => {
   const rules = [{ id: 'free-parent-sol', authority: 'helicop-sol', enabled: true, when: { parentFamilies: ['astra'], childFamilies: ['sol'] }, mandatory: true, veto: true, priority: 50 }];
   const f = await fixture(t, { freeToPaid: { policy: 'C' }, helicop: { rules } });
-  const p = await f.broker.request(f.mission.id, 'root', proposal('daily-astrafree'), 'free-parent');
-  const r = await f.broker.request(f.mission.id, p.nodeId, proposal('sol'), 'paid-child');
+  const p = await f.broker.request(f.mission.id, 'root', proposal('astra6free'), 'free-parent');
+  const r = await f.broker.request(f.mission.id, p.nodeId, proposal('sol6-2'), 'paid-child');
   assert.equal(r.status, 'pending');
   assert.ok(r.evaluation.requiredApprovals.some(a => a.authority === 'user'));
   const backend = async () => { throw new Error('This admission-only fixture must not call the transport'); };
@@ -242,7 +242,7 @@ test('independent: default C runtime creates a durable stage without a test-only
   t.after(() => rm(project, { recursive: true, force: true }));
   await writeFile(join(project, 'source.txt'), 'authorised source');
   const f = await fixture(t, { desktop: { profile: 'C', enableExecutionBridge: true }, permissions: { roots: [project], tools: ['read_file', 'stage_write'] } });
-  const r = await f.broker.request(f.mission.id, 'root', proposal('luna', { budget: { tokens: 20000, usd: 1 } }), 'actual-stage');
+  const r = await f.broker.request(f.mission.id, 'root', proposal('luna6', { budget: { tokens: 20000, usd: 1 } }), 'actual-stage');
   const backend = async () => ({ id: 'resp_independent_actual_stage', status: 'completed', text: '', usage: { total: 50 }, estimatedUsd: 0.001,
     calls: [{ name: 'create_stage', call_id: 'call_actual_stage', args: { files: [{ rootId: '0', path: 'source.txt' }] } }] });
   backend.offline = true;
@@ -259,7 +259,7 @@ test('independent: public Chat recruitment cannot reuse a trusted native mission
   const native = await f.broker.createMission({ id: 'native-confusion-fixture', task: 'Trusted native mission', orchestrator: { model: 'opus', trusted: true, source: 'native-host' } });
   const backend = async () => { throw new Error('No API call expected'); }; backend.offline = true;
   const service = new UltraService({ config: f.broker.config, store: f.store, backend });
-  await assert.rejects(() => service.invoke('ultra_recruit', { mission_id: native.id, worker: 'astra', task: 'Attempt public authority laundering', risk, request_key: 'launder-native' }), /native|surface|channel|public|mission|authority/i);
+  await assert.rejects(() => service.invoke('ultra_recruit', { mission_id: native.id, worker: 'astra6-2', task: 'Attempt public authority laundering', risk, request_key: 'launder-native' }), /native|surface|channel|public|mission|authority/i);
 });
 
 test('independent: workflow caller cannot downgrade the author admission risk floor', async t => {
@@ -276,7 +276,7 @@ async function nativeFixture(t, options = {}) {
   const transport = { trustedHostChannel: true };
   const init = await controller.handle('ultra_native_init', { sessionId: 'independent-native', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] }, transport);
   const common = { sessionId: 'independent-native', capability: init.capability };
-  const admitted = await controller.handle('ultra_native_admit', { ...common, toolUseId: 'spawn-1', primaryModel: 'opus', subagentType: 'openai-workers:luna',
+  const admitted = await controller.handle('ultra_native_admit', { ...common, toolUseId: 'spawn-1', primaryModel: 'opus', subagentType: 'oai:luna6',
     prompt: JSON.stringify({ task: 'Independent native fixture', ultra: { risk, budget: { tokens: 20000, usd: 1 } } }) }, transport);
   assert.equal(admitted.allowed, true);
   await controller.handle('ultra_native_bind', { ...common, toolUseId: 'spawn-1', hostAgentId: 'native-agent-1', nodeId: admitted.nodeId }, transport);
@@ -309,7 +309,7 @@ test('independent: native tool intent revalidates a cancelled allocation instead
   const f = await nativeFixture(t, { backend, config: { surfaces: { codeCli: { profile: 'B' } }, permissions: { tools: ['read_file'] } }, boundaryFactory: () => ({ readFile: async () => { effects++; return { content: 'private source' }; } }) });
   const stale = await f.store.snapshot(f.nativeMissionId);
   await f.broker.cancel(f.nativeMissionId, f.nodeId);
-  await assert.rejects(() => f.controller.tool(stale, { hostAgentId: 'native-agent-1', toolUseId: 'read-after-cancel', tool: 'mcp__openai-workers__ultra_read_file', input: { rootId: '0', path: 'source.txt' } }), /cancel|lease|running|active|stale/i);
+  await assert.rejects(() => f.controller.tool(stale, { hostAgentId: 'native-agent-1', toolUseId: 'read-after-cancel', tool: 'mcp__oai__ultra_read_file', input: { rootId: '0', path: 'source.txt' } }), /cancel|lease|running|active|stale/i);
   assert.equal(effects, 0);
 });
 
@@ -320,7 +320,7 @@ test('independent: enabled Desktop governance cannot be bypassed through legacy 
   await writeOwnerConfig(resolveConfig({ enabled: true }), env);
   let calls = 0;
   const backend = async () => { calls++; return { id: 'resp_unexpected', status: 'completed', text: 'unexpected' }; };
-  await assert.rejects(() => invokeDesktop('ask_openai_worker', { worker: 'astra', task: 'Bypass governed recruitment' }, backend, env), /ULTRA|govern|authority/i);
+  await assert.rejects(() => invokeDesktop('ask_openai_worker', { worker: 'astra6-2', task: 'Bypass governed recruitment' }, backend, env), /ULTRA|govern|authority/i);
   const output = [];
   await handleDesktopMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ultra_native_init', arguments: { sessionId: 'spoof', model: 'opus', version: '2.1.326' } } }, chunk => output.push(JSON.parse(chunk)), backend, env);
   assert.equal(output[0].result.isError, true);
@@ -356,7 +356,7 @@ test('independent: failed host bootstrap cannot fall back to an ungoverned nativ
   });
   const context = {
     env: { get: async name => { if (name === 'OPENAI_ULTRA_ENABLED') throw new Error('Synthetic host environment read failure'); } },
-    agent: { list: async () => [{ id: 'bootstrap-agent', type: 'openai-workers:luna', status: 'running' }] },
+    agent: { list: async () => [{ id: 'bootstrap-agent', type: 'oai:luna6', status: 'running' }] },
     session: { cwd: async () => '/tmp', info: async () => ({ dataRules: [] }), messages: async options => options?.as === 'api' ? [] : [{ role: 'user', text: 'Synthetic source inspection' }] },
     fs: { read: async () => '' },
     state: { get: async () => ({ value: null }), set: async () => {} },
@@ -380,12 +380,12 @@ test('independent: native project reads protect configured owner policy outside 
   const dispatchNative = signedDispatcher(dispatch, options, keyHex);
   const initialized = await dispatchNative('ultra_native_init', { sessionId: 'control-path-test', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] });
   const common = { sessionId: 'control-path-test', capability: initialized.capability };
-  const admitted = await dispatchNative('ultra_native_admit', { ...common, toolUseId: 'control-spawn', primaryModel: 'opus', subagentType: 'openai-workers:luna',
+  const admitted = await dispatchNative('ultra_native_admit', { ...common, toolUseId: 'control-spawn', primaryModel: 'opus', subagentType: 'oai:luna6',
     prompt: JSON.stringify({ task: 'Synthetic read-only project inspection', ultra: { risk, budget: { tokens: 1000, usd: 0.05 } } }) });
   assert.equal(admitted.allowed, true);
   await dispatchNative('ultra_native_bind', { ...common, hostAgentId: 'control-agent', nodeId: admitted.nodeId, toolUseId: 'control-spawn' });
   await assert.rejects(() => dispatchNative('ultra_native_tool', { ...common, hostAgentId: 'control-agent', toolUseId: 'control-read',
-    tool: 'mcp__openai-workers__ultra_read_file', input: { rootId: '0', path: 'owner-policy.json' } }), /control|protect|secret/i);
+    tool: 'mcp__oai__ultra_read_file', input: { rootId: '0', path: 'owner-policy.json' } }), /control|protect|secret/i);
 });
 
 test('independent: supervisory command respects fresh host organization data restrictions', async () => {
@@ -413,7 +413,7 @@ test('independent: supervisory command respects fresh host organization data res
 
 test('independent: runtime refuses substituted provider models while preserving incurred usage', async t => {
   const f = await fixture(t);
-  const r = await f.broker.request(f.mission.id, 'root', proposal('luna', { budget: { tokens: 20000, usd: 1 } }), 'model-substitution');
+  const r = await f.broker.request(f.mission.id, 'root', proposal('luna6', { budget: { tokens: 20000, usd: 1 } }), 'model-substitution');
   const backend = async () => ({ id: 'resp_substituted_model', status: 'completed', model: 'unclassified-unapproved-model', text: 'Output from the wrong provider model', usage: { total: 50 }, estimatedUsd: 0.001, calls: [] });
   backend.offline = true;
   await new UltraRuntime(f.broker, { backend }).tick(f.mission.id);
@@ -462,10 +462,10 @@ test('independent: Code Mode REPL has exact guarded registrations because wildca
 test('independent: effective root host model outranks configured alias and survives descendant admission', async t => {
   const f = await nativeFixture(t, { config: { recruitment: { mode: 'SKYNET' } } });
   const prompt = JSON.stringify({ task: 'Bounded Sol recruitment after actual Haiku turn', ultra: { risk, budget: { tokens: 1000, usd: 0.05 } } });
-  const rootRequest = await f.controller.handle('ultra_native_admit', { ...f.common, toolUseId: 'effective-haiku-root', parentModel: 'haiku', primaryModel: 'opus', subagentType: 'openai-workers:sol', prompt }, f.transport);
+  const rootRequest = await f.controller.handle('ultra_native_admit', { ...f.common, toolUseId: 'effective-haiku-root', parentModel: 'haiku', primaryModel: 'opus', subagentType: 'oai:sol6-2', prompt }, f.transport);
   assert.equal(rootRequest.allowed, false, 'pinned effective Haiku model cannot inherit a configured Opus label');
   assert.ok(rootRequest.requiredApprovals.some(a => a.authority === 'helicop-sol'));
-  const childRequest = await f.controller.handle('ultra_native_admit', { ...f.common, toolUseId: 'effective-haiku-descendant', parentAgentId: 'native-agent-1', parentModel: 'opus', primaryModel: 'opus', subagentType: 'openai-workers:sol', prompt }, f.transport);
+  const childRequest = await f.controller.handle('ultra_native_admit', { ...f.common, toolUseId: 'effective-haiku-descendant', parentAgentId: 'native-agent-1', parentModel: 'opus', primaryModel: 'opus', subagentType: 'oai:sol6-2', prompt }, f.transport);
   assert.equal(childRequest.allowed, false, 'descendant placeholder/configured model cannot upgrade the recorded root authority');
   assert.ok(childRequest.requiredApprovals.some(a => a.authority === 'helicop-sol'));
 });

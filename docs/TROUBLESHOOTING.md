@@ -2,23 +2,23 @@
 
 [← Overview](../README.md) · [Architecture →](ARCHITECTURE.md)
 
-Start with `/openai-workers` inside Claude Code. It prints effective agent model/tier, configured-key status and local Astra/Terra usage **without revealing either API key**.
+Start with `/oai` inside Claude Code. It prints effective agent model/tier, configured-key status and local Astra/Terra usage **without revealing either API key**.
 
 | Symptom | Likely reason | Next action |
 |---|---|---|
 | `claude` not found | Claude Code CLI not installed or missing PATH | Install/update Claude Code; open a new terminal; run `claude --version` |
 | `node` not found | Node.js absent | Install Node.js 20.11+; run `node --version` |
 | Marketplace validation failed | Wrong folder or unsupported Claude version | Run `claude plugin validate .` in repository root; use Claude Code 2.1.299+ |
-| Slash command `/openai-workers` not found | Plugin not loaded | Restart Claude Code; inspect `/plugin` for `openai-workers@openai-worker-local` |
+| Slash command `/oai` not found | Plugin not loaded | Restart Claude Code; inspect `/plugin` for `oai@openai-worker-local` |
 | “OpenAI bridge not connected” | MCP process failed to start or load | Inspect `/mcp` and Node version; run tests from `plugins/openai-workers` |
 | “Missing free OpenAI key” | Free key not configured | Run `set-openai-key.ps1 -Profile free` (Windows) or set `OPENAI_FREE_API_KEY` securely |
 | “Missing standard OpenAI key” | Straight key not configured | Run `set-openai-key.ps1 -Profile standard` (Windows) or set `OPENAI_API_KEY` securely |
 | API `401`/`403` | Key invalid or lacks model/API entitlement | Check the correct OpenAI project, account permission and programme eligibility |
 | API `429` | API rate limiting or unavailable capacity | Reduce concurrency; use a supported standard tier; inspect billing limits |
-| Flex unavailable | Model incompatible with Flex | Use `flex6-1` (`gpt-6.1-sol`) or select `default` tier for incompatible models |
+| Flex unavailable | Model incompatible with Flex | Use `sol6-1flex` (`gpt-6.1-sol`) or select `default` tier for incompatible models |
 | Daily worker paused at limit | Used + reserved tokens reached soft threshold | Wait for 00:00 UTC rollover, or inspect genuine in-flight reservations; do not erase ledger |
 | Ledger unreadable | Invalid/corrupt `free-usage-ledger.json` | Back up the file; inspect it and repair deliberately; free workers fail closed |
-| Large reservations remain after interruption | Network timeout may have created an upstream response | `/openai-workers` is read-only and shows the local usage and reservations; the bridge `usage` result lists the pending response IDs, and polling a response (`poll_openai_worker` with the same worker and ID) settles it once OpenAI reports final usage. Investigate before any manual edit |
+| Large reservations remain after interruption | Network timeout may have created an upstream response | `/oai` is read-only and shows the local usage and reservations; the bridge `usage` result lists the pending response IDs, and polling a response (`poll_openai_worker` with the same worker and ID) settles it once OpenAI reports final usage. Investigate before any manual edit |
 | Subagent doesn't edit a file | Claude Code tool permission denied | Inspect Claude Code permission prompts and managed policy; return a suggested patch instead |
 
 ## Commands worth knowing
@@ -33,7 +33,7 @@ npm test
 Pop-Location
 ```
 
-Inside Claude Code use `/plugin` for installed plugins, `/mcp` for bridge health and `/openai-workers` for agent diagnostics.
+Inside Claude Code use `/plugin` for installed plugins, `/mcp` for bridge health and `/oai` for agent diagnostics.
 
 ## Windows key files
 
@@ -59,7 +59,7 @@ The ledger is intentionally conservative. It is a JSON state file with a short-l
 - **No MCP tools in Chat:** install the `.mcpb` under Settings → Desktop app → Extensions, confirm it is enabled, check `+ → Connectors`, then restart Claude Desktop.
 - **Desktop requests have no key:** enter the two keys in the extension's masked settings fields. On Windows an empty field falls back to the same user's existing DPAPI key if present.
 - **Request stays `in_progress`:** use `poll_openai_worker` with the *same* worker and returned response ID. Flex may take longer.
-- **Desktop Code tab lacks native subagents:** the `.mcpb` is for *Chat*. Install the `openai-workers` Claude Code marketplace plugin for **local Code sessions**; cloud/WSL Code sessions do not load the mod.
+- **Desktop Code tab lacks native subagents:** the `.mcpb` is for *Chat*. Install the `oai` Claude Code marketplace plugin for **local Code sessions**; cloud/WSL Code sessions do not load the mod.
 - **Quota differs between tabs:** ensure both sessions run under the same Windows user and use the same `OPENAI_WORKER_USAGE_DIR` (or default user ledger). Another machine has a separate ledger.
 - **Changing model or tier doesn't apply:** restart the Desktop app after updating Windows user environment variables, so the MCP server receives the new values.
 

@@ -17,10 +17,10 @@ export const PROFILE_NAMES = Object.freeze(['Lite', 'Balanced', 'Research', 'Cri
 const clone = value => structuredClone(value);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const families = { astra: 4, sol: 3, luna: 2, terra: 1 };
-const workerFamilies = { sol: 'sol', astra: 'astra', luna: 'luna', 'flex6-1': 'sol', 'daily-astrafree': 'astra', 'daily-terrafree': 'terra' };
+const workerFamilies = { 'sol6-2': 'sol', 'astra6-2': 'astra', luna6: 'luna', luna6fast: 'luna', luna6flex: 'luna', 'sol6-1flex': 'sol', astra6free: 'astra', 'terra5-6free': 'terra' };
 const models = Object.fromEntries(Object.entries(WORKER_TYPES).map(([worker, spec]) => [spec.model, { family: workerFamilies[worker], rank: null }]));
 const workers = Object.fromEntries(Object.entries(WORKER_TYPES).map(([worker, spec]) => [worker, {
-  model: spec.model, family: workerFamilies[worker], keyProfile: worker.startsWith('daily-') ? 'free' : 'standard',
+  model: spec.model, family: workerFamilies[worker], keyProfile: spec.key,
   mode: null, permissions: null, serviceTier: spec.defaultTier ?? null,
 }]));
 function freezeDeep(value) {
@@ -59,7 +59,7 @@ export const DEFAULT_CONFIG = freezeDeep({
   },
   risk: { minimumConfidence: 0.75, uncertainAuthority: 'helicop-sol', highAuthority: 'helicop-astra', requireHighRecruitmentApproval: false },
   review: {
-    selection: 'B', maxRounds: 3, primary: 'astra', reworker: 'sol', rereviewer: 'astra', secondOpinion: 'sol', gapInspector: 'luna', judge: 'astra',
+    selection: 'B', maxRounds: 3, primary: 'astra6-2', reworker: 'sol6-2', rereviewer: 'astra6-2', secondOpinion: 'sol6-2', gapInspector: 'luna6', judge: 'astra6-2',
     secondOpinionImpacts: ['high', 'critical'], gapInspectionImpacts: ['high', 'critical'], freshGapInspector: true,
     requireTests: true, repeatedDefectLimit: 2, noProgressLimit: 1, blindSecondOpinion: true,
     // Owner-policy mandatory tests: [{ id, description?, impacts?, areas?, executable?, commandDigest? }]. Agents may add to, never remove, these.
@@ -174,7 +174,7 @@ export function validateConfig(config) {
     if (!own(config.models, spec.model)) throw new Error(`Worker ${worker} uses an unclassified model ${spec.model}.`);
     if (spec.family !== config.models[spec.model].family) throw new Error(`Worker ${worker} family differs from its exact model classification.`);
     en(spec.keyProfile, ['free', 'standard'], `workers.${worker}.keyProfile`);
-    const fixedProfile = ['daily-astrafree', 'daily-terrafree'].includes(worker) ? 'free' : 'standard';
+    const fixedProfile = ['astra6free', 'terra5-6free'].includes(worker) ? 'free' : 'standard';
     if (spec.keyProfile !== fixedProfile) throw new Error(`Worker ${worker} must retain the ${fixedProfile} key route.`);
     if (spec.mode !== null) modeFlags(spec.mode);
     if (spec.permissions !== null) validatePermissions(spec.permissions, `workers.${worker}.permissions`);

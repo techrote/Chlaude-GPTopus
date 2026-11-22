@@ -11,20 +11,20 @@ function root(c, model = 'opus', trusted = true) {
   return { config: c, parent: { id: 'root', role: 'orchestrator', permissions: c.permissions, depth: { core: 0, review: 0 } },
     mission: { rootAgentId: 'root', orchestrator: { model, trusted, source: 'test-host' } } };
 }
-function parent(c, worker = 'sol', mode = 'SWARM') {
+function parent(c, worker = 'sol6-2', mode = 'SWARM') {
   const spec = c.workers[worker];
   return { id: `parent-${worker}`, role: 'implementation', worker, model: spec.model, family: spec.family, keyProfile: spec.keyProfile,
     mode, permissions: { ...structuredClone(c.permissions), recruit: modeFlags(mode, c.recruitment.custom) }, depth: { core: 1, review: 0 } };
 }
 const req = (worker, extra = {}) => ({ worker, role: 'implementation', risk: lowRisk, budget: { tokens: 2000, usd: 0.03 }, ...extra });
 
-test('ULTRA is opt-in; six workers and Lite protected fleet defaults remain exact', () => {
+test('ULTRA is opt-in; eight workers and Lite protected fleet defaults remain exact', () => {
   assert.equal(DEFAULT_CONFIG.enabled, false);
-  assert.equal(Object.keys(DEFAULT_CONFIG.workers).length, 6);
+  assert.equal(Object.keys(DEFAULT_CONFIG.workers).length, 8);
   assert.deepEqual(DEFAULT_CONFIG.fleets, { core: { maxDepth: 2, maxInvocations: 12, concurrency: 4, reserved: 0 }, review: { maxDepth: 2, maxInvocations: 12, concurrency: 3, reserved: 1 } });
   assert.equal(DEFAULT_CONFIG.review.maxRounds, 3);
   assert.equal(DEFAULT_CONFIG.freeToPaid.policy, 'B');
-  assert.equal(evaluateRecruitment({ ...root(DEFAULT_CONFIG), request: req('luna') }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ ...root(DEFAULT_CONFIG), request: req('luna6') }).decision, 'REJECT');
   assert.equal(DEFAULT_CONFIG.desktop.profile, 'A');
   assert.equal(DEFAULT_CONFIG.desktop.enableExecutionBridge, false);
 });
@@ -32,8 +32,8 @@ test('ULTRA is opt-in; six workers and Lite protected fleet defaults remain exac
 test('strict validated configuration rejects unknown fields, future migrations and authority mistakes', () => {
   assert.throws(() => config({ fleet: {} }), /Unknown configuration/);
   assert.throws(() => config({ fleets: { review: { reserved: 3 } } }), /ordinary slot/);
-  assert.throws(() => config({ workers: { sol: { model: 'unknown' } } }), /unclassified/);
-  assert.throws(() => config({ workers: { 'daily-astrafree': { keyProfile: 'standard' } } }), /retain the free key/);
+  assert.throws(() => config({ workers: { 'sol6-2': { model: 'unknown' } } }), /unclassified/);
+  assert.throws(() => config({ workers: { 'astra6free': { keyProfile: 'standard' } } }), /retain the free key/);
   assert.throws(() => config({ authority: { unknownProfile: 'opus' } }), /Unverified/);
   assert.throws(() => config({ desktop: { profile: 'C' } }), /explicit/);
   assert.throws(() => migrateConfig({ version: 9000 }), /Unsupported/);
@@ -82,16 +82,16 @@ test('per-key and per-model mission ceilings are explicit validated maps and sco
 test('SWARM REPLICATOR SKYNET and all CUSTOM flag combinations govern relative ranks', () => {
   for (const [mode, expected] of Object.entries({ SWARM: [true, false, false], REPLICATOR: [true, true, false], SKYNET: [true, true, true] })) {
     const c = config();
-    for (const [index, worker] of ['luna', 'flex6-1', 'astra'].entries()) {
-      const result = evaluateRecruitment({ config: c, parent: parent(c, 'sol', mode), mission: {}, request: req(worker) });
+    for (const [index, worker] of ['luna6', 'sol6-1flex', 'astra6-2'].entries()) {
+      const result = evaluateRecruitment({ config: c, parent: parent(c, 'sol6-2', mode), mission: {}, request: req(worker) });
       assert.equal(result.decision !== 'REJECT', expected[index], `${mode} -> ${worker}: ${result.reasons}`);
     }
   }
   for (let mask = 0; mask < 8; mask++) {
     const flags = { lower: Boolean(mask & 1), equal: Boolean(mask & 2), higher: Boolean(mask & 4) };
     const c = config({ recruitment: { mode: 'CUSTOM', custom: flags } });
-    for (const [index, worker] of ['luna', 'sol', 'astra'].entries()) {
-      const result = evaluateRecruitment({ config: c, parent: parent(c, 'sol', 'CUSTOM'), mission: {}, request: req(worker) });
+    for (const [index, worker] of ['luna6', 'sol6-2', 'astra6-2'].entries()) {
+      const result = evaluateRecruitment({ config: c, parent: parent(c, 'sol6-2', 'CUSTOM'), mission: {}, request: req(worker) });
       assert.equal(result.decision !== 'REJECT', Object.values(flags)[index]);
     }
   }
@@ -99,69 +99,69 @@ test('SWARM REPLICATOR SKYNET and all CUSTOM flag combinations govern relative r
 
 test('exact aliases inherit family rank independent of key, tier or reasoning', () => {
   const c = config();
-  const p = parent(c, 'astra', 'REPLICATOR');
-  const equal = evaluateRecruitment({ config: c, parent: p, request: req('daily-astrafree', { reasoning_effort: 'max' }) });
+  const p = parent(c, 'astra6-2', 'REPLICATOR');
+  const equal = evaluateRecruitment({ config: c, parent: p, request: req('astra6free', { reasoning_effort: 'max' }) });
   assert.equal(equal.relation, 'equal');
   assert.equal(equal.family, 'astra');
   assert.equal(equal.keyProfile, 'free');
-  assert.equal(evaluateRecruitment({ config: c, parent: parent(c), request: req('astra', { model: 'gpt-new' }) }).decision, 'REJECT');
-  assert.equal(evaluateRecruitment({ ...root(c), request: req('luna', { keyProfile: 'free' }) }).decision, 'REJECT');
-  assert.equal(evaluateRecruitment({ ...root(c), request: req('sol', { serviceTier: 'priority' }) }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ config: c, parent: parent(c), request: req('astra6-2', { model: 'gpt-new' }) }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ ...root(c), request: req('luna6', { keyProfile: 'free' }) }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ ...root(c), request: req('sol6-2', { serviceTier: 'priority' }) }).decision, 'REJECT');
 });
 
 test('owner can explicitly classify future exact models and family rank exceptions', () => {
-  const c = config({ models: { 'future-luna': { family: 'luna', rank: null } }, workers: { luna: { model: 'future-luna' } } });
-  const result = evaluateRecruitment({ ...root(c), request: req('luna') });
+  const c = config({ models: { 'future-luna': { family: 'luna', rank: null } }, workers: { luna6: { model: 'future-luna' } } });
+  const result = evaluateRecruitment({ ...root(c), request: req('luna6') });
   assert.equal(result.model, 'future-luna');
   assert.equal(result.rank, 2);
   const changed = config({ families: { luna: 5 } });
-  assert.equal(evaluateRecruitment({ config: changed, parent: parent(changed), request: req('luna') }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ config: changed, parent: parent(changed), request: req('luna6') }).decision, 'REJECT');
 });
 
 test('descendants cannot relabel SWARM as SKYNET or launder authority through a lower worker', () => {
   const c = config();
-  const a = parent(c, 'sol');
-  const first = evaluateRecruitment({ config: c, parent: a, request: req('luna') });
+  const a = parent(c, 'sol6-2');
+  const first = evaluateRecruitment({ config: c, parent: a, request: req('luna6') });
   assert.equal(first.decision, 'APPROVE');
-  const b = { ...parent(c, 'luna'), permissions: first.effectivePermissions, depth: { core: 0, review: 0 } };
-  assert.equal(evaluateRecruitment({ config: c, parent: b, request: req('astra', { mode: 'SKYNET' }) }).decision, 'REJECT');
-  assert.equal(evaluateRecruitment({ config: c, parent: b, request: req('daily-terrafree', { permissions: { recruit: { higher: true } } }) }).decision, 'REJECT');
-  assert.equal(evaluateRecruitment({ config: c, parent: { ...b, role: 'orchestrator' }, mission: { rootAgentId: 'root' }, request: req('astra') }).decision, 'REJECT');
+  const b = { ...parent(c, 'luna6'), permissions: first.effectivePermissions, depth: { core: 0, review: 0 } };
+  assert.equal(evaluateRecruitment({ config: c, parent: b, request: req('astra6-2', { mode: 'SKYNET' }) }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ config: c, parent: b, request: req('terra5-6free', { permissions: { recruit: { higher: true } } }) }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ config: c, parent: { ...b, role: 'orchestrator' }, mission: { rootAgentId: 'root' }, request: req('astra6-2') }).decision, 'REJECT');
 });
 
 test('Luna SWARM has a distinct higher reviewer exception without implementation recruitment', () => {
   const c = config({ permissions: { tools: ['Read', 'Edit'], roots: ['/project'] } });
   const mission = root(c).mission;
-  const p = parent(c, 'luna');
-  const result = evaluateRecruitment({ config: c, mission, parent: p, request: req('astra', { role: 'reviewer' }) });
+  const p = parent(c, 'luna6');
+  const result = evaluateRecruitment({ config: c, mission, parent: p, request: req('astra6-2', { role: 'reviewer' }) });
   assert.equal(result.decision, 'APPROVE');
   assert.equal(result.pool, 'review');
   assert.equal(result.reviewException, true);
   assert.deepEqual(result.effectivePermissions.tools, ['Read']);
   assert.deepEqual(result.effectivePermissions.recruit, { lower: false, equal: false, higher: false });
-  assert.equal(evaluateRecruitment({ config: c, parent: p, request: req('astra') }).decision, 'REJECT');
-  assert.equal(evaluateRecruitment({ config: c, parent: p, request: req('astra', { role: 'reviewer', permissions: { tools: ['Edit'] } }) }).decision, 'REJECT');
-  const reviewer = { ...parent(c, 'astra', 'SKYNET'), role: 'reviewer', permissions: result.effectivePermissions };
-  assert.equal(evaluateRecruitment({ config: c, parent: reviewer, request: req('sol', { role: 'reworker' }) }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ config: c, parent: p, request: req('astra6-2') }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ config: c, parent: p, request: req('astra6-2', { role: 'reviewer', permissions: { tools: ['Edit'] } }) }).decision, 'REJECT');
+  const reviewer = { ...parent(c, 'astra6-2', 'SKYNET'), role: 'reviewer', permissions: result.effectivePermissions };
+  assert.equal(evaluateRecruitment({ config: c, parent: reviewer, request: req('sol6-2', { role: 'reworker' }) }).decision, 'REJECT');
 });
 
 test('Opus and Fable are separately configurable; Sonnet consults Sol and Haiku defers', () => {
   const c = config();
-  for (const name of ['opus', 'fable']) assert.equal(evaluateRecruitment({ ...root(c, name), request: req('astra') }).decision, 'APPROVE');
-  const sonnet = evaluateRecruitment({ ...root(c, 'sonnet'), request: req('astra') });
+  for (const name of ['opus', 'fable']) assert.equal(evaluateRecruitment({ ...root(c, name), request: req('astra6-2') }).decision, 'APPROVE');
+  const sonnet = evaluateRecruitment({ ...root(c, 'sonnet'), request: req('astra6-2') });
   assert.equal(sonnet.decision, 'PENDING');
   assert.equal(sonnet.requiredApprovals[0].authority, 'helicop-sol');
   assert.equal(sonnet.requiredApprovals[0].finalAuthority, true);
-  const haiku = evaluateRecruitment({ ...root(c, 'haiku'), request: req('sol') });
+  const haiku = evaluateRecruitment({ ...root(c, 'haiku'), request: req('sol6-2') });
   assert.equal(haiku.requiredApprovals[0].decisionMaker, true);
   const changed = config({ authority: { profiles: { fable: { authority: 'limited', restrictedFamilies: ['sol', 'astra'], supervisor: 'user' } } } });
-  assert.equal(evaluateRecruitment({ ...root(changed, 'fable'), request: req('astra') }).requiredApprovals[0].authority, 'user');
-  assert.equal(evaluateRecruitment({ ...root(changed, 'opus'), request: req('astra') }).decision, 'APPROVE');
+  assert.equal(evaluateRecruitment({ ...root(changed, 'fable'), request: req('astra6-2') }).requiredApprovals[0].authority, 'user');
+  assert.equal(evaluateRecruitment({ ...root(changed, 'opus'), request: req('astra6-2') }).decision, 'APPROVE');
 });
 
 test('unverified claimed Opus never receives full authority; explicit identity configuration expires', () => {
   const c = config();
-  const result = evaluateRecruitment({ ...root(c, 'opus', false), request: req('astra') });
+  const result = evaluateRecruitment({ ...root(c, 'opus', false), request: req('astra6-2') });
   assert.equal(result.orchestrator.model, 'unknown');
   assert.equal(result.requiredApprovals[0].authority, 'user');
   const authorised = config({ authority: { configuredIdentity: { model: 'opus', authorisedBy: 'owner-confirmed-local-config', expiresAt: '2030-01-01T00:00:00Z' } } });
@@ -172,16 +172,16 @@ test('unverified claimed Opus never receives full authority; explicit identity c
 test('HELICOP defaults independently gate Sol peers and Sol to Astra and match compound rule conditions', () => {
   const c = config();
   const mission = root(c).mission;
-  const peer = evaluateRecruitment({ config: c, mission, parent: parent(c, 'sol', 'REPLICATOR'), request: req('sol') });
+  const peer = evaluateRecruitment({ config: c, mission, parent: parent(c, 'sol6-2', 'REPLICATOR'), request: req('sol6-2') });
   assert.equal(peer.requiredApprovals[0].authority, 'helicop-sol');
-  const up = evaluateRecruitment({ config: c, mission, parent: parent(c, 'sol', 'SKYNET'), request: req('astra') });
+  const up = evaluateRecruitment({ config: c, mission, parent: parent(c, 'sol6-2', 'SKYNET'), request: req('astra6-2') });
   assert.equal(up.requiredApprovals[0].authority, 'helicop-astra');
   const rules = [...c.helicop.rules, { id: 'cost-and-confidence', enabled: true, authority: 'helicop-sol', mandatory: true, veto: true, priority: 75,
     when: { modes: ['SKYNET'], parentModels: ['gpt-6.2-sol'], childModels: ['gpt-6.2-astra'], purposes: ['implementation'], minimumUsd: 0.02, maximumTokens: 3000, minimumDepth: 2, confidenceBelow: 0.99 } }];
   const custom = config({ helicop: { rules } });
-  const both = evaluateRecruitment({ config: custom, mission, parent: parent(custom, 'sol', 'SKYNET'), request: req('astra') });
+  const both = evaluateRecruitment({ config: custom, mission, parent: parent(custom, 'sol6-2', 'SKYNET'), request: req('astra6-2') });
   assert.deepEqual(new Set(both.requiredApprovals.map(a => a.authority)), new Set(['helicop-sol', 'helicop-astra']));
-  assert.equal(evaluateRecruitment({ ...root(config({ helicop: { sol: false } }), 'sonnet'), request: req('astra') }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ ...root(config({ helicop: { sol: false } }), 'sonnet'), request: req('astra6-2') }).decision, 'REJECT');
 });
 
 test('all approval combinations preserve mandatory high-authority vetoes and reject bypass', () => {
@@ -195,12 +195,12 @@ test('all approval combinations preserve mandatory high-authority vetoes and rej
   assert.equal(combineApprovals(optional, [{ authority: 'helicop-sol', decision: 'APPROVE' }], 'prioritised').decision, 'PENDING');
   assert.equal(combineApprovals(optional, [{ authority: 'helicop-astra', decision: 'APPROVE' }], 'prioritised').decision, 'APPROVE');
   assert.equal(combineApprovals(optional, [{ authority: 'helicop-sol', decision: 'REJECT' }], 'escalation').decision, 'ESCALATE');
-  assert.equal(combineApprovals(mandatory, [{ authority: 'helicop-astra', decision: 'MODIFY', modification: { worker: 'luna' } }]).decision, 'MODIFY');
+  assert.equal(combineApprovals(mandatory, [{ authority: 'helicop-astra', decision: 'MODIFY', modification: { worker: 'luna6' } }]).decision, 'MODIFY');
 });
 
 test('cheap destructive author remains Luna but receives expensive verification and execution controls', () => {
   const c = config();
-  const result = evaluateRecruitment({ ...root(c), request: req('luna', { risk: { ...lowRisk, destructive: true } }) });
+  const result = evaluateRecruitment({ ...root(c), request: req('luna6', { risk: { ...lowRisk, destructive: true } }) });
   assert.equal(result.decision, 'APPROVE');
   assert.equal(result.family, 'luna');
   assert.equal(result.risk.authorComplexity, 'low');
@@ -208,7 +208,7 @@ test('cheap destructive author remains Luna but receives expensive verification 
   assert.equal(result.risk.controls.secondOpinion, true);
   assert.equal(result.risk.controls.executionApproval, true);
   assert.equal(result.risk.controls.dryRun, true);
-  const uncertain = evaluateRecruitment({ ...root(c), request: req('luna', { risk: { ...lowRisk, confidence: 0.2 } }) });
+  const uncertain = evaluateRecruitment({ ...root(c), request: req('luna6', { risk: { ...lowRisk, confidence: 0.2 } }) });
   assert.equal(uncertain.decision, 'PENDING');
   assert.equal(uncertain.requiredApprovals[0].id, 'risk-uncertainty');
 });
@@ -226,35 +226,35 @@ test('risk input validation and explicit override grants retain original and rev
 test('free-to-paid A/B/C use explicit budgets and policy C always requires human approval', () => {
   for (const policy of ['A', 'B', 'C']) {
     const c = config({ recruitment: { mode: 'SKYNET' }, freeToPaid: { policy }, mission: { maxUsd: 1 } });
-    const p = parent(c, 'daily-astrafree', 'SKYNET');
-    const result = evaluateRecruitment({ config: c, parent: p, request: req('luna') });
+    const p = parent(c, 'astra6free', 'SKYNET');
+    const result = evaluateRecruitment({ config: c, parent: p, request: req('luna6') });
     assert.equal(result.requiredApprovals.some(a => a.id === 'free-to-paid'), policy === 'C');
     if (policy === 'C') assert.equal(result.requiredApprovals.find(a => a.id === 'free-to-paid').authority, 'user');
   }
   const c = config({ recruitment: { mode: 'SKYNET' } });
-  assert.equal(evaluateRecruitment({ config: c, parent: parent(c, 'daily-astrafree', 'SKYNET'), request: req('luna', { budget: {} }) }).decision, 'PENDING');
+  assert.equal(evaluateRecruitment({ config: c, parent: parent(c, 'astra6free', 'SKYNET'), request: req('luna6', { budget: {} }) }).decision, 'PENDING');
   const a = config({ freeToPaid: { policy: 'A' } });
-  assert.equal(evaluateRecruitment({ config: a, parent: parent(a, 'daily-astrafree', 'SWARM'), request: req('luna') }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ config: a, parent: parent(a, 'astra6free', 'SWARM'), request: req('luna6') }).decision, 'REJECT');
 });
 
 test('Core and Review depth are independent but inherited lineage cannot reset a pool', () => {
   const c = config();
   const mission = root(c).mission;
-  const p = { ...parent(c, 'luna'), depth: { core: 2, review: 0 } };
-  assert.equal(evaluateRecruitment({ config: c, parent: p, request: req('daily-terrafree') }).decision, 'REJECT');
-  assert.equal(evaluateRecruitment({ config: c, mission, parent: p, request: req('astra', { role: 'reviewer' }) }).decision, 'APPROVE');
-  assert.equal(evaluateRecruitment({ config: c, parent: { ...p, depth: { core: 2, review: 2 } }, request: req('astra', { role: 'reviewer' }) }).decision, 'REJECT');
+  const p = { ...parent(c, 'luna6'), depth: { core: 2, review: 0 } };
+  assert.equal(evaluateRecruitment({ config: c, parent: p, request: req('terra5-6free') }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ config: c, mission, parent: p, request: req('astra6-2', { role: 'reviewer' }) }).decision, 'APPROVE');
+  assert.equal(evaluateRecruitment({ config: c, parent: { ...p, depth: { core: 2, review: 2 } }, request: req('astra6-2', { role: 'reviewer' }) }).decision, 'REJECT');
 });
 
 test('tool and canonical lexical root ceilings attenuate POSIX and Windows project scope', () => {
   const c = config({ permissions: { tools: ['Read', 'Edit'], roots: ['/projects/safe', 'C:\\Projects\\safe'] } });
-  const okay = evaluateRecruitment({ ...root(c), request: req('luna', { permissions: { tools: ['Read'], roots: ['/projects/safe/src'] } }) });
+  const okay = evaluateRecruitment({ ...root(c), request: req('luna6', { permissions: { tools: ['Read'], roots: ['/projects/safe/src'] } }) });
   assert.equal(okay.decision, 'APPROVE');
-  assert.equal(evaluateRecruitment({ ...root(c), request: req('luna', { permissions: { tools: ['Bash'] } }) }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ ...root(c), request: req('luna6', { permissions: { tools: ['Bash'] } }) }).decision, 'REJECT');
   for (const target of ['/projects/safe-other', '/projects/safe/../secret', 'C:\\Projects\\safe\\..\\secret']) {
-    assert.equal(evaluateRecruitment({ ...root(c), request: req('luna', { permissions: { roots: [target] } }) }).decision, 'REJECT');
+    assert.equal(evaluateRecruitment({ ...root(c), request: req('luna6', { permissions: { roots: [target] } }) }).decision, 'REJECT');
   }
-  const win = evaluateRecruitment({ ...root(c), request: req('luna', { permissions: { roots: ['c:\\projects\\safe\\src'] } }) });
+  const win = evaluateRecruitment({ ...root(c), request: req('luna6', { permissions: { roots: ['c:\\projects\\safe\\src'] } }) });
   assert.equal(win.decision, 'APPROVE');
   const permissions = structuredClone(c.permissions);
   assert.deepEqual(intersectPermissions(permissions, { ...permissions, roots: ['/projects/safe/src'] }).roots, ['/projects/safe/src']);
@@ -262,7 +262,7 @@ test('tool and canonical lexical root ceilings attenuate POSIX and Windows proje
 
 test('approval judges cannot recursively allocate reviewers, and rework is Core', () => {
   const c = config();
-  assert.equal(evaluateRecruitment({ config: c, parent: { ...parent(c, 'astra', 'SKYNET'), role: 'supervisor' }, request: req('sol', { role: 'supervisor' }) }).decision, 'REJECT');
-  assert.equal(evaluateRecruitment({ ...root(c), request: req('sol', { role: 'reworker' }) }).pool, 'core');
-  assert.equal(evaluateRecruitment({ ...root(c), request: req('luna', { role: 'gap_inspector' }) }).pool, 'review');
+  assert.equal(evaluateRecruitment({ config: c, parent: { ...parent(c, 'astra6-2', 'SKYNET'), role: 'supervisor' }, request: req('sol6-2', { role: 'supervisor' }) }).decision, 'REJECT');
+  assert.equal(evaluateRecruitment({ ...root(c), request: req('sol6-2', { role: 'reworker' }) }).pool, 'core');
+  assert.equal(evaluateRecruitment({ ...root(c), request: req('luna6', { role: 'gap_inspector' }) }).pool, 'review');
 });

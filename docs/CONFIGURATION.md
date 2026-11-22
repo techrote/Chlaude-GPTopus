@@ -2,16 +2,16 @@
 
 [← Overview](../README.md) · [Daily usage →](QUOTAS_AND_BILLING.md)
 
-Configuration is intentionally simple: **two keys**, six worker presets and a handful of optional overrides. The Windows helper scripts write **user-scoped environment variables**. Close and reopen Claude Code and your terminal after changing them.
+Configuration is intentionally simple: **two keys**, eight worker presets and a handful of optional overrides. The Windows helper scripts write **user-scoped environment variables**. Close and reopen Claude Code and your terminal after changing them.
 
 ## Keys
 
 | Variable | Purpose | Used by |
 |---|---|---|
-| `OPENAI_API_KEY` | Straight API key | `sol`, `astra`, `luna`, `flex6-1` |
-| `OPENAI_FREE_API_KEY` | Complimentary-programme key | `daily-astrafree`, `daily-terrafree` |
+| `OPENAI_API_KEY` | Straight API key | `sol6-2`, `astra6-2`, `luna6`, `luna6fast`, `luna6flex`, `sol6-1flex` |
+| `OPENAI_FREE_API_KEY` | Complimentary-programme key | `astra6free`, `terra5-6free` |
 
-On Windows the scripts instead store credentials as separate encrypted files in `%LOCALAPPDATA%\ClaudeOpenAIWorkers`. An environment variable overrides that profile's stored file. Missing free keys never fall back to the straight key or vice versa. Inspect presence **without showing keys** by running `/openai-workers`.
+On Windows the scripts instead store credentials as separate encrypted files in `%LOCALAPPDATA%\ClaudeOpenAIWorkers`. An environment variable overrides that profile's stored file. Missing free keys never fall back to the straight key or vice versa. Inspect presence **without showing keys** by running `/oai`.
 
 ```powershell
 .\plugins\openai-workers\scripts\set-openai-key.ps1 -Profile standard
@@ -22,12 +22,14 @@ On Windows the scripts instead store credentials as separate encrypted files in 
 
 | Worker | Model variable | Default |
 |---|---|---|
-| `sol` | `OPENAI_WORKER_SOL_MODEL` | `gpt-6.2-sol` |
-| `astra` | `OPENAI_WORKER_ASTRA_MODEL` | `gpt-6.2-astra` |
-| `luna` | `OPENAI_WORKER_LUNA_MODEL` | `gpt-6-luna` |
-| `flex6-1` | `OPENAI_WORKER_FLEX6_1_MODEL` | `gpt-6.1-sol` |
-| `daily-astrafree` | `OPENAI_WORKER_DAILY_ASTRAFREE_MODEL` | `gpt-6-astra` |
-| `daily-terrafree` | `OPENAI_WORKER_DAILY_TERRAFREE_MODEL` | `gpt-5.6-terra` |
+| `sol6-2` | `OPENAI_WORKER_SOL6_2_MODEL` | `gpt-6.2-sol` |
+| `astra6-2` | `OPENAI_WORKER_ASTRA6_2_MODEL` | `gpt-6.2-astra` |
+| `luna6` | `OPENAI_WORKER_LUNA6_MODEL` | `gpt-6-luna` |
+| `luna6fast` | `OPENAI_WORKER_LUNA6FAST_MODEL` | `gpt-6-luna` (tier `fast`) |
+| `luna6flex` | `OPENAI_WORKER_LUNA6FLEX_MODEL` | `gpt-6-luna` (tier `flex`) |
+| `sol6-1flex` | `OPENAI_WORKER_SOL6_1FLEX_MODEL` | `gpt-6.1-sol` |
+| `astra6free` | `OPENAI_WORKER_ASTRA6FREE_MODEL` | `gpt-6-astra` |
+| `terra5-6free` | `OPENAI_WORKER_TERRA5_6FREE_MODEL` | `gpt-5.6-terra` |
 
 **Caution:** Daily workers enforce model-group eligibility locally; an arbitrary replacement model might be rejected *before* the API call. A successful override does **not** grant complimentary entitlement to that model. For new or renamed models, update the group allowlist in `bridge/usage.mjs` and add tests rather than disabling quota safety.
 
@@ -41,7 +43,7 @@ On Windows the scripts instead store credentials as separate encrypted files in 
 | `fast` | Faster-priced processing where supported |
 | `priority` | Legacy/API alias for Fast, where accepted |
 
-Original workers (`sol`, `astra`, `luna`) inherit optional `OPENAI_WORKER_SERVICE_TIER`, or use the OpenAI project's API default when not set. Named presets (`flex6-1`, `daily-astrafree`, `daily-terrafree`) keep their built-in tier unless specifically overridden. The per-worker pattern is:
+Original workers (`sol6-2`, `astra6-2`, `luna6`) inherit optional `OPENAI_WORKER_SERVICE_TIER`, or use the OpenAI project's API default when not set. Named presets (`sol6-1flex`, `astra6free`, `terra5-6free`) keep their built-in tier unless specifically overridden. The per-worker pattern is:
 
 ```text
 OPENAI_WORKER_<AGENT_IN_UPPERCASE_UNDERSCORES>_SERVICE_TIER
@@ -50,7 +52,7 @@ OPENAI_WORKER_<AGENT_IN_UPPERCASE_UNDERSCORES>_SERVICE_TIER
 Examples:
 
 ```powershell
-.\plugins\openai-workers\scripts\set-worker-tier.ps1 -Agent flex6-1 -Tier flex
+.\plugins\openai-workers\scripts\set-worker-tier.ps1 -Agent sol6-1flex -Tier flex
 .\plugins\openai-workers\scripts\set-worker-tier.ps1 -Agent sol -Tier default
 .\plugins\openai-workers\scripts\set-worker-tier.ps1 -Agent astra -Tier priority
 .\plugins\openai-workers\scripts\set-worker-tier.ps1 -Agent all -Tier auto
@@ -72,19 +74,19 @@ Claude can **choose the right effort for a task inside a range you control**. Th
 
 | Worker | Allowed API effort | Default | Guidance given to Claude |
 |---|---|---|---|
-| `luna` | **max only** | max | Always Max; keep tasks well scoped |
-| `daily-terrafree` | **high–max** | high | High for regular inspection, xhigh for multi-file work, max for difficult audits |
-| `daily-astrafree` | medium–max | high | Medium for bounded research, high for reviews, xhigh/max for difficult investigations |
-| `sol` | medium–max | high | Medium for bounded coding, high for multi-file changes, xhigh/max for deep debugging |
-| `astra` | medium–max | high | Medium for straightforward reviews, high for architecture, xhigh/max for critical decisions |
-| `flex6-1` | medium–max | high | Medium for routine refactors, high for multi-step work, xhigh/max for difficult work |
+| `luna6`, `luna6fast`, `luna6flex` | **max only** | max | Always Max; keep tasks well scoped |
+| `terra5-6free` | **high–max** | high | High for regular inspection, xhigh for multi-file work, max for difficult audits |
+| `astra6free` | medium–max | high | Medium for bounded research, high for reviews, xhigh/max for difficult investigations |
+| `sol6-2` | medium–max | high | Medium for bounded coding, high for multi-file changes, xhigh/max for deep debugging |
+| `astra6-2` | medium–max | high | Medium for straightforward reviews, high for architecture, xhigh/max for critical decisions |
+| `sol6-1flex` | medium–max | high | Medium for routine refactors, high for multi-step work, xhigh/max for difficult work |
 
 **Windows configuration:** from the repository root, run:
 
 ```powershell
 # Luna may *only* use max; Terra must use at least high.
 .\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent luna -Min max -Max max
-.\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent daily-terrafree -Min high -Max max -Default high
+.\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent terra5-6free -Min high -Max max -Default high
 
 # Change a range and tell Claude when to choose a higher effort.
 .\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent sol -Min medium -Max xhigh -Default high `
@@ -95,7 +97,7 @@ Claude can **choose the right effort for a task inside a range you control**. Th
 .\plugins\openai-workers\scripts\set-worker-effort.ps1 -Agent sol -Reset
 ```
 
-**Equivalent environment variables:** `OPENAI_WORKER_<NAME>_EFFORT_MIN`, `_EFFORT_MAX`, `_EFFORT_DEFAULT`, and `_EFFORT_NOTE`, where `<NAME>` is the worker ID in uppercase with punctuation replaced by underscores. For example, `OPENAI_WORKER_DAILY_TERRAFREE_EFFORT_MIN=high`. Set them as **user environment variables**, then restart Claude Code or Claude Desktop so the processes inherit the new values. The helper changes one worker at a time; other workers are unaffected.
+**Equivalent environment variables:** `OPENAI_WORKER_<NAME>_EFFORT_MIN`, `_EFFORT_MAX`, `_EFFORT_DEFAULT`, and `_EFFORT_NOTE`, where `<NAME>` is the worker ID in uppercase with punctuation replaced by underscores. For example, `OPENAI_WORKER_TERRA5_6FREE_EFFORT_MIN=high`. Set them as **user environment variables**, then restart Claude Code or Claude Desktop so the processes inherit the new values. The helper changes one worker at a time; other workers are unaffected.
 
 If you change only the minimum or maximum, an unset built-in default is automatically clamped into the new range. An **explicit** out-of-range default or inverted range is rejected, without making an OpenAI call. Known unsupported model/effort combinations (such as `none` on GPT-6.2 Astra) are also rejected. If you override the underlying model, check its supported effort values.
 
@@ -161,12 +163,27 @@ See [ULTRA policy](ULTRA_POLICY.md#required-test-manifest) for evidence rules an
 ## Example: careful parallel research setup
 
 ```powershell
-.\plugins\openai-workers\scripts\set-worker-tier.ps1 -Agent flex6-1 -Tier flex
+.\plugins\openai-workers\scripts\set-worker-tier.ps1 -Agent sol6-1flex -Tier flex
 .\plugins\openai-workers\scripts\set-daily-budgets.ps1 -OverrunPercent 10 -MaxInFlight 4 -ReserveTokens 12000
 [Environment]::SetEnvironmentVariable('OPENAI_WORKER_MAX_STEPS', '60', 'User')
 ```
 
-Restart Claude Code and run `/openai-workers`; the diagnostics display the effective model/tier of all workers and the free-key ledger totals, not the actual secret values.
+Restart Claude Code and run `/oai`; the diagnostics display the effective model/tier of all workers and the free-key ledger totals, not the actual secret values.
+
+## Status panel and live trace
+
+Run `/oai` in Claude Code for the status panel: keys, all workers (model, key, tier, effort range), today's free-key quota with load bars, the month's local estimates, ULTRA state and active workers. It is plain box-drawing text; set `OAI_STATUS_COLOR=1` (user environment, then restart Claude Code) to add ANSI colours if your terminal renders them. The renderer is `plugins/openai-workers/hooks/status-art.js` (`renderStatus`), a pure module you can edit by hand.
+
+Set `OAI_TRACE=1` for Claude Code (and so for its bridge process) to record a live transcript of what each worker sends to and receives from OpenAI. Records are appended as JSON lines to `%LOCALAPPDATA%\ClaudeOpenAIWorkers\trace\YYYY-MM-DD.jsonl` (Windows) or `$XDG_STATE_HOME/claude-openai-workers/trace/` (default `~/.local/state/...`); `OAI_TRACE_DIR` overrides the folder. Each create records time, worker, model, tier, effort, instructions, input messages/tool outputs and tool names; each finished response records id, status, output text, tool calls with arguments, token usage, estimated USD and any failure reason. API keys and auth headers are never written (key-shaped strings are masked). Traces contain your prompts and file contents: delete the folder when you no longer need it.
+
+```powershell
+[Environment]::SetEnvironmentVariable('OAI_TRACE', '1', 'User')   # then restart Claude Code
+.\plugins\openai-workers\scripts\oai-trace.ps1          # follow new records live (like tail -f)
+.\plugins\openai-workers\scripts\oai-trace.ps1 -All     # today's history, then follow
+.\plugins\openai-workers\scripts\oai-trace.ps1 -Date 2026-11-22 -NoFollow
+```
+
+Portable form: `node plugins/openai-workers/scripts/oai-trace.mjs [--all] [--date YYYY-MM-DD] [--full] [--no-follow] [--no-color]`. Unset `OAI_TRACE` (and restart) to stop tracing.
 
 
 ## Native ULTRA channel key

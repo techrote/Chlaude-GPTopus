@@ -71,9 +71,9 @@ async function fixture(t, { config = {}, model = 'opus', version = '2.1.326', en
     catch (error) { if (!catches.has(key)) throw error; next.error = { kind: 'throw', message: error.message }; return catches.get(key)(context, e, next); }
   }
   async function spawn(worker, options = {}) {
-    const event = { tool_use_id: options.toolUseId ?? `spawn_${spawns + 1}`, subagentType: `openai-workers:${worker}`,
+    const event = { tool_use_id: options.toolUseId ?? `spawn_${spawns + 1}`, subagentType: `oai:${worker}`,
       prompt: options.prompt ?? prompt(), description: 'Synthetic native child', parentAgentId: options.parentAgentId,
-      parentModel: hostModel, background: options.background ?? false, provider: { plugin: 'openai-workers', tier: 'user' }, fork: false };
+      parentModel: hostModel, background: options.background ?? false, provider: { plugin: 'oai', tier: 'user' }, fork: false };
     let started;
     const result = await run('agent.spawn', event, async rewritten => {
       const id = `native_agent_${++spawns}`;
@@ -102,7 +102,7 @@ async function fixture(t, { config = {}, model = 'opus', version = '2.1.326', en
     if (check.decision !== 'allow') return { deny: check.reason };
     const result = await run('tool.run', { agentId, tool: name, tool_use_id: callId, ...input }, async e => {
       if (e.tool === 'Agent') {
-        const spawned = await spawn(e.subagent_type.replace('openai-workers:', ''), { parentAgentId: e.agentId, prompt: e.prompt, background: e.run_in_background, toolUseId: callId });
+        const spawned = await spawn(e.subagent_type.replace('oai:', ''), { parentAgentId: e.agentId, prompt: e.prompt, background: e.run_in_background, toolUseId: callId });
         return { result: spawned };
       }
       throw new Error('No native filesystem or process execution is installed in this fixture');
@@ -128,17 +128,17 @@ test('native helper schemas classify only exact known host identities and guarde
   assert.equal(hostVersionSupported('2.1.326'), true); assert.equal(hostVersionSupported('2.1.325'), false);
   assert.equal(trustedClaudeFamily('claude-opus-4-6'), 'opus'); assert.equal(trustedClaudeFamily('fable'), 'fable');
   for (const name of ['opus-impostor', 'other/opus', 'claude-opus-trusted', 'gpt-6.2-astra']) assert.equal(trustedClaudeFamily(name), 'unknown');
-  assert.throws(() => filterNativeToolArgs('Agent', { subagent_type: 'openai-workers:sol', prompt: 'x', description: 'x', model: 'opus' }), /Unsupported/);
+  assert.throws(() => filterNativeToolArgs('Agent', { subagent_type: 'oai:sol6-2', prompt: 'x', description: 'x', model: 'opus' }), /Unsupported/);
   assert.throws(() => filterNativeToolArgs('constructor', {}), /Unsupported/);
   assert.deepEqual(nativeOpenAITools({ role: 'supervisor', permissions: { recruit: { lower: true }, reviewHigher: true, tools: ['read_file'] } }, 'C'), []);
 });
 
 test('native opt-in registers recursive Agent and scoped tools while legacy mode retains its four tools', async t => {
   const off = await fixture(t, { enabled: false });
-  assert.equal(off.registeredAgents.length, 6); assert.equal(off.registeredTools.length, 0);
+  assert.equal(off.registeredAgents.length, 8); assert.equal(off.registeredTools.length, 0);
   assert.ok(off.registeredAgents.every(a => a.tools.join(',') === 'Read,Edit,Write,Bash'));
   const on = await fixture(t);
-  assert.equal(on.registeredAgents.length, 6); assert.equal(on.registeredTools.length, 13);
+  assert.equal(on.registeredAgents.length, 8); assert.equal(on.registeredTools.length, 13);
   assert.ok(on.registeredAgents.every(a => a.tools.includes('Agent') && !a.tools.includes('Bash')));
 });
 
@@ -147,7 +147,7 @@ test('native controller requires mediated transport and private model calls are 
   await assert.rejects(() => f.controller.handle('ultra_native_init', { sessionId: 'forgery', model: 'opus', version: '2.1.326' }), /mediated/);
   // The production controller is bound to its authenticator: the old boolean assertion no longer opens it.
   await assert.rejects(() => f.controller.handle('ultra_native_init', { sessionId: 'forgery', model: 'opus', version: '2.1.326' }, { trustedHostChannel: true }), /mediated/);
-  for (const agentId of [undefined, 'unknown-worker']) for (const name of ['mcp__openai-workers__ultra_native_init', 'mcp__plugin_openai-workers_bridge__create']) {
+  for (const agentId of [undefined, 'unknown-worker']) for (const name of ['mcp__oai__ultra_native_init', 'mcp__plugin_oai_bridge__create']) {
     let runs = 0;
     const check = await f.run('tool.check', { agentId, tool: name, input: { model: 'opus' } }, async () => { runs++; return { decision: 'allow' }; });
     assert.equal(check.decision, 'deny');
@@ -162,10 +162,10 @@ test('native recursion runs actual Agent hook path and releases a foreground par
   let parentTurns = 0;
   const f = await fixture(t, { config: { fleets: { core: { concurrency: 1 } } }, backend: async (name, args, count) => {
     assert.equal(name, 'create');
-    const calls = args.worker_type === 'sol' && ++parentTurns === 1 ? [{ call_id: 'recruit_terra', name: 'Agent', args: { subagent_type: 'openai-workers:daily-terrafree', prompt: prompt('Bounded child'), description: 'Terra subtask' } }] : [];
+    const calls = args.worker_type === 'sol6-2' && ++parentTurns === 1 ? [{ call_id: 'recruit_terra', name: 'Agent', args: { subagent_type: 'oai:terra5-6free', prompt: prompt('Bounded child'), description: 'Terra subtask' } }] : [];
     return { id: `resp_recursive_${count}`, status: 'completed', model: args.model, text: calls.length ? '' : 'Synthetic result', calls, usage: { total: 50 }, estimatedUsd: 0.001 };
   } });
-  const parent = await f.spawn('sol', { startBeforeReturn: true }); assert.ok(parent.agentId);
+  const parent = await f.spawn('sol6-2', { startBeforeReturn: true }); assert.ok(parent.agentId);
   const first = await f.step(parent.agentId); assert.equal(first.toolUses[0].name, 'Agent');
   const delegated = await f.execute(parent.agentId, 'Agent', first.toolUses[0].input, 'toolu_recruit_terra');
   assert.ok(delegated.result.agentId);
@@ -180,12 +180,12 @@ test('native recursion runs actual Agent hook path and releases a foreground par
 });
 
 test('native REPLICATOR and SKYNET requests are held then approved by actual tool-less HELICOP runtime', async t => {
-  for (const [mode, requested, authority] of [['REPLICATOR', 'sol', 'helicop-sol'], ['SKYNET', 'astra', 'helicop-astra']]) {
+  for (const [mode, requested, authority] of [['REPLICATOR', 'sol6-2', 'helicop-sol'], ['SKYNET', 'astra6-2', 'helicop-astra']]) {
     const f = await fixture(t, { config: { recruitment: { mode } }, backend: async (_name, args, count) => {
       assert.deepEqual(args.tools, []);
       return { id: `resp_approval_${count}`, status: 'completed', model: args.model, text: JSON.stringify({ decision: 'APPROVE', rationale: 'Independent synthetic supervisor inspection.' }), usage: { total: 40 }, estimatedUsd: 0.001 };
     } });
-    const parent = await f.spawn('sol'); const proposed = prompt('Governed native escalation');
+    const parent = await f.spawn('sol6-2'); const proposed = prompt('Governed native escalation');
     const held = await f.spawn(requested, { parentAgentId: parent.agentId, prompt: proposed, toolUseId: 'restricted-first' });
     assert.match(held.deny, /ULTRA pending/); let m = await f.snapshot();
     const request = Object.values(m.requests).find(r => r.status === 'pending'); assert.ok(request.evaluation.requiredApprovals.some(a => a.authority === authority));
@@ -200,17 +200,17 @@ test('native REPLICATOR and SKYNET requests are held then approved by actual too
 test('native Sonnet and Haiku identity comes from host while unknown identity cannot claim Opus authority', async t => {
   for (const [model, authority] of [['sonnet', 'helicop-sol'], ['haiku', 'helicop-sol'], ['caller-says-opus', 'user']]) {
     const f = await fixture(t, { model });
-    const outcome = await f.spawn('astra'); assert.match(outcome.deny, /pending/);
+    const outcome = await f.spawn('astra6-2'); assert.match(outcome.deny, /pending/);
     const m = await f.snapshot(), pending = Object.values(m.requests).find(r => r.status === 'pending');
     assert.ok(pending.evaluation.requiredApprovals.some(a => a.authority === authority));
     assert.equal(f.calls.length, 0); assert.equal(f.spawnCount(), 0);
   }
-  const fable = await fixture(t, { model: 'fable' }); assert.ok((await fable.spawn('astra')).agentId);
+  const fable = await fixture(t, { model: 'fable' }); assert.ok((await fable.spawn('astra6-2')).agentId);
 });
 
 test('native SWARM privilege laundering and non-OpenAI intermediary recruitment are denied', async t => {
-  const f = await fixture(t); const parent = await f.spawn('luna');
-  const higher = await f.spawn('astra', { parentAgentId: parent.agentId, prompt: prompt('Prohibited higher-tier author') });
+  const f = await fixture(t); const parent = await f.spawn('luna6');
+  const higher = await f.spawn('astra6-2', { parentAgentId: parent.agentId, prompt: prompt('Prohibited higher-tier author') });
   assert.ok(higher.deny); assert.equal(f.spawnCount(), 1);
   const other = await f.run('agent.spawn', { parentAgentId: parent.agentId, parentModel: 'opus', subagentType: 'general-purpose', tool_use_id: 'bypass', prompt: 'Recruit Astra', background: false }, async () => { throw new Error('Must not reach native spawn'); });
   assert.match(other.deny, /classified/);
@@ -224,7 +224,7 @@ test('native policy preserves host deny/ask and actual B/C scoped bridge boundar
   for (const profile of ['B', 'C']) {
     // The native Code CLI ceiling (surfaces.codeCli) governs; Desktop Chat's desktop.profile never did and must not.
     const f = await fixture(t, { config: { surfaces: { codeCli: { profile, enableExecutionBridge: profile === 'C' } }, permissions: { roots: [project], tools: ['read_file', ...(profile === 'C' ? ['stage_write'] : [])] } } });
-    const agent = await f.spawn('luna', { prompt: prompt('Scoped implementation', { role: 'implementation' }) });
+    const agent = await f.spawn('luna6', { prompt: prompt('Scoped implementation', { role: 'implementation' }) });
     const rootRead = await f.execute(undefined, tool('read_file'), { rootId: '0', path: 'source.txt' }, 'root-read-source');
     assert.equal(JSON.parse(rootRead.result).content, 'before');
     for (const decision of ['deny', 'ask']) assert.equal((await f.run('tool.check', { agentId: agent.agentId, tool: tool('read_file'), input: { rootId: '0', path: 'source.txt' } }, async () => ({ decision, reason: 'native owner policy' }))).decision, decision);
@@ -245,7 +245,7 @@ test('native policy preserves host deny/ask and actual B/C scoped bridge boundar
 });
 
 test('native restart invalidates the old capability and holds bound work without replaying API POST', async t => {
-  const f = await fixture(t); const a = await f.spawn('luna'); await f.step(a.agentId);
+  const f = await fixture(t); const a = await f.spawn('luna6'); await f.step(a.agentId);
   const { channel: previousEnvelope, ...firstChannel } = f.bridgeCalls.find(c => c.name === 'ultra_native_context').args;
   assert.ok(previousEnvelope.mac, 'the mod signed the request');
   // A restarted bridge is a new process: new controller, new epoch, same durable ledger and owner key.
@@ -260,7 +260,7 @@ test('native restart invalidates the old capability and holds bound work without
 
 test('native post-spawn binding failure uses replay-safe host catch without spawning twice or falling back', async t => {
   const f = await fixture(t); f.failBinding();
-  const spawned = await f.spawn('luna'); assert.ok(spawned.agentId); assert.equal(f.spawnCount(), 1);
+  const spawned = await f.spawn('luna6'); assert.ok(spawned.agentId); assert.equal(f.spawnCount(), 1);
   const result = await f.step(spawned.agentId); assert.match(result.answer, /failed|held/i);
   assert.equal(f.calls.length, 0); assert.equal(f.fallbackCount(), 0);
   assert.ok(f.catches.has('tool.check')); assert.ok(f.catches.has('tool.run')); assert.ok(f.catches.has('agent.spawn')); assert.ok(f.catches.has('turn.step'));
@@ -268,9 +268,9 @@ test('native post-spawn binding failure uses replay-safe host catch without spaw
 
 test('native older/hosted sessions and active data restrictions stop without external model calls', async t => {
   for (const options of [{ version: '2.1.325' }, { info: { isHosted: true } }]) {
-    const f = await fixture(t, options); assert.ok((await f.spawn('luna')).deny); assert.equal(f.calls.length, 0);
+    const f = await fixture(t, options); assert.ok((await f.spawn('luna6')).deny); assert.equal(f.calls.length, 0);
   }
-  const f = await fixture(t, { info: { dataRules: ['zdr'] } }); const a = await f.spawn('luna'); const result = await f.step(a.agentId);
+  const f = await fixture(t, { info: { dataRules: ['zdr'] } }); const a = await f.spawn('luna6'); const result = await f.step(a.agentId);
   assert.match(result.answer, /data rules/); assert.equal(f.calls.length, 0);
 });
 
@@ -302,7 +302,7 @@ test('native root starts actual independent review workflow from a completed aut
       JSON.stringify({ findings: [], coverage: [{ area: 'Synthetic source', status: 'examined' }], resolutions: [], summary: `Independent ${role}` });
     return { id: `resp_review_${count}`, status: 'completed', model: args.model, text, usage: { total: 50 }, estimatedUsd: 0.001 };
   } });
-  const author = await f.spawn('luna', { prompt: prompt('High-impact low-complexity implementation', { role: 'implementation', risk: { ...risk, impact: 'high', destructive: true } }) });
+  const author = await f.spawn('luna6', { prompt: prompt('High-impact low-complexity implementation', { role: 'implementation', risk: { ...risk, impact: 'high', destructive: true } }) });
   const result = await f.step(author.agentId); await f.finish(author.agentId, result.answer);
   const started = await f.execute(undefined, tool('start_review'), { authorAgentId: author.agentId, label: 'Synthetic completed author source' }, 'start-native-review');
   assert.ok(started.result, started.deny); const workflow = JSON.parse(started.result);
@@ -329,7 +329,7 @@ test('native root starts actual independent review workflow from a completed aut
 test('legacy unverified cost response preserves useful output and stops returned tools without inventing zero usage', async t => {
   const f = await fixture(t, { enabled: false, backend: async () => ({ id: 'resp_unknown_cost', status: 'completed', text: 'Useful retained work', estimatedUsd: null,
     calls: [{ call_id: 'unsafe-edit', name: 'Write', args: { file_path: '/tmp/unsafe', content: 'do not execute' } }] }) });
-  const a = await f.spawn('luna'); const result = await f.step(a.agentId);
+  const a = await f.spawn('luna6'); const result = await f.step(a.agentId);
   assert.match(result.answer, /accounting HOLD/); assert.match(result.answer, /Useful retained work/); assert.deepEqual(result.toolUses, []);
   assert.equal(f.states.get(a.agentId).usageStatus, 'unverified'); assert.equal(f.states.get(a.agentId).responseId, 'resp_unknown_cost');
 });
@@ -348,23 +348,23 @@ test('native configured consultative Sonnet uses independent Sol opinion and exa
     id: `resp_consultative_${count}`, status: 'completed', model: args.model, text: JSON.stringify({ decision: 'APPROVE', rationale: 'Synthetic Sol consultation.' }), usage: { total: 40 }, estimatedUsd: 0.001,
   }) });
   const task = prompt('Restricted consultation fixture');
-  assert.match((await f.spawn('astra', { prompt: task, toolUseId: 'initial-consultation' })).deny, /pending/);
+  assert.match((await f.spawn('astra6-2', { prompt: task, toolUseId: 'initial-consultation' })).deny, /pending/);
   await f.run('command.run', { command: 'ultra', args: 'supervise', origin: { kind: 'composer' } });
-  let m = await f.snapshot(); const request = Object.values(m.requests).find(r => r.status === 'pending' && r.proposal.worker === 'astra');
+  let m = await f.snapshot(); const request = Object.values(m.requests).find(r => r.status === 'pending' && r.proposal.worker === 'astra6-2');
   assert.ok(request.evaluation.requiredApprovals.some(r => r.authority === 'trusted-orchestrator'));
   assert.ok(request.approvals.some(id => m.approvals[id].authority === 'helicop-sol'));
   const deniedHash = await f.execute(undefined, tool('recruitment_decide'), { requestId: request.id, requestHash: 'wrong', decision: 'APPROVE', rationale: 'Wrong proposal identity must fail' }, 'bad-proposal-hash');
   assert.ok(deniedHash.deny);
   const decision = await f.execute(undefined, tool('recruitment_decide'), { requestId: request.id, requestHash: request.inputHash, decision: 'APPROVE', rationale: 'Reviewed exact proposal and independent Sol opinion.' }, 'root-final-recruitment');
   assert.ok(decision.result, decision.deny); assert.equal(JSON.parse(decision.result).status, 'queued');
-  assert.ok((await f.spawn('astra', { prompt: task, toolUseId: 'approved-consultation' })).agentId);
+  assert.ok((await f.spawn('astra6-2', { prompt: task, toolUseId: 'approved-consultation' })).agentId);
   m = await f.snapshot(); assert.ok(Object.values(m.approvals).some(a => a.principal.source === 'native-host' && a.authority === 'trusted-orchestrator'));
 });
 
 test('native consequential decision honors exact hash, current host identity and separately configured authority', async t => {
   for (const configured of [false, true]) {
     const f = await fixture(t, { config: configured ? { execution: { consequentialAuthorities: ['trusted-orchestrator'] } } : {} });
-    const author = await f.spawn('luna', { prompt: prompt('Author a proposed cleanup', { role: 'implementation' }) });
+    const author = await f.spawn('luna6', { prompt: prompt('Author a proposed cleanup', { role: 'implementation' }) });
     await f.step(author.agentId); await f.finish(author.agentId);
     const proposed = await f.execute(undefined, tool('action_propose'), { authorAgentId: author.agentId, action: { kind: 'delete', description: 'Explicit synthetic cleanup proposal', details: { path: 'synthetic-only' }, risk: { ...risk, impact: 'high' } } }, 'propose-native-action');
     assert.ok(proposed.result, proposed.deny); const action = JSON.parse(proposed.result);
@@ -381,12 +381,12 @@ test('native consequential decision honors exact hash, current host identity and
 });
 
 test('native review-only escalation does not grant a SWARM author unrestricted implementation recruitment', async t => {
-  const f = await fixture(t); const author = await f.spawn('luna');
-  const review = await f.spawn('astra', { parentAgentId: author.agentId, toolUseId: 'review-only-astra', prompt: prompt('Review existing source only', { role: 'reviewer' }) });
+  const f = await fixture(t); const author = await f.spawn('luna6');
+  const review = await f.spawn('astra6-2', { parentAgentId: author.agentId, toolUseId: 'review-only-astra', prompt: prompt('Review existing source only', { role: 'reviewer' }) });
   assert.ok(review.agentId, review.deny); const m = await f.snapshot();
   assert.equal(m.nodes[m.native.bindings[review.agentId]].pool, 'review');
   assert.equal(m.nodes[m.native.bindings[author.agentId]].permissions.recruit.higher, false);
-  assert.ok((await f.spawn('astra', { parentAgentId: author.agentId, toolUseId: 'forbidden-astra-author', prompt: prompt('Try implementation escalation') })).deny);
+  assert.ok((await f.spawn('astra6-2', { parentAgentId: author.agentId, toolUseId: 'forbidden-astra-author', prompt: prompt('Try implementation escalation') })).deny);
 });
 
 test('native cancellation revokes local authority first and retains verified remote cancellation usage', async t => {
@@ -396,7 +396,7 @@ test('native cancellation revokes local authority first and retains verified rem
     assert.equal(method, 'cancel'); assert.equal((await f.snapshot()).status, 'cancelled');
     return { id: 'resp_cancel_native', status: 'cancelled', model: 'gpt-6-luna', text: 'Stopped', usage: { total: 99 }, estimatedUsd: 5 };
   } });
-  const a = await f.spawn('luna');
+  const a = await f.spawn('luna6');
   const channel = f.bridgeCalls.find(c => c.name === 'ultra_native_bind').args;
   const common = { sessionId: channel.sessionId, capability: channel.capability };
   await f.transport.signed('ultra_native_create', { ...common, hostAgentId: a.agentId, input: 'bounded', requestKey: 'cancelled-step', max_output_tokens: 1000 });
@@ -408,26 +408,26 @@ test('native cancellation revokes local authority first and retains verified rem
 
 test('native root per-assignment reviewer policy reaches the real workflow and cannot be replaced by a child', async t => {
   const f = await fixture(t);
-  const a = await f.spawn('luna', { prompt: prompt('Task-specific review selection', { role: 'implementation', reviewerPolicy: { selection: 'B', primary: 'sol' } }) });
+  const a = await f.spawn('luna6', { prompt: prompt('Task-specific review selection', { role: 'implementation', reviewerPolicy: { selection: 'B', primary: 'sol6-2' } }) });
   assert.ok(a.agentId, a.deny); let m = await f.snapshot();
-  assert.deepEqual(m.nodes[m.native.bindings[a.agentId]].reviewerPolicy, { selection: 'B', reviewer: 'sol' });
-  const forbidden = await f.spawn('daily-terrafree', { parentAgentId: a.agentId, toolUseId: 'child-review-policy', prompt: prompt('Try to replace root review assignment', { reviewerPolicy: { selection: 'B', primary: 'luna' } }) });
+  assert.deepEqual(m.nodes[m.native.bindings[a.agentId]].reviewerPolicy, { selection: 'B', reviewer: 'sol6-2' });
+  const forbidden = await f.spawn('terra5-6free', { parentAgentId: a.agentId, toolUseId: 'child-review-policy', prompt: prompt('Try to replace root review assignment', { reviewerPolicy: { selection: 'B', primary: 'luna6' } }) });
   assert.ok(forbidden.deny);
   await f.step(a.agentId); await f.finish(a.agentId);
   const started = await f.execute(undefined, tool('start_review'), { authorAgentId: a.agentId }, 'selected-review');
-  assert.equal(JSON.parse(started.result).policy.reviewer, 'sol');
+  assert.equal(JSON.parse(started.result).policy.reviewer, 'sol6-2');
 });
 
 test('native full root risk override and one-use promotion are scoped, audited and separate from tools', async t => {
-  const f = await fixture(t); const a = await f.spawn('luna', { prompt: prompt('Scoped original author', { role: 'implementation' }) });
+  const f = await fixture(t); const a = await f.spawn('luna6', { prompt: prompt('Scoped original author', { role: 'implementation' }) });
   let m = await f.snapshot(); const nodeId = m.native.bindings[a.agentId];
   const override = await f.execute(undefined, tool('risk_override'), { nodeId, replacement: { ...risk, impact: 'high' }, rationale: 'Consequences were underestimated in this synthetic fixture.', ttlMs: 60000 }, 'risk-override');
   assert.ok(override.result, override.deny); assert.equal(JSON.parse(override.result).assessment.effectiveImpact, 'high');
-  const promotion = await f.execute(undefined, tool('promote'), { nodeId, worker: 'astra', role: 'reviewer', relations: [], reviewOnly: true, uses: 1, ttlMs: 60000 }, 'promote-review');
+  const promotion = await f.execute(undefined, tool('promote'), { nodeId, worker: 'astra6-2', role: 'reviewer', relations: [], reviewOnly: true, uses: 1, ttlMs: 60000 }, 'promote-review');
   assert.ok(promotion.result, promotion.deny); const granted = JSON.parse(promotion.result);
-  const review = await f.spawn('astra', { parentAgentId: a.agentId, toolUseId: 'one-review-promotion', prompt: prompt('One independent review only', { role: 'reviewer', promotionId: granted.id }) });
+  const review = await f.spawn('astra6-2', { parentAgentId: a.agentId, toolUseId: 'one-review-promotion', prompt: prompt('One independent review only', { role: 'reviewer', promotionId: granted.id }) });
   assert.ok(review.agentId, review.deny);
-  const repeated = await f.spawn('astra', { parentAgentId: a.agentId, toolUseId: 'replayed-promotion', prompt: prompt('Replay the consumed promotion', { role: 'reviewer', promotionId: granted.id }) }); assert.ok(repeated.deny);
+  const repeated = await f.spawn('astra6-2', { parentAgentId: a.agentId, toolUseId: 'replayed-promotion', prompt: prompt('Replay the consumed promotion', { role: 'reviewer', promotionId: granted.id }) }); assert.ok(repeated.deny);
   m = await f.snapshot(); assert.equal(m.promotions[granted.id].remaining, 0); assert.equal(m.nodes[nodeId].permissions.recruit.higher, false);
   assert.ok((await f.execute(a.agentId, tool('risk_override'), { nodeId, replacement: risk, rationale: 'Self override forbidden', ttlMs: 60000 }, 'self-risk-override')).deny);
   await f.setModel('haiku');
@@ -438,16 +438,16 @@ test('native explicit escalation is revalidated and its approved request cannot 
   const f = await fixture(t, { config: { recruitment: { mode: 'REPLICATOR' } }, backend: async (_method, args, count) => ({
     id: `resp_native_escalation_${count}`, status: 'completed', model: args.model, text: JSON.stringify({ decision: 'ESCALATE', rationale: 'A narrower proposal is appropriate.' }), usage: { total: 40 }, estimatedUsd: 0.001,
   }) });
-  const parent = await f.spawn('sol');
-  assert.ok((await f.spawn('sol', { parentAgentId: parent.agentId, prompt: prompt('Original peer request'), toolUseId: 'needs-escalation' })).deny);
+  const parent = await f.spawn('sol6-2');
+  assert.ok((await f.spawn('sol6-2', { parentAgentId: parent.agentId, prompt: prompt('Original peer request'), toolUseId: 'needs-escalation' })).deny);
   await f.run('command.run', { command: 'ultra', args: 'supervise', origin: { kind: 'composer' } });
   let m = await f.snapshot(); const previous = Object.values(m.requests).find(r => r.status === 'escalated'); assert.ok(previous);
-  const result = await f.execute(undefined, tool('escalate'), { requestId: previous.id, requestHash: previous.inputHash, changes: { worker: 'luna', task: 'Approved narrowed task' } }, 'root-explicit-escalation');
+  const result = await f.execute(undefined, tool('escalate'), { requestId: previous.id, requestHash: previous.inputHash, changes: { worker: 'luna6', task: 'Approved narrowed task' } }, 'root-explicit-escalation');
   assert.ok(result.result, result.deny); const approved = JSON.parse(result.result); assert.equal(approved.status, 'queued');
-  const child = await f.spawn('luna', { parentAgentId: parent.agentId, prompt: prompt('This replacement must never be used', { approvedRequestId: approved.id }), toolUseId: 'bind-escalation' });
+  const child = await f.spawn('luna6', { parentAgentId: parent.agentId, prompt: prompt('This replacement must never be used', { approvedRequestId: approved.id }), toolUseId: 'bind-escalation' });
   assert.ok(child.agentId, child.deny); m = await f.snapshot();
   assert.equal(m.nodes[m.native.bindings[child.agentId]].task, 'Approved narrowed task');
   const message = (await f.context.session.messages({ agentId: child.agentId }))[0].text;
   assert.ok(message.endsWith('Approved narrowed task')); assert.ok(!message.includes('replacement must never'));
-  assert.ok((await f.spawn('luna', { parentAgentId: parent.agentId, prompt: prompt('Replay', { approvedRequestId: approved.id }), toolUseId: 'duplicate-escalation' })).deny);
+  assert.ok((await f.spawn('luna6', { parentAgentId: parent.agentId, prompt: prompt('Replay', { approvedRequestId: approved.id }), toolUseId: 'duplicate-escalation' })).deny);
 });

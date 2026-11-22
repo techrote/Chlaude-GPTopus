@@ -51,7 +51,9 @@ if ($ProvisionUltraChannel) {
 Write-Host 'Registering local marketplace...'
 & claude plugin marketplace add $root
 if ($LASTEXITCODE -ne 0) { throw 'Marketplace registration failed.' }
-Write-Host 'Installing OpenAI workers at user scope...'
-& claude plugin install 'openai-workers@openai-worker-local' --scope user
+# The plugin was renamed from openai-workers to oai: remove an old install so two copies never run side by side.
+try { & claude plugin uninstall 'openai-workers@openai-worker-local' --scope user *> $null } catch { }
+Write-Host 'Installing oai (OpenAI workers) at user scope...'
+& claude plugin install 'oai@openai-worker-local' --scope user
 if ($LASTEXITCODE -ne 0) { throw 'Plugin installation failed.' }
-Write-Host 'Installed. Restart Claude Code, then run /openai-workers.'
+Write-Host 'Installed. Restart Claude Code, then run /oai (status) or /oai:a <worker> <task>.'

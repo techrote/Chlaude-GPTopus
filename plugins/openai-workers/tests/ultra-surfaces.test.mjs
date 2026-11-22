@@ -70,10 +70,10 @@ async function harness(t, { config = {}, surfaces = ['terminal'], init = {}, ena
   let spawns = 0;
   h.spawn = async (role = 'implementation') => {
     const n = ++spawns, toolUseId = `spawn-${n}`, hostAgentId = `agent-${n}`;
-    const admitted = await h.handle('ultra_native_admit', { toolUseId, primaryModel: 'opus', subagentType: 'openai-workers:luna',
+    const admitted = await h.handle('ultra_native_admit', { toolUseId, primaryModel: 'opus', subagentType: 'oai:luna6',
       prompt: JSON.stringify({ task: 'Surface scoped work', ultra: { role, risk, budget: { tokens: 40000, usd: 4 } } }) });
     assert.equal(admitted.allowed, true, JSON.stringify(admitted));
-    await h.handle('ultra_native_bind', { toolUseId, hostAgentId, nodeId: admitted.nodeId, bindingTicket: admitted.bindingTicket, hostWorker: 'luna' });
+    await h.handle('ultra_native_bind', { toolUseId, hostAgentId, nodeId: admitted.nodeId, bindingTicket: admitted.bindingTicket, hostWorker: 'luna6' });
     return { hostAgentId, nodeId: admitted.nodeId };
   };
   return h;
@@ -406,7 +406,7 @@ test('surfaces: a native mission\'s API nodes run under the Code ceiling, never 
     let tools = null;
     const backend = Object.assign(async (name, args) => { if (name === 'create') { tools = args.tools.map(x => x.name); return { id: 'resp_runtime_surface', status: 'completed', model: args.model, text: 'done', usage: { total: 20 }, estimatedUsd: 0.001, calls: [] }; } throw new Error(name); }, { offline: true });
     const runtime = new UltraRuntime(h.broker, { backend });
-    const requested = await h.broker.request(h.missionId, 'root', { worker: 'luna', task: 'API exploration inside a native mission', role: 'exploration', risk, budget: { tokens: 20000, usd: 1 } }, 'runtime-surface');
+    const requested = await h.broker.request(h.missionId, 'root', { worker: 'luna6', task: 'API exploration inside a native mission', role: 'exploration', risk, budget: { tokens: 20000, usd: 1 } }, 'runtime-surface');
     assert.ok(requested.nodeId, JSON.stringify(requested.evaluation));
     await runtime.tick(h.missionId);
     assert.ok(tools, 'the runtime node actually issued a provider request');

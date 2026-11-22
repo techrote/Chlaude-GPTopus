@@ -51,10 +51,10 @@ test('local configuration CLI validates edits, retains safe defaults and rejects
 });
 test('future plan approval is explicit, bounded, one-use per request and cannot waive HELICOP gates', async t => {
   const f = await fixture(t), m = await f.broker.createMission({ task: 'Restricted plan fixture' });
-  const grant = { parentId: 'root', workers: ['astra'], roles: ['implementation'], tools: [], roots: [], maxInvocations: 1, budget: { tokens: 1000, usd: 0.1 } };
+  const grant = { parentId: 'root', workers: ['astra6-2'], roles: ['implementation'], tools: [], roots: [], maxInvocations: 1, budget: { tokens: 1000, usd: 0.1 } };
   await assert.rejects(() => f.broker.grantPlan(m.id, grant, user), /acknowledgement/);
   const plan = await f.broker.grantPlan(m.id, { ...grant, acknowledgeFutureRecruitment: true }, user);
-  const proposal = { worker: 'astra', role: 'implementation', task: 'Bounded planned task', risk, budget: { tokens: 1000, usd: 0.1 }, planId: plan.id };
+  const proposal = { worker: 'astra6-2', role: 'implementation', task: 'Bounded planned task', risk, budget: { tokens: 1000, usd: 0.1 }, planId: plan.id };
   const accepted = await f.broker.request(m.id, 'root', proposal, 'one'); assert.equal(accepted.status, 'queued');
   assert.equal((await f.broker.request(m.id, 'root', proposal, 'one')).id, accepted.id);
   await assert.rejects(() => f.broker.request(m.id, 'root', proposal, 'two'), /exhausted/);
@@ -63,7 +63,7 @@ test('future plan approval is explicit, bounded, one-use per request and cannot 
 test('batch approval records separate exact request decisions', async t => {
   const f = await fixture(t), m = await f.broker.createMission({ task: 'Restricted batch' });
   const requests = [];
-  for (let i = 0; i < 2; i++) requests.push(await f.broker.request(m.id, 'root', { worker: 'astra', task: `Exact task ${i}`, risk, budget: { tokens: 1000, usd: 0.1 } }, String(i)));
+  for (let i = 0; i < 2; i++) requests.push(await f.broker.request(m.id, 'root', { worker: 'astra6-2', task: `Exact task ${i}`, risk, budget: { tokens: 1000, usd: 0.1 } }, String(i)));
   const results = await f.broker.decideBatch(m.id, requests.map(r => r.id), { decision: 'APPROVE', rationale: 'Owner reviewed exact batch' }, user);
   assert(results.every(r => r.status === 'queued'));
   const approvals = Object.values((await f.store.snapshot(m.id)).approvals);

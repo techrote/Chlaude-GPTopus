@@ -36,7 +36,7 @@ const reported = new Set();
 function diagnose(reason) {
   // Owner-facing, once per distinct reason, never a secret and never the key path contents.
   if (reported.has(reason)) return; reported.add(reason);
-  process.stderr.write(`[openai-workers] native ULTRA channel unavailable: ${reason}\n`);
+  process.stderr.write(`[oai] native ULTRA channel unavailable: ${reason}\n`);
 }
 
 /** The key file: OPENAI_ULTRA_CHANNEL_KEY_FILE (absolute), else <owner state directory>/ultra-channel.key. Throws for a relative override. */

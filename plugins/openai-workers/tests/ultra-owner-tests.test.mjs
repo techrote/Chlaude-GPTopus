@@ -38,7 +38,7 @@ async function fixture(t, { impact = 'high', policy = {} } = {}) {
   const store = new ExecutionStore(ownerPaths(env).ledger), broker = new RecruitmentBroker(store, { config });
   const mission = await broker.createMission({ id: 'owner_tests', task: 'Synthetic required-test routes', orchestrator: { model: 'opus', trusted: true, source: 'test-host' } });
   const f = { dir, project, env, config, store, broker, mid: mission.id, reviews: new ReviewController(broker), impact };
-  const request = await broker.request(f.mid, 'root', { worker: 'luna', role: 'implementation', task: 'Author the synthetic change', risk: RISK[impact] }, 'author');
+  const request = await broker.request(f.mid, 'root', { worker: 'luna6', role: 'implementation', task: 'Author the synthetic change', risk: RISK[impact] }, 'author');
   // Unknown-impact work is uncertain: its own recruitment needs the owner's explicit approval first.
   if (!request.nodeId) await broker.decide(f.mid, request.id, { decision: 'APPROVE', rationale: 'Owner admits the synthetic author.' }, OWNER);
   f.author = request.nodeId ?? (await store.snapshot(f.mid)).requests[request.id].nodeId; await complete(f, f.author);

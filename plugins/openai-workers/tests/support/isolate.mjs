@@ -47,6 +47,8 @@ Object.assign(process.env, {
   HOME: home,
   USERPROFILE: home,
 });
+// A developer shell with OAI_TRACE=1 must not make tests write live trace files.
+delete process.env.OAI_TRACE; delete process.env.OAI_TRACE_DIR;
 
 /** Throws if the developer's real ledger directory was touched. Exported so a test can assert it directly. */
 export function assertRealStateUntouched() {

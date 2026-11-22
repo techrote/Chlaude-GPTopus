@@ -18,7 +18,7 @@ const SPEND = { OPENAI_WORKER_MONTHLY_LIMIT_USD: '50' };
 
 /** A realistic v1 ledger: the first v2 write migrates it and leaves the migration month unreconciled. */
 async function writeV1(env) {
-  const doc = { version: 1, days: { '2026-11-01': { groups: { premium: { tokens: 100, estimatedUsd: 0.01, requests: 1 } }, workers: { 'daily-astrafree': { tokens: 100, estimatedUsd: 0.01, requests: 1 } }, totalEstimatedUsd: 0.01 } }, pending: {}, processed: {} };
+  const doc = { version: 1, days: { '2026-11-01': { groups: { premium: { tokens: 100, estimatedUsd: 0.01, requests: 1 } }, workers: { 'astra6free': { tokens: 100, estimatedUsd: 0.01, requests: 1 } }, totalEstimatedUsd: 0.01 } }, pending: {}, processed: {} };
   await mkdir(dirname(usagePath(env)), { recursive: true });
   await writeFile(usagePath(env), JSON.stringify(doc, null, 2));
 }
@@ -68,8 +68,8 @@ test('PRESEND-01: a refusal does not consume the agent: a new step key works and
 
 test('PRESEND-01: every definitive pre-send refusal releases the step: monthly limit, free daily allowance and ledger admission', async t => {
   const cases = {
-    'local monthly spending limit': { worker: 'luna', env: { OPENAI_WORKER_MONTHLY_LIMIT_USD: '0.0000001' }, message: /Local monthly spending limit/ },
-    'free-key daily allowance': { worker: 'daily-astrafree', env: { OPENAI_WORKER_PREMIUM_DAILY_TOKENS: '100', OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10' }, message: /soft daily allowance/ },
+    'local monthly spending limit': { worker: 'luna6', env: { OPENAI_WORKER_MONTHLY_LIMIT_USD: '0.0000001' }, message: /Local monthly spending limit/ },
+    'free-key daily allowance': { worker: 'astra6free', env: { OPENAI_WORKER_PREMIUM_DAILY_TOKENS: '100', OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10' }, message: /soft daily allowance/ },
   };
   for (const [label, { worker, env, message }] of Object.entries(cases)) {
     const transport = recordingTransport(), h = await bridgeHost(t, { transport, now: NOW, env });
@@ -144,20 +144,20 @@ test('PRESEND-01: a controller with no transport refuses before it reserves a st
   const common = { toolUseId: 'spawn-1' };
   const init = await controller.handle('ultra_native_init', { sessionId: 'no-transport', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] }, { trustedHostChannel: true });
   const base = { sessionId: 'no-transport', capability: init.capability };
-  const admitted = await controller.handle('ultra_native_admit', { ...base, ...common, primaryModel: 'opus', subagentType: 'openai-workers:luna', prompt: JSON.stringify({ task: 'x', ultra: { role: 'implementation', risk: { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95, rationale: 'f' }, budget: { tokens: 40000, usd: 4 } } }) }, { trustedHostChannel: true });
-  await controller.handle('ultra_native_bind', { ...base, ...common, hostAgentId: 'a1', nodeId: admitted.nodeId, bindingTicket: admitted.bindingTicket, hostWorker: 'luna' }, { trustedHostChannel: true });
+  const admitted = await controller.handle('ultra_native_admit', { ...base, ...common, primaryModel: 'opus', subagentType: 'oai:luna6', prompt: JSON.stringify({ task: 'x', ultra: { role: 'implementation', risk: { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95, rationale: 'f' }, budget: { tokens: 40000, usd: 4 } } }) }, { trustedHostChannel: true });
+  await controller.handle('ultra_native_bind', { ...base, ...common, hostAgentId: 'a1', nodeId: admitted.nodeId, bindingTicket: admitted.bindingTicket, hostWorker: 'luna6' }, { trustedHostChannel: true });
   await assert.rejects(() => controller.handle('ultra_native_create', { ...base, hostAgentId: 'a1', requestKey: 'k1', input: 'x', max_output_tokens: 1000 }, { trustedHostChannel: true }), /transport is unavailable/);
   assert.deepEqual(Object.keys((await store.snapshot(init.missionId)).nodes[admitted.nodeId].native.steps), [], 'no step was reserved');
 });
 
 test('PRESEND-01: local validation inside createTurn is classified as "never sent" (and a missing key already was)', async () => {
-  const failure = await createTurn({ worker_type: 'sol', model: 'not a model', instructions: 'x', tools: [], input: 'x' }, { profile: 'standard' }).catch(error => error);
+  const failure = await createTurn({ worker_type: 'sol6-2', model: 'not a model', instructions: 'x', tools: [], input: 'x' }, { profile: 'standard' }).catch(error => error);
   assert.match(failure.message, /Invalid model name/);
   assert.equal(failure.usageDisposition, 'not_started');
   assert.equal(mayHaveIncurredUsage(failure), false);
-  const mismatch = await createTurn({ worker_type: 'sol', model: 'gpt-6.2-sol', instructions: 'x', tools: [], input: 'x' }, { profile: 'free' }).catch(error => error);
+  const mismatch = await createTurn({ worker_type: 'sol6-2', model: 'gpt-6.2-sol', instructions: 'x', tools: [], input: 'x' }, { profile: 'free' }).catch(error => error);
   assert.match(mismatch.message, /key-profile mismatch/);
   assert.equal(mismatch.usageDisposition, 'not_started');
-  const noKey = await createTurn({ worker_type: 'sol', model: 'gpt-6.2-sol', instructions: 'x', tools: [], input: 'x' }, { profile: 'standard', env: { LOCALAPPDATA: '' }, fetchFn: async () => { throw new Error('must not be reached'); } }).catch(error => error);
+  const noKey = await createTurn({ worker_type: 'sol6-2', model: 'gpt-6.2-sol', instructions: 'x', tools: [], input: 'x' }, { profile: 'standard', env: { LOCALAPPDATA: '' }, fetchFn: async () => { throw new Error('must not be reached'); } }).catch(error => error);
   assert.equal(noKey.usageDisposition, 'not_started');
 });

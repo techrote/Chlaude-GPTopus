@@ -169,7 +169,7 @@ direct `tools/call`; the raw stdio tests drive exactly that path.
 
 ### Implemented native workflow
 
-The existing six profiles keep their original tools while ULTRA is disabled.
+The eight worker profiles keep their original tools while ULTRA is disabled.
 Protected native mode requires both owner policy `enabled: true` and
 `OPENAI_ULTRA_ENABLED=1`. Actual provider calls additionally require
 `OPENAI_ULTRA_ALLOW_API=1`; the offline evaluator does not set this.
@@ -227,7 +227,7 @@ Use these native operations:
 
 | Operation | Behavior |
 |---|---|
-| `/ultra` and `/openai-workers` | Current authority, lineage, fleets, reservations, pending decisions and workflow state. |
+| `/ultra` and `/oai` | Current authority, lineage, fleets, reservations, pending decisions and workflow state. |
 | `/ultra supervise` | One bounded shared runtime tick for configured approvals, reviews, rework or adjudication; fresh host organization data rules are checked before the send. |
 | `/ultra review <native-author-id>` | Start review from the preserved result of a completed native implementation author. |
 | `/ultra cancel` | Revoke the native mission's authority before best-effort cancellation of known remote responses; preserve incurred usage and uncertain reservations. |
@@ -239,7 +239,7 @@ Use these native operations:
 | `ultra_risk_override` | Full trusted root records a rationale, replacement classification and expiry for an exact Core allocation; affected approvals become stale. |
 | `ultra_promote`, `ultra_escalate` | Full trusted root grants a scoped expiring recruitment promotion or authorises bounded re-evaluation of an escalated request. Root limits and independent gates remain binding. |
 
-Registered tool names have the prefix `mcp__openai-workers__`. Review selection,
+Registered tool names have the prefix `mcp__oai__`. Review selection,
 blind second opinion, coverage-gap inspection, rework and final adjudication use
 the shared `ReviewController` and scheduler. Caller-supplied snapshots are
 labelled as such; approval binds those exact bytes, not an assumed live commit.
@@ -266,7 +266,7 @@ Native prompt metadata is a proposal, never permission. For example:
 }
 ```
 
-Use the native `subagent_type: "openai-workers:sol"`; do not pass an invented
+Use the native `subagent_type: "oai:sol6-2"`; do not pass an invented
 native model name. A pending spawn is reported as pending. After approval,
 retrying the same proposal reuses its approved allocation. A permitted revised
 proposal can name `ultra.revisionOf` to use the broker's bounded revision path.
@@ -277,7 +277,7 @@ An opaque `ultra.planId` can refer to an already authorised, scoped recruitment
 plan; the broker still checks the plan's parent, limits and expiry. **Plan-level
 approval authorises future matching recruitment without inspecting each spawn.**
 Only a trusted root assignment may set
-`ultra.reviewerPolicy: { "selection": "B", "primary": "astra" }` (or Policy C).
+`ultra.reviewerPolicy: { "selection": "B", "primary": "astra6-2" }` (or Policy C).
 Descendants cannot replace their assigned reviewer policy.
 No unavailable approver produces an implicit approval.
 

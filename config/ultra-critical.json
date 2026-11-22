@@ -35,7 +35,7 @@
     }
   },
   "workers": {
-    "sol": {
+    "sol6-2": {
       "model": "gpt-6.2-sol",
       "family": "sol",
       "keyProfile": "standard",
@@ -43,7 +43,7 @@
       "permissions": null,
       "serviceTier": null
     },
-    "astra": {
+    "astra6-2": {
       "model": "gpt-6.2-astra",
       "family": "astra",
       "keyProfile": "standard",
@@ -51,7 +51,7 @@
       "permissions": null,
       "serviceTier": null
     },
-    "luna": {
+    "luna6": {
       "model": "gpt-6-luna",
       "family": "luna",
       "keyProfile": "standard",
@@ -59,7 +59,23 @@
       "permissions": null,
       "serviceTier": null
     },
-    "flex6-1": {
+    "luna6fast": {
+      "model": "gpt-6-luna",
+      "family": "luna",
+      "keyProfile": "standard",
+      "mode": null,
+      "permissions": null,
+      "serviceTier": "fast"
+    },
+    "luna6flex": {
+      "model": "gpt-6-luna",
+      "family": "luna",
+      "keyProfile": "standard",
+      "mode": null,
+      "permissions": null,
+      "serviceTier": "flex"
+    },
+    "sol6-1flex": {
       "model": "gpt-6.1-sol",
       "family": "sol",
       "keyProfile": "standard",
@@ -67,7 +83,7 @@
       "permissions": null,
       "serviceTier": "flex"
     },
-    "daily-astrafree": {
+    "astra6free": {
       "model": "gpt-6-astra",
       "family": "astra",
       "keyProfile": "free",
@@ -75,7 +91,7 @@
       "permissions": null,
       "serviceTier": "default"
     },
-    "daily-terrafree": {
+    "terra5-6free": {
       "model": "gpt-5.6-terra",
       "family": "terra",
       "keyProfile": "free",
@@ -223,12 +239,12 @@
   "review": {
     "selection": "B",
     "maxRounds": 3,
-    "primary": "astra",
-    "reworker": "sol",
-    "rereviewer": "astra",
-    "secondOpinion": "sol",
-    "gapInspector": "luna",
-    "judge": "astra",
+    "primary": "astra6-2",
+    "reworker": "sol6-2",
+    "rereviewer": "astra6-2",
+    "secondOpinion": "sol6-2",
+    "gapInspector": "luna6",
+    "judge": "astra6-2",
     "secondOpinionImpacts": [
       "medium",
       "high",

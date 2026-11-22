@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { WORKER_TYPES } from './workers.mjs';
+import { WORKER_TYPES, canonicalWorker } from './workers.mjs';
 
 const ENDPOINT = 'https://api.openai.com/v1';
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
@@ -31,8 +31,10 @@ const PROFILES = {
 export function keyProfileForWorker(workerType) {
   // Undefined is the legacy native bridge's standard-key route; a misspelled
   // named worker must never silently become a paid worker.
-  if (workerType !== undefined && !Object.hasOwn(WORKER_TYPES, workerType)) throw new Error('Unknown worker key route.');
-  return workerType === 'daily-astrafree' || workerType === 'daily-terrafree' ? 'free' : 'standard';
+  // Legacy (pre-rename) names map onto their current worker and keep its key route.
+  const name = canonicalWorker(workerType);
+  if (name !== undefined && !Object.hasOwn(WORKER_TYPES, name)) throw new Error('Unknown worker key route.');
+  return name === undefined ? 'standard' : WORKER_TYPES[name].key;
 }
 function providedKey(value) {
   const key = typeof value === 'string' ? value.trim() : '';

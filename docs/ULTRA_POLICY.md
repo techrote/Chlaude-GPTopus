@@ -1,6 +1,6 @@
 # ULTRA policy foundation
 
-ULTRA controls orchestration. It never sends `ultra` as an API reasoning effort. The six existing worker profiles, their reasoning ranges and their API-key routes remain separate from recruitment authority.
+ULTRA controls orchestration. It never sends `ultra` as an API reasoning effort. The eight worker profiles, their reasoning ranges and their API-key routes remain separate from recruitment authority.
 
 Project-access ceilings (`desktop` for Chat, `surfaces.codeCli`, `surfaces.desktopCode`) are separate, validated sections that default to A and are included in the policy hash; scoped layers may only lower them. See [Capability ceilings per surface](ULTRA.md#capability-ceilings-per-surface).
 

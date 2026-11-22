@@ -82,14 +82,14 @@ test('real runtime applies supervisor APPROVE REJECT MODIFY ESCALATE without spa
     const store = new ExecutionStore(path.join(directory, `${decision}.json`));
     const broker = new RecruitmentBroker(store, { config: { enabled: true, recruitment: { mode: 'REPLICATOR' } } });
     const mission = await broker.createMission({ id: `decision_${decision}`, task: `Synthetic supervisor decision ${decision}`, orchestrator: { model: 'opus', trusted: true } });
-    const parent = await broker.request(mission.id, 'root', { worker: 'sol', role: 'exploration', task: 'Keep parent active for recruitment.', risk: LOW_RISK }, 'parent');
+    const parent = await broker.request(mission.id, 'root', { worker: 'sol6-2', role: 'exploration', task: 'Keep parent active for recruitment.', risk: LOW_RISK }, 'parent');
     const active = await broker.claim(mission.id, 'fixture-parent', { nodeId: parent.nodeId }); assert.equal(active.id, parent.nodeId);
-    const childRequest = await broker.request(mission.id, parent.nodeId, { worker: 'sol', role: 'exploration', task: 'Proposed peer.', risk: LOW_RISK }, 'peer');
+    const childRequest = await broker.request(mission.id, parent.nodeId, { worker: 'sol6-2', role: 'exploration', task: 'Proposed peer.', risk: LOW_RISK }, 'peer');
     assert.equal(childRequest.status, 'pending');
     const backend = async (method, args) => {
       assert.equal(method, 'create'); assert.match(args.instructions, /Role: supervisor/); assert.deepEqual(args.tools, []);
       const content = { decision, rationale: `Deterministic independent ${decision} fixture.` };
-      if (decision === 'MODIFY') content.modification = { worker: 'luna', task: 'Narrow revised scope.', budget: { tokens: 16000, usd: 1 } };
+      if (decision === 'MODIFY') content.modification = { worker: 'luna6', task: 'Narrow revised scope.', budget: { tokens: 16000, usd: 1 } };
       return { id: `resp_supervisor_${decision}`, status: 'completed', text: JSON.stringify(content), usage: { input: 20, output: 12, total: 32, total_tokens: 32 }, estimatedUsd: 0.00001 };
     }; backend.offline = true;
     const runtime = new UltraRuntime(broker, { backend });
@@ -99,7 +99,7 @@ test('real runtime applies supervisor APPROVE REJECT MODIFY ESCALATE without spa
     assert.equal(Object.values(state.nodes).filter(n => n.role === 'supervisor').length, 1);
     if (decision !== 'APPROVE') assert.equal(state.requests[childRequest.id].nodeId, null);
     if (decision === 'MODIFY') {
-      const revised = await broker.revise(mission.id, childRequest.id, parent.nodeId, { worker: 'luna', task: 'Narrow revised scope.', budget: { tokens: 16000, usd: 1 } }, 'revised');
+      const revised = await broker.revise(mission.id, childRequest.id, parent.nodeId, { worker: 'luna6', task: 'Narrow revised scope.', budget: { tokens: 16000, usd: 1 } }, 'revised');
       assert.equal(revised.status, 'queued'); assert.equal(revised.evaluation.family, 'luna');
     }
   }

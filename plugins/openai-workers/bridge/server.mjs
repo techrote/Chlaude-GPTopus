@@ -2,7 +2,8 @@
 import readline from 'node:readline';
 import { basename } from 'node:path';
 import { configuredKey, keyProfileForWorker, createTurn, pollTurn, cancelTurn, validateTurnArgs, mayHaveIncurredUsage } from './openai.mjs';
-import { workerSettings, selectWorkerEffort, workerEnvSuffix } from './workers.mjs';
+import { workerSettings, selectWorkerEffort, workerEnvSuffix, canonicalWorker } from './workers.mjs';
+import { traceRequest, traceResponse } from './trace.mjs';
 import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot, quoteRequest,
   markRequestAmbiguous, responseRecord } from './usage.mjs';
 
@@ -28,14 +29,14 @@ async function ultraService(options = {}) {
   return { key, service: ultraServices.get(key) };
 }
 const defs = [
-  { name: 'health', description: 'Workers are native subagents: use the Agent tool with subagent_type openai-workers:<worker>. Report whether the bridge has a configured API key (never returns it).', inputSchema: { type: 'object', properties: {} } },
-  { name: 'create', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type openai-workers:<sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree>. Start a Responses API model step for the plugin.', inputSchema: { type: 'object', properties: {
+  { name: 'health', description: 'Workers are native subagents: use the Agent tool with subagent_type oai:<worker>. Report whether the bridge has a configured API key (never returns it).', inputSchema: { type: 'object', properties: {} } },
+  { name: 'create', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Start a Responses API model step for the plugin.', inputSchema: { type: 'object', properties: {
     model: { type: 'string' }, worker_type: { type: 'string' }, input: {}, instructions: { type: 'string' }, tools: { type: 'array' }, effort: { type: 'string' }, previous_response_id: { type: 'string' }, max_output_tokens: { type: 'integer' }, request_id: { type: 'string' },
     service_tier: { type: 'string', enum: ['auto', 'default', 'flex', 'fast', 'priority'] } }, required: ['worker_type', 'model', 'input', 'instructions', 'tools'] } },
   { name: 'usage', description: 'Show local free-key daily tokens, reservations and UTC rollover; these are not authoritative API billing counters.', inputSchema: { type: 'object', properties: {} } },
-  { name: 'poll', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type openai-workers:<sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree>. Poll an in-progress OpenAI response, up to five seconds.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' }, wait_ms: { type: 'integer' } }, required: ['id', 'worker_type'] } },
-  { name: 'page', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type openai-workers:<sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree>. Fetch a page of an oversized completed response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, page: { type: 'integer' } }, required: ['id', 'page'] } },
-  { name: 'cancel', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type openai-workers:<sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree>. Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id', 'worker_type'] } },
+  { name: 'poll', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Poll an in-progress OpenAI response, up to five seconds.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' }, wait_ms: { type: 'integer' } }, required: ['id', 'worker_type'] } },
+  { name: 'page', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Fetch a page of an oversized completed response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, page: { type: 'integer' } }, required: ['id', 'page'] } },
+  { name: 'cancel', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id', 'worker_type'] } },
 ];
 const has = (o, key) => Object.prototype.hasOwnProperty.call(o ?? {}, key);
 /** Mark an error as raised before any POST (unless something more specific already classified it). */
@@ -105,6 +106,8 @@ export async function dispatch(name, args = {}, options = {}) {
   }
   if (typeof name === 'string' && name.startsWith('ultra_')) return (await ultraService(options)).service.invoke(name, args);
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Bridge arguments must be an object.');
+  // Pre-rename worker names (sol, daily-astrafree, ...) still route to their current worker.
+  if (typeof args.worker_type === 'string') args = { ...args, worker_type: canonicalWorker(args.worker_type) };
   const env = options.env ?? process.env;
   const ledgerOptions = { ...options, env };
   const transport = options.transport ?? { create: createTurn, poll: pollTurn, cancel: cancelTurn };
@@ -135,14 +138,17 @@ export async function dispatch(name, args = {}, options = {}) {
         ticket = await reserveRequest({ workerType: selected.name, model: selected.model, profile: selected.key_profile,
           serviceTier: effective.service_tier, ...(args.request_id && { requestId: args.request_id }), ...quote }, ledgerOptions);
       } catch (error) { throw notSent(error); }
+      traceRequest(selected, effective, { env });
       let response;
       try {
         response = await transport.create(effective, { profile: selected.key_profile, env });
       } catch (error) {
         if (mayHaveIncurredUsage(error)) await markRequestAmbiguous(ticket, ledgerOptions);
         else await releaseRequest(ticket, { ...ledgerOptions, reason: error.usageDisposition });
+        traceResponse(selected.name, { status: 'error', reason: String(error?.message ?? error) }, { env });
         throw error;
       }
+      traceResponse(selected.name, response, { env });
       // The provider answered: whatever fails from here on is NOT a refusal before the send.
       try { await accountResponse(ticket, response, ledgerOptions); }
       catch (error) { await markRequestAmbiguous(ticket, ledgerOptions); throw ambiguous(error); }
@@ -152,6 +158,7 @@ export async function dispatch(name, args = {}, options = {}) {
       const binding = await boundResponse(args, ledgerOptions);
       const response = await transport.poll(args.id, { wait_ms: args.wait_ms, profile: binding.profile, env });
       if (response.id !== args.id) throw new Error('Poll response ID differs from the requested response.');
+      if (response.status !== 'in_progress') traceResponse(binding.workerType, response, { env });
       if (response.model && response.model !== binding.model) throw new Error('Poll response model differs from its stored binding.');
       await accountByResponseId(response, ledgerOptions);
       return pack(response);
@@ -189,7 +196,7 @@ export async function dispatch(name, args = {}, options = {}) {
 const refusedLegacy = new Set();
 function legacyRefusal(name) {
   if (refusedLegacy.has(name)) return; refusedLegacy.add(name);
-  process.stderr.write(`[openai-workers] raw bridge tool "${name}" refused: OPENAI_ULTRA_ENABLED=1 is set for this bridge, so it needs the owner channel proof. ULTRA workers use ultra_native_*; if the mod does not see OPENAI_ULTRA_ENABLED=1 too, set it identically for Claude Code and the bridge, or unset it.
+  process.stderr.write(`[oai] raw bridge tool "${name}" refused: OPENAI_ULTRA_ENABLED=1 is set for this bridge, so it needs the owner channel proof. ULTRA workers use ultra_native_*; if the mod does not see OPENAI_ULTRA_ENABLED=1 too, set it identically for Claude Code and the bridge, or unset it.
 `);
 }
 function send(message) { process.stdout.write(`${JSON.stringify(message)}\n`); }

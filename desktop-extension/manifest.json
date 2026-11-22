@@ -3,8 +3,8 @@
   "name": "chlaude-gptopus-desktop",
   "display_name": "Chlaude-GPTopus \u2014 OpenAI Workers",
   "version": "0.8.0",
-  "description": "Six OpenAI workers with separate API keys, durable accounting and opt-in ULTRA governed swarms. Think-only by default; explicit project scopes enable reads and private staged patches.",
-  "long_description": "Six OpenAI workers with standard/free key separation and shared durable usage estimates. Existing think-only delegation remains the default. Opt-in ULTRA adds recursive recruitment, protected review capacity and approval gates. Chat profile B reads owner-selected source roots; separately enabled C creates private staged patches. No general shell or live-project patch executor is supplied. Install and qualify the native plugin separately for supported local Code sessions.",
+  "description": "Eight OpenAI workers with separate API keys, durable accounting and opt-in ULTRA governed swarms. Think-only by default; explicit project scopes enable reads and private staged patches.",
+  "long_description": "Eight OpenAI workers with standard/free key separation and shared durable usage estimates. Existing think-only delegation remains the default. Opt-in ULTRA adds recursive recruitment, protected review capacity and approval gates. Chat profile B reads owner-selected source roots; separately enabled C creates private staged patches. No general shell or live-project patch executor is supplied. Install and qualify the native plugin separately for supported local Code sessions.",
   "author": {
     "name": "Chlaude-GPTopus contributors",
     "url": "https://github.com/techrote/Chlaude-GPTopus"
@@ -70,14 +70,14 @@
     "straight_api_key": {
       "type": "string",
       "title": "Straight OpenAI API key",
-      "description": "Used by sol, astra, luna and flex6-1. Leave empty on Windows to reuse the key saved by Chlaude-GPTopus CLI setup, if available.",
+      "description": "Used by sol, astra, luna and sol6-1flex. Leave empty on Windows to reuse the key saved by Chlaude-GPTopus CLI setup, if available.",
       "required": false,
       "sensitive": true
     },
     "free_api_key": {
       "type": "string",
       "title": "Free-programme OpenAI API key",
-      "description": "Used only by daily-astrafree and daily-terrafree. Leave empty on Windows to reuse the existing DPAPI free key, if available.",
+      "description": "Used only by astra6free and terra5-6free. Leave empty on Windows to reuse the existing DPAPI free key, if available.",
       "required": false,
       "sensitive": true
     }

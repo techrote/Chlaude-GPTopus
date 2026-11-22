@@ -40,14 +40,16 @@ test('Claude Desktop manifest declares sensitive two-key configuration and built
   assert.equal(definitions.length, 5);
 });
 
-test('Desktop worker profiles preserve six native agent defaults and correct two-key tier routing', () => {
+test('Desktop worker profiles preserve eight native agent defaults and correct two-key tier routing', () => {
   const expected = [
-    ['sol', 'gpt-6.2-sol', undefined, 'standard'],
-    ['astra', 'gpt-6.2-astra', undefined, 'standard'],
-    ['luna', 'gpt-6-luna', undefined, 'standard'],
-    ['flex6-1', 'gpt-6.1-sol', 'flex', 'standard'],
-    ['daily-astrafree', 'gpt-6-astra', 'default', 'free'],
-    ['daily-terrafree', 'gpt-5.6-terra', 'default', 'free'],
+    ['sol6-2', 'gpt-6.2-sol', undefined, 'standard'],
+    ['astra6-2', 'gpt-6.2-astra', undefined, 'standard'],
+    ['luna6', 'gpt-6-luna', undefined, 'standard'],
+    ['luna6fast', 'gpt-6-luna', 'fast', 'standard'],
+    ['luna6flex', 'gpt-6-luna', 'flex', 'standard'],
+    ['sol6-1flex', 'gpt-6.1-sol', 'flex', 'standard'],
+    ['astra6free', 'gpt-6-astra', 'default', 'free'],
+    ['terra5-6free', 'gpt-5.6-terra', 'default', 'free'],
   ];
   for (const [name, model, tier, key] of expected) {
     const actual = workerSettings(name, targetEnv);
@@ -55,14 +57,14 @@ test('Desktop worker profiles preserve six native agent defaults and correct two
     assert.equal(actual.service_tier, tier);
     assert.equal(actual.key_profile, key);
   }
-  assert.equal(workerSettings('flex6-1', { ...targetEnv, OPENAI_WORKER_FLEX6_1_MODEL: 'gpt-6.1-sol', OPENAI_WORKER_FLEX6_1_SERVICE_TIER: 'priority' }).service_tier, 'priority');
-  assert.equal(workerSettings('sol', { ...targetEnv, OPENAI_WORKER_SERVICE_TIER: 'fast' }).service_tier, 'fast');
-  assert.equal(workerSettings('daily-astrafree', { ...targetEnv, OPENAI_WORKER_SERVICE_TIER: 'fast' }).service_tier, 'default');
+  assert.equal(workerSettings('sol6-1flex', { ...targetEnv, OPENAI_WORKER_SOL6_1FLEX_MODEL: 'gpt-6.1-sol', OPENAI_WORKER_SOL6_1FLEX_SERVICE_TIER: 'priority' }).service_tier, 'priority');
+  assert.equal(workerSettings('sol6-2', { ...targetEnv, OPENAI_WORKER_SERVICE_TIER: 'fast' }).service_tier, 'fast');
+  assert.equal(workerSettings('astra6free', { ...targetEnv, OPENAI_WORKER_SERVICE_TIER: 'fast' }).service_tier, 'default');
 });
 
 test('Desktop can list agents and key presence without disclosing secrets', async () => {
   const response = await invoke('list_openai_workers', {}, fakeBackend([]), targetEnv);
-  assert.equal(response.workers.length, 6);
+  assert.equal(response.workers.length, 8);
   assert.equal(response.keys.free, true);
   assert.equal(response.keys.standard, true);
   assert(!JSON.stringify(response).includes('test-standard-key'));
@@ -71,14 +73,14 @@ test('Desktop can list agents and key presence without disclosing secrets', asyn
 
 test('Desktop delegation carries worker, tier, separate context and no file tools', async () => {
   const calls = [];
-  const started = await invoke('ask_openai_worker', { worker: 'flex6-1', task: 'Review architecture', context: 'source snippet', reasoning_effort: 'medium' }, fakeBackend(calls), targetEnv);
+  const started = await invoke('ask_openai_worker', { worker: 'sol6-1flex', task: 'Review architecture', context: 'source snippet', reasoning_effort: 'medium' }, fakeBackend(calls), targetEnv);
   assert.equal(started.status, 'in_progress');
   assert.match(started.next_step, /poll_openai_worker/);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].name, 'create');
   assert.equal(calls[0].args.service_tier, 'flex');
   assert.equal(calls[0].args.model, 'gpt-6.1-sol');
-  assert.equal(calls[0].args.worker_type, 'flex6-1');
+  assert.equal(calls[0].args.worker_type, 'sol6-1flex');
   assert.deepEqual(calls[0].args.tools, []);
   assert.match(JSON.stringify(calls[0].args.input), /source snippet/);
   assert.match(calls[0].args.instructions, /NO file system/);
@@ -87,14 +89,14 @@ test('Desktop delegation carries worker, tier, separate context and no file tool
 test('Desktop follow-up, polling, cancellation and ledger tools preserve worker identity', async () => {
   const calls = [];
   const backend = fakeBackend(calls);
-  const replied = await invoke('poll_openai_worker', { worker: 'daily-terrafree', response_id: 'resp_abc1234' }, backend, targetEnv);
+  const replied = await invoke('poll_openai_worker', { worker: 'terra5-6free', response_id: 'resp_abc1234' }, backend, targetEnv);
   assert.equal(replied.answer, 'Peer review findings');
-  assert.equal(calls[0].args.worker_type, 'daily-terrafree');
-  await invoke('cancel_openai_worker', { worker: 'daily-astrafree', response_id: 'resp_abc1234' }, backend, targetEnv);
-  assert.equal(calls[1].args.worker_type, 'daily-astrafree');
+  assert.equal(calls[0].args.worker_type, 'terra5-6free');
+  await invoke('cancel_openai_worker', { worker: 'astra6free', response_id: 'resp_abc1234' }, backend, targetEnv);
+  assert.equal(calls[1].args.worker_type, 'astra6free');
   const usage = await invoke('openai_worker_daily_usage', {}, backend, targetEnv);
   assert.equal(usage.utcDay, '2026-11-21');
-  const follow = await invoke('ask_openai_worker', { worker: 'sol', task: 'Continue', previous_response_id: 'resp_abc1234' }, backend, targetEnv);
+  const follow = await invoke('ask_openai_worker', { worker: 'sol6-2', task: 'Continue', previous_response_id: 'resp_abc1234' }, backend, targetEnv);
   assert.equal(follow.status, 'in_progress');
   assert.equal(calls[3].args.previous_response_id, 'resp_abc1234');
 });
@@ -103,9 +105,9 @@ test('Unknown workers and malformed IDs fail closed without API calls', async ()
   const calls = [];
   const backend = fakeBackend(calls);
   await assert.rejects(invoke('ask_openai_worker', { worker: 'admin', task: 'hi' }, backend, targetEnv), /Unknown worker/);
-  await assert.rejects(invoke('ask_openai_worker', { worker: 'sol', task: '' }, backend, targetEnv), /task must/);
-  await assert.rejects(invoke('poll_openai_worker', { worker: 'sol', response_id: '../../secret' }, backend, targetEnv), /Invalid response ID/);
-  await assert.rejects(invoke('ask_openai_worker', { worker: 'sol', task: 'x', max_output_tokens: 999999 }, backend, targetEnv), /max_output_tokens/);
+  await assert.rejects(invoke('ask_openai_worker', { worker: 'sol6-2', task: '' }, backend, targetEnv), /task must/);
+  await assert.rejects(invoke('poll_openai_worker', { worker: 'sol6-2', response_id: '../../secret' }, backend, targetEnv), /Invalid response ID/);
+  await assert.rejects(invoke('ask_openai_worker', { worker: 'sol6-2', task: 'x', max_output_tokens: 999999 }, backend, targetEnv), /max_output_tokens/);
   assert.equal(calls.length, 0);
 });
 
@@ -121,7 +123,7 @@ test('MCP initialize, list, tool call, error handling and notifications are prot
   assert.equal(out.length, 4);
   assert.equal(out[0].result.serverInfo.name, 'chlaude-gptopus-desktop');
   assert.equal(out[1].result.tools.length, 5);
-  assert.equal(JSON.parse(out[2].result.content[0].text).workers.length, 6);
+  assert.equal(JSON.parse(out[2].result.content[0].text).workers.length, 8);
   assert.equal(out[3].result.isError, true);
 });
 
@@ -146,7 +148,7 @@ test('MCP 2026-07-28 discovery, metadata and version rejection are protocol-corr
   assert.equal(out[1].result.resultType, 'complete');
   assert.equal(out[1].result.ttlMs, 3600000);
   assert.equal(out[2].result.resultType, 'complete');
-  assert.equal(JSON.parse(out[2].result.content[0].text).workers.length, 6);
+  assert.equal(JSON.parse(out[2].result.content[0].text).workers.length, 8);
   assert.equal(out[3].error.code, -32022);
   assert.deepEqual(out[3].error.data.supported, ['2026-07-28']);
 });
@@ -175,9 +177,9 @@ test('Desktop and native mod share the same on-disk daily usage ledger, never th
       return { ok: true, json: async () => ({ id: `resp_mock${headers.length}1234`, status: 'completed', model: body.model,
         service_tier: body.service_tier, usage: { input_tokens: 1000, output_tokens: 200, total_tokens: 1200 }, output: [{ type: 'message', content: [{ type: 'output_text', text: 'Test answer' }] }] }) };
     };
-    await invoke('ask_openai_worker', { worker: 'daily-astrafree', task: 'hello' }, dispatch);
-    await invoke('ask_openai_worker', { worker: 'daily-terrafree', task: 'hello' }, dispatch);
-    await invoke('ask_openai_worker', { worker: 'sol', task: 'hello' }, dispatch);
+    await invoke('ask_openai_worker', { worker: 'astra6free', task: 'hello' }, dispatch);
+    await invoke('ask_openai_worker', { worker: 'terra5-6free', task: 'hello' }, dispatch);
+    await invoke('ask_openai_worker', { worker: 'sol6-2', task: 'hello' }, dispatch);
     assert.deepEqual(headers, ['Bearer free-test', 'Bearer free-test', 'Bearer standard-test']);
     const ledger = await usageSnapshot();
     assert.equal(ledger.groups.premium.usedTokens, 1200);

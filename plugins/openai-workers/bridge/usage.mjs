@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync,
 import { dirname, join } from 'node:path';
 import { homedir, hostname } from 'node:os';
 import { estimateUsageUsd, keyProfileForWorker } from './openai.mjs';
+import { canonicalWorker } from './workers.mjs';
 
 const PREMIUM_MODELS = new Set([
   'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna',
@@ -26,8 +27,10 @@ const TERRA_MODELS = new Set([
   'gpt-4o-mini-2024-07-18', 'o4-mini-2025-04-16',
   'o1-mini-2024-09-12', 'codex-mini-latest',
 ]);
+/** Input tokens counted when reserving a free-ledger request (plus max_output_tokens). */
+export const FREE_RESERVATION_INPUT_CAP = 128_000;
 const DEFAULT_LIMITS = Object.freeze({ premium: 250_000, terra: 2_500_000 });
-const DAILY_GUARDED_AGENTS = Object.freeze({ 'daily-astrafree': 'premium', 'daily-terrafree': 'terra' });
+const DAILY_GUARDED_AGENTS = Object.freeze({ 'astra6free': 'premium', 'terra5-6free': 'terra' });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const nonnegative = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -186,7 +189,27 @@ function loadLedger(path, now = new Date()) {
       throw new Error('Invalid token usage reservation; refusing unsafe admission.');
     }
   }
+  renameLegacyWorkers(doc);
   return { doc, v1, legacy: normalizeLegacyMigration(doc, now) };
+}
+/** Records written before the oai rename carry old worker names: map them onto the current names
+ * (merging per-day worker totals) so settlement and identity checks keep working. */
+function renameLegacyWorkers(doc) {
+  for (const entry of [...Object.values(doc.pending), ...Object.values(doc.processed)]) {
+    if (object(entry) && typeof entry.workerType === 'string') entry.workerType = canonicalWorker(entry.workerType);
+  }
+  for (const day of Object.values(doc.days)) {
+    for (const [name, stats] of Object.entries(day.workers)) {
+      const current = canonicalWorker(name); if (current === name) continue;
+      const into = day.workers[current];
+      if (!into) day.workers[current] = stats;
+      else {
+        into.tokens += stats.tokens; into.estimatedUsd += stats.estimatedUsd; into.requests += stats.requests;
+        if (stats.unknownPriceRequests) into.unknownPriceRequests = (into.unknownPriceRequests ?? 0) + stats.unknownPriceRequests;
+      }
+      delete day.workers[name];
+    }
+  }
 }
 /** A migration record written by the first v2 revision carries only the flag. It
  * has no evidence copy and no known migration instant, so every month already
@@ -335,16 +358,21 @@ export function quoteRequest(args, options = {}) {
 }
 
 export async function reserveRequest(args, options = {}) {
-  const { workerType, model } = args;
+  const { model } = args, workerType = canonicalWorker(args.workerType);
   const env = options.env ?? process.env, now = options.now ?? new Date(), cfg = settings(env);
   const expectedProfile = keyProfileForWorker(workerType);
-  if (expectedProfile === 'standard' && args.profile !== 'standard') throw new Error('The free-key daily ledger only accepts daily-astrafree and daily-terrafree; paid tracking requires explicit profile: standard.');
+  if (expectedProfile === 'standard' && args.profile !== 'standard') throw new Error('The free-key daily ledger only accepts astra6free and terra5-6free; paid tracking requires explicit profile: standard.');
   const profile = args.profile ?? expectedProfile;
   if (profile !== expectedProfile || !['free', 'standard'].includes(profile)) throw new Error('Worker/key profile mismatch.');
   const group = profile === 'free' ? groupForModel(model) : 'standard';
   if (profile === 'free' && DAILY_GUARDED_AGENTS[workerType] !== group) throw new Error(`${workerType} requires a model in the ${DAILY_GUARDED_AGENTS[workerType]} complimentary-token group; got ${model}.`);
   const day = utcDay(now), monthKey = day.slice(0, 7);
-  const reservedTokens = args.reservationTokens ?? cfg.reserveTokens;
+  // Free daily ledger: a continuation's quote carries the whole prior context bound (often ~350K), which would
+  // block the day's allowance on one request. Its reservation counts at most FREE_RESERVATION_INPUT_CAP input
+  // tokens plus the requested output; settlement still records the measured usage.
+  const requested = args.reservationTokens ?? cfg.reserveTokens;
+  const reservedTokens = profile === 'free' && tokenCount(args.inputTokens) && tokenCount(args.outputTokens)
+    ? Math.min(requested, Math.max(cfg.reserveTokens, Math.min(args.inputTokens, FREE_RESERVATION_INPUT_CAP) + args.outputTokens)) : requested;
   if (!tokenCount(reservedTokens) || reservedTokens < cfg.reserveTokens) throw new Error('Invalid or insufficient request token reservation.');
   const fallbackUsd = estimateUsageUsd(model, { input: 0, output: reservedTokens }, args.serviceTier ?? 'priority');
   const reservedUsd = args.reservationUsd === undefined ? fallbackUsd : args.reservationUsd;
@@ -435,6 +463,12 @@ function settle(doc, ticket, response) {
   }
   if (!completed(response.status)) { pending.status = 'accepted'; return true; }
   const usage = measuredUsage(response);
+  if (!usage && ['failed', 'cancelled'].includes(response.status)) {
+    // A provider-reported failure/cancellation without usage (e.g. a rate-limit refusal) is not billed:
+    // settle it as 0 tokens / $0 and release the reservation instead of holding it as usage_unknown.
+    doc.releases[ticket] = { day: pending.day, reason: 'failed-without-usage', requestId: pending.requestId, responseId: id, status: response.status };
+    delete doc.pending[ticket]; return true;
+  }
   if (!usage) { pending.status = 'usage_unknown'; pending.terminalStatus = response.status; return true; }
   const calculated = estimateUsageUsd(pending.model, usage, response.serviceTier ?? pending.serviceTier);
   const usd = calculated === null || response.estimatedUsd === null ? null : nonnegative(response.estimatedUsd) ? Math.max(calculated, response.estimatedUsd) : calculated;

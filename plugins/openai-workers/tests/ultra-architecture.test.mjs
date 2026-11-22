@@ -12,7 +12,7 @@ import { ReviewController } from '../ultra/review.mjs';
 import { ActionGate } from '../ultra/actions.mjs';
 
 const risk = { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95, reversibility: 'reversible', testsAvailable: true };
-const proposal = (worker = 'luna', extra = {}) => ({ worker, task: 'Independent synthetic architecture fixture', risk, budget: { tokens: 20000, usd: 1 }, ...extra });
+const proposal = (worker = 'luna6', extra = {}) => ({ worker, task: 'Independent synthetic architecture fixture', risk, budget: { tokens: 20000, usd: 1 }, ...extra });
 async function fixture(t, config = {}, options = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'ultra-architecture-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -65,9 +65,9 @@ test('architecture: an incurred peer overrun stops already allocated peers from 
 });
 
 test('architecture: a stricter worker recruitment default survives a more permissive parent', async t => {
-  const f = await fixture(t, { recruitment: { mode: 'SKYNET' }, workers: { luna: { mode: 'SWARM' } } });
-  const parent = await f.broker.request(f.mission.id, 'root', proposal('sol', { mode: 'SKYNET' }), 'skynet-parent');
-  const child = await f.broker.request(f.mission.id, parent.nodeId, proposal('luna'), 'swarm-child');
+  const f = await fixture(t, { recruitment: { mode: 'SKYNET' }, workers: { luna6: { mode: 'SWARM' } } });
+  const parent = await f.broker.request(f.mission.id, 'root', proposal('sol6-2', { mode: 'SKYNET' }), 'skynet-parent');
+  const child = await f.broker.request(f.mission.id, parent.nodeId, proposal('luna6'), 'swarm-child');
   assert.equal(child.evaluation.mode, 'SWARM');
   assert.equal(child.evaluation.effectivePermissions.recruit.higher, false);
   assert.equal(child.evaluation.effectivePermissions.recruit.equal, false);
@@ -75,7 +75,7 @@ test('architecture: a stricter worker recruitment default survives a more permis
 
 test('architecture: a passing smoke test cannot mask a failed required test on the same source', async t => {
   const f = await fixture(t, { review: { secondOpinionImpacts: [], gapInspectionImpacts: [] } });
-  const author = await f.broker.request(f.mission.id, 'root', proposal('luna', { risk: { ...risk, impact: 'high' } }), 'author');
+  const author = await f.broker.request(f.mission.id, 'root', proposal('luna6', { risk: { ...risk, impact: 'high' } }), 'author');
   await complete(f, author.nodeId);
   const flow = await f.reviews.start(f.mission.id, { authorId: author.nodeId, source: { content: 'function cleanup() { /* synthetic */ }' }, risk: { ...risk, impact: 'high' } });
   const primary = (await f.reviews.assign(f.mission.id, flow.id))[0];
@@ -100,7 +100,7 @@ test('architecture: an execution gate cannot relabel deletion as an existing rea
 
 test('architecture: a free author cannot move paid review recruitment to root to evade policy C', async t => {
   const f = await fixture(t, { freeToPaid: { policy: 'C' }, review: { secondOpinionImpacts: [], gapInspectionImpacts: [] } });
-  const author = await f.broker.request(f.mission.id, 'root', proposal('daily-astrafree'), 'free-author');
+  const author = await f.broker.request(f.mission.id, 'root', proposal('astra6free'), 'free-author');
   await complete(f, author.nodeId);
   const flow = await f.reviews.start(f.mission.id, { authorId: author.nodeId, source: { content: 'Synthetic free-key authored source' }, risk });
   const assignments = await f.reviews.assign(f.mission.id, flow.id);
@@ -111,8 +111,8 @@ test('architecture: a free author cannot move paid review recruitment to root to
 
 test('architecture: an author cannot omit the configured Policy C reviewer-selection gate', async t => {
   const f = await fixture(t, { review: { selection: 'C' } });
-  const author = await f.broker.request(f.mission.id, 'root', proposal('luna'), 'review-selection-author');
-  const review = await f.broker.request(f.mission.id, author.nodeId, proposal('astra', { role: 'reviewer' }), 'author-recommended-reviewer');
+  const author = await f.broker.request(f.mission.id, 'root', proposal('luna6'), 'review-selection-author');
+  const review = await f.broker.request(f.mission.id, author.nodeId, proposal('astra6-2', { role: 'reviewer' }), 'author-recommended-reviewer');
   assert.equal(review.status, 'pending');
   assert.ok(review.evaluation.requiredApprovals.some(a => a.authority === 'helicop-sol' || a.authority === 'helicop-astra'), 'Stored reviewer-selection policy must require an authorised HELICOP regardless of omitted caller metadata');
 });
@@ -121,9 +121,9 @@ test('architecture: restricted orchestrator authority survives recruitment throu
   for (const [model, trusted, authority] of [['haiku', true, 'helicop-sol'], ['sonnet', true, 'helicop-sol'], ['unknown', false, 'user']]) {
     const f = await fixture(t, { recruitment: { mode: 'SKYNET' } });
     const m = await f.broker.createMission({ task: `Restricted ${model} delegation fixture`, orchestrator: { model, trusted, source: 'synthetic-host' } });
-    const parent = await f.broker.request(m.id, 'root', proposal('luna', { mode: 'SKYNET' }), `intermediary-${model}`);
+    const parent = await f.broker.request(m.id, 'root', proposal('luna6', { mode: 'SKYNET' }), `intermediary-${model}`);
     assert.ok(parent.nodeId, 'Routine recruitment should remain available to the restricted orchestrator');
-    const restricted = await f.broker.request(m.id, parent.nodeId, proposal('sol'), `restricted-${model}`);
+    const restricted = await f.broker.request(m.id, parent.nodeId, proposal('sol6-2'), `restricted-${model}`);
     assert.equal(restricted.status, 'pending', `${model} cannot bypass its restricted-family gate by asking Luna to recruit Sol`);
     assert.ok(restricted.evaluation.requiredApprovals.some(a => a.authority === authority), 'The root mission authority remains binding through every generation');
   }
@@ -206,7 +206,7 @@ test('architecture: informed second opinions and author-context gap reuse change
   m = await f.store.snapshot(f.mission.id);
   const gapNode = m.nodes[gap.nodeId];
   assert.notEqual(gap.nodeId, author.nodeId, 'Role-specific accounting and capabilities require a separate Review allocation');
-  assert.equal(gapNode.worker, 'luna');
+  assert.equal(gapNode.worker, 'luna6');
   assert.equal(gapNode.pool, 'review');
   assert.equal(gapNode.runtime.reusedAuthorId, author.nodeId);
   assert.deepEqual(gapNode.permissions.tools, []);
@@ -230,7 +230,7 @@ test('architecture: risk-based approval and always-approval have distinct isolat
 
 test('architecture: a revised controller request retains its spending authority and workflow assignment', async t => {
   const f = await fixture(t, { freeToPaid: { policy: 'C' } });
-  const author = await f.broker.request(f.mission.id, 'root', proposal('daily-astrafree'), 'revision-free-author');
+  const author = await f.broker.request(f.mission.id, 'root', proposal('astra6free'), 'revision-free-author');
   await complete(f, author.nodeId);
   const flow = await f.reviews.start(f.mission.id, { authorId: author.nodeId, source: { content: 'source authored using the free key' }, risk });
   const assignment = (await f.reviews.assign(f.mission.id, flow.id))[0];
@@ -246,9 +246,9 @@ test('architecture: a revised controller request retains its spending authority 
 });
 
 test('architecture: protected supervisor allocations retain the exact configured processing tier', async t => {
-  const f = await fixture(t, { recruitment: { mode: 'REPLICATOR' }, workers: { sol: { serviceTier: 'flex' } } });
-  const parent = await f.broker.request(f.mission.id, 'root', proposal('sol'), 'tier-parent');
-  const peer = await f.broker.request(f.mission.id, parent.nodeId, proposal('sol'), 'tier-peer');
+  const f = await fixture(t, { recruitment: { mode: 'REPLICATOR' }, workers: { 'sol6-2': { serviceTier: 'flex' } } });
+  const parent = await f.broker.request(f.mission.id, 'root', proposal('sol6-2'), 'tier-parent');
+  const peer = await f.broker.request(f.mission.id, parent.nodeId, proposal('sol6-2'), 'tier-peer');
   const supervisor = await f.broker.appointSupervisor(f.mission.id, peer.id, 'helicop-sol');
   assert.equal(supervisor.serviceTier, 'flex', 'Protected allocation must not silently discard the configured processing tier');
 });
@@ -256,8 +256,8 @@ test('architecture: protected supervisor allocations retain the exact configured
 test('architecture: bounded future plans cannot waive a mandatory supervisor veto', async t => {
   const f = await fixture(t, { helicop: { rules: [{ id: 'planned-astra-review', enabled: true, authority: 'helicop-sol', mandatory: true, veto: true, priority: 50, when: { childFamilies: ['astra'] } }] } });
   f.mission = await f.broker.createMission({ task: 'Restricted future plan', orchestrator: { model: 'unknown', trusted: false } });
-  const plan = await f.broker.grantPlan(f.mission.id, { parentId: 'root', workers: ['astra'], roles: ['implementation'], maxInvocations: 1, budget: { tokens: 20000, usd: 1 }, acknowledgeFutureRecruitment: true }, { source: 'local-user', trusted: true, authority: 'user' });
-  const request = await f.broker.request(f.mission.id, 'root', proposal('astra', { planId: plan.id }), 'planned-approval');
+  const plan = await f.broker.grantPlan(f.mission.id, { parentId: 'root', workers: ['astra6-2'], roles: ['implementation'], maxInvocations: 1, budget: { tokens: 20000, usd: 1 }, acknowledgeFutureRecruitment: true }, { source: 'local-user', trusted: true, authority: 'user' });
+  const request = await f.broker.request(f.mission.id, 'root', proposal('astra6-2', { planId: plan.id }), 'planned-approval');
   assert.equal(request.status, 'pending', 'A prior owner plan can satisfy its user gate while leaving independent HELICOP requirements pending');
   const supervisor = await f.broker.appointSupervisor(f.mission.id, request.id, 'helicop-sol');
   await complete(f, supervisor.id);
@@ -269,17 +269,17 @@ test('architecture: bounded future plans cannot waive a mandatory supervisor vet
 test('architecture: future-plan budgets are atomic across concurrent requests and expire without replay', async t => {
   let now = 100;
   const f = await fixture(t, {}, { now: () => now });
-  const grant = { parentId: 'root', workers: ['luna'], roles: ['implementation'], maxInvocations: 2, budget: { tokens: 30000, usd: 1 }, ttlMs: 10, acknowledgeFutureRecruitment: true };
+  const grant = { parentId: 'root', workers: ['luna6'], roles: ['implementation'], maxInvocations: 2, budget: { tokens: 30000, usd: 1 }, ttlMs: 10, acknowledgeFutureRecruitment: true };
   const user = { source: 'local-user', trusted: true, authority: 'user' };
   const plan = await f.broker.grantPlan(f.mission.id, grant, user);
-  const attempts = await Promise.allSettled(['plan-one', 'plan-two'].map(key => f.broker.request(f.mission.id, 'root', proposal('luna', { planId: plan.id }), key)));
+  const attempts = await Promise.allSettled(['plan-one', 'plan-two'].map(key => f.broker.request(f.mission.id, 'root', proposal('luna6', { planId: plan.id }), key)));
   assert.equal(attempts.filter(a => a.status === 'fulfilled').length, 1, 'Concurrent users cannot independently spend the same plan budget');
   const accepted = attempts.find(a => a.status === 'fulfilled').value;
   const successfulKey = attempts[0].status === 'fulfilled' ? 'plan-one' : 'plan-two';
-  assert.equal((await f.broker.request(f.mission.id, 'root', proposal('luna', { planId: plan.id }), successfulKey)).id, accepted.id);
+  assert.equal((await f.broker.request(f.mission.id, 'root', proposal('luna6', { planId: plan.id }), successfulKey)).id, accepted.id);
   const fresh = await f.broker.grantPlan(f.mission.id, grant, user);
   now = 111;
-  await assert.rejects(() => f.broker.request(f.mission.id, 'root', proposal('luna', { planId: fresh.id }), 'expired-plan'), /expired/);
+  await assert.rejects(() => f.broker.request(f.mission.id, 'root', proposal('luna6', { planId: fresh.id }), 'expired-plan'), /expired/);
   const m = await f.store.snapshot(f.mission.id);
   assert.equal(m.plans[plan.id].remaining, 1);
   assert.deepEqual(m.plans[plan.id].remainingBudget, { tokens: 10000, usd: 0 });
@@ -290,7 +290,7 @@ test('architecture: advisory consultation still requires a separate trusted fina
     const config = { authority: { profiles: { sonnet: { final: false } } }, ...(mandatory ? { helicop: { rules: [{ id: 'mandatory-sol', enabled: true, authority: 'helicop-sol', mandatory: true, veto: true, priority: 50, when: { childFamilies: ['sol'] } }] } } : {}) };
     const f = await fixture(t, config);
     f.mission = await f.broker.createMission({ task: 'Configured advisory consultation', orchestrator: { model: 'sonnet', trusted: true, source: 'synthetic-host' } });
-    const request = await f.broker.request(f.mission.id, 'root', proposal('sol'), 'advisory-recruitment');
+    const request = await f.broker.request(f.mission.id, 'root', proposal('sol6-2'), 'advisory-recruitment');
     const afterFinal = await f.broker.decide(f.mission.id, request.id, { decision: 'APPROVE', rationale: 'Separate trusted final decision' }, { source: 'native-host', trusted: true, authority: 'trusted-orchestrator' });
     assert.equal(afterFinal.status, 'pending', 'A final authority cannot skip the required consultation');
     const supervisor = await f.broker.appointSupervisor(f.mission.id, request.id, 'helicop-sol');
@@ -303,9 +303,9 @@ test('architecture: advisory consultation still requires a separate trusted fina
 });
 
 test('architecture: a higher-tier child can inherit SWARM without invalidating its parent SKYNET request', async t => {
-  const f = await fixture(t, { recruitment: { mode: 'SKYNET' }, workers: { astra: { mode: 'SWARM' } } });
-  const parent = await f.broker.request(f.mission.id, 'root', proposal('sol'), 'skynet-sol');
-  const child = await f.broker.request(f.mission.id, parent.nodeId, proposal('astra'), 'bounded-astra');
+  const f = await fixture(t, { recruitment: { mode: 'SKYNET' }, workers: { 'astra6-2': { mode: 'SWARM' } } });
+  const parent = await f.broker.request(f.mission.id, 'root', proposal('sol6-2'), 'skynet-sol');
+  const child = await f.broker.request(f.mission.id, parent.nodeId, proposal('astra6-2'), 'bounded-astra');
   assert.equal(child.status, 'pending', 'The valid parent edge should reach its HELICOP gate');
   assert.equal(child.evaluation.mode, 'SWARM');
   assert.deepEqual(child.evaluation.effectivePermissions.recruit, { lower: true, equal: false, higher: false });
@@ -314,7 +314,7 @@ test('architecture: a higher-tier child can inherit SWARM without invalidating i
 test('architecture: a mandatory modification remains actionable when the same supervisor also supplies consultation', async t => {
   const f = await fixture(t, { authority: { profiles: { sonnet: { final: false } } }, helicop: { rules: [{ id: 'mandatory-sol-modification', enabled: true, authority: 'helicop-sol', mandatory: true, veto: true, priority: 50, when: { childFamilies: ['sol'] } }] } });
   f.mission = await f.broker.createMission({ task: 'Advisory and mandatory supervisor roles', orchestrator: { model: 'sonnet', trusted: true, source: 'synthetic-host' } });
-  const request = await f.broker.request(f.mission.id, 'root', proposal('sol'), 'combined-modification');
+  const request = await f.broker.request(f.mission.id, 'root', proposal('sol6-2'), 'combined-modification');
   const supervisor = await f.broker.appointSupervisor(f.mission.id, request.id, 'helicop-sol');
   await complete(f, supervisor.id);
   // The separate trusted final decision is itself a blocking gate (its REJECT would outrank a MODIFY), so the verdict is
@@ -329,7 +329,7 @@ test('architecture: a mandatory modification remains actionable when the same su
 test('architecture: the final code judge receives trusted source-bound test evidence', async t => {
   const f = await fixture(t, { review: { secondOpinionImpacts: [], gapInspectionImpacts: [] } });
   const highRisk = { ...risk, impact: 'high' };
-  const author = await f.broker.request(f.mission.id, 'root', proposal('luna', { risk: highRisk }), 'evidence-author');
+  const author = await f.broker.request(f.mission.id, 'root', proposal('luna6', { risk: highRisk }), 'evidence-author');
   await complete(f, author.nodeId);
   const flow = await f.reviews.start(f.mission.id, { authorId: author.nodeId, source: { content: 'reviewed source' }, risk: highRisk });
   const reviewer = (await f.reviews.assign(f.mission.id, flow.id))[0];
@@ -358,7 +358,7 @@ test('architecture: in-flight reviews cannot revive a workflow invalidated by a 
 test('architecture: scoped risk override is authenticated, expires at execution and leaves resources unchanged', async t => {
   let now = 100;
   const f = await fixture(t, { permissions: { tools: ['delete'] } }, { now: () => now });
-  const author = await f.broker.request(f.mission.id, 'root', proposal('luna', { risk: { ...risk, impact: 'high' } }), 'risk-override-author');
+  const author = await f.broker.request(f.mission.id, 'root', proposal('luna6', { risk: { ...risk, impact: 'high' } }), 'risk-override-author');
   await complete(f, author.nodeId);
   const before = (await f.store.snapshot(f.mission.id)).nodes[author.nodeId];
   const grant = { rationale: 'Owner reviewed the exact synthetic task and narrowed its consequence', ttlMs: 10 };
@@ -390,14 +390,14 @@ test('architecture: scoped risk override is authenticated, expires at execution 
 
 test('architecture: per-assignment Policy B choice is pinned by trusted root and cannot downgrade mission C', async t => {
   const f = await fixture(t);
-  const choice = { reviewerPolicy: { selection: 'B', primary: 'sol' } };
+  const choice = { reviewerPolicy: { selection: 'B', primary: 'sol6-2' } };
   const author = await f.broker.request(f.mission.id, 'root', proposal(), 'task-reviewer-author', choice);
-  await assert.rejects(() => f.broker.request(f.mission.id, author.nodeId, proposal('daily-terrafree'), 'worker-reviewer-override', choice), /trusted root|reviewer/i);
+  await assert.rejects(() => f.broker.request(f.mission.id, author.nodeId, proposal('terra5-6free'), 'worker-reviewer-override', choice), /trusted root|reviewer/i);
   await complete(f, author.nodeId);
   const flow = await f.reviews.start(f.mission.id, { authorId: author.nodeId, source: { content: 'source with preassigned reviewer' }, risk });
-  assert.equal(flow.policy.reviewer, 'sol');
+  assert.equal(flow.policy.reviewer, 'sol6-2');
   const actual = (await f.reviews.assign(f.mission.id, flow.id))[0];
-  assert.equal(actual.worker, 'sol');
+  assert.equal(actual.worker, 'sol6-2');
   const unknown = await f.broker.createMission({ task: 'Unverified reviewer selection', orchestrator: { model: 'unknown', trusted: false } });
   await assert.rejects(() => f.broker.request(unknown.id, 'root', proposal(), 'unverified-reviewer-override', choice), /trusted root|reviewer/i);
   const c = await fixture(t, { review: { selection: 'C' } });
@@ -407,7 +407,7 @@ test('architecture: per-assignment Policy B choice is pinned by trusted root and
 test('architecture: late trusted tests trigger bounded fresh adjudication and stale approvals remain unusable', async t => {
   const f = await fixture(t, { mission: { maxRetries: 1 }, review: { secondOpinionImpacts: [], gapInspectionImpacts: [] } });
   const highRisk = { ...risk, impact: 'high' };
-  const author = await f.broker.request(f.mission.id, 'root', proposal('luna', { risk: highRisk }), 'late-tests-author');
+  const author = await f.broker.request(f.mission.id, 'root', proposal('luna6', { risk: highRisk }), 'late-tests-author');
   await complete(f, author.nodeId);
   // High-impact work must designate its required tests up front; the evidence for them arrives late.
   const flow = await f.reviews.start(f.mission.id, { authorId: author.nodeId, source: { content: 'source awaiting independent test evidence' }, risk: highRisk,
