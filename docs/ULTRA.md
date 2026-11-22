@@ -347,7 +347,24 @@ Use the workflow's returned `source.hash` when recording a test. Do not substitu
 }
 ```
 
-`record-test` records evidence after explicit local confirmation; it does not run tests. The operator must record an observed result. Model output cannot set a trusted runner identity. Source changes invalidate affected reviews and pending execution approvals, and revised source needs matching new test evidence.
+`record-test` files an **owner-attested** record after explicit local confirmation; it does not run anything, and at the impact tiers the owner has not allowed (by default `high`, `critical` and `unknown`) the confirmation screen warns that the record will be stored but cannot satisfy the gate. Model output cannot set a trusted runner identity. Source changes invalidate affected reviews and pending execution approvals, and revised source needs matching new test evidence.
+
+### Getting high-, critical- and unknown-impact work to code approval
+
+Such work is held as `unplanned` until the local owner registers a verification plan, and then needs **executed** evidence for every executable test (or an explicit waiver of a non-executable one). These routes exist only in the interactive owner CLI; no MCP tool, native tool, hook or model can use them:
+
+```text
+node plugins/openai-workers/ultra/cli.mjs test-status MISSION_ID WORKFLOW_ID          # what is required, what is missing, what to do next
+node plugins/openai-workers/ultra/cli.mjs plan-add MISSION_ID WORKFLOW_ID plan.json   # register / extend the plan: [{ "id": "unit:scope", "description": "..." }]
+node plugins/openai-workers/ultra/cli.mjs test-digest --root C:/Projects/Synthetic -- node --test      # the digest a required test may pin
+node plugins/openai-workers/ultra/cli.mjs run-test MISSION_ID WORKFLOW_ID unit:scope --root C:/Projects/Synthetic -- node --test
+node plugins/openai-workers/ultra/cli.mjs waive-test MISSION_ID WORKFLOW_ID waiver.json   # { "testId": "manual:ui", "rationale": "..." }; non-executable tests only
+```
+
+- `plan-add` shows the exact entries and the plan hash before and after, and binds the confirmation to that hash: if the plan or source changes before you confirm, nothing is added. The set can only grow here (a reviewer may also request more tests); removing or redefining an entry is a separate owner change with a reason.
+- `run-test` **runs the command you typed** and records the result as `executed` evidence from the principal `test-runner`, attested with the command digest, the exit code, the runner id and the exact source and plan hash. The command is an argv array after `--` (never a shell string; nothing from a model is an argument). The program is resolved from absolute `PATH` entries only (a relative name or a file planted in the project is never chosen; `.bat`/`.cmd` are refused). `--root` must be one of the policy's `permissions.roots`, canonical and link-free, and `--cwd` a relative subdirectory inside it. The child gets a minimal environment (PATH, temp/home/locale variables and the Windows system root; no API keys, no ULTRA variables), a timeout (`--timeout-ms`, default 120000, at most 3600000; the whole process tree is killed and the result recorded as a failure with exit code 124) and a cap on retained output (`--max-output-bytes`, default 262144; the tail is kept and a SHA-256 of what was retained is recorded). A non-zero exit is recorded as a **failing** result. A command that cannot start records nothing.
+- A required test may pin `commandDigest` (owner policy or a plan entry): only that exact argv, root and subdirectory counts, and `run-test` refuses any other command before it asks you anything.
+- **Limits, stated plainly.** The runner is not a sandbox: your command runs with your privileges. It cannot prove that the tree under `--root` contains the reviewed snapshot; the confirmation screen says so and you assert it by confirming. `.bat`/`.cmd` programs and shell pipelines are not supported (run `node script.js` or a program directly). Every confirmation needs a real interactive terminal.
 
 ## Protect review capacity and control spending
 
@@ -410,7 +427,12 @@ Use `--help` to inspect the installed command surface. JSON filenames are local 
 | `escalate MISSION_ID REQUEST_ID changes.json` | Explicitly authorise re-evaluation of a request awaiting escalation. |
 | `promote MISSION_ID NODE_ID promotion.json` | Grant an exact worker/purpose recruitment exception, bounded by root authority, uses and expiry. |
 | `risk-override MISSION_ID NODE_ID override.json` | Record an expiring Core risk override and invalidate affected evidence. |
-| `record-test MISSION_ID WORKFLOW_ID evidence.json` | Record an actually observed, source-bound test result after owner confirmation. |
+| `test-status MISSION_ID WORKFLOW_ID` | Read-only: the required-test gate, each test's state, the plan hash and the next step for the owner. |
+| `plan-add MISSION_ID WORKFLOW_ID plan.json` | Register or extend the workflow's verification plan after confirmation (shows the plan hash before and after). |
+| `waive-test MISSION_ID WORKFLOW_ID waiver.json` | Waive a non-executable required test with a rationale, bound to the source and plan hash (critical impact only if owner policy allows). |
+| `record-test MISSION_ID WORKFLOW_ID evidence.json` | Record an actually observed, source-bound **owner-attested** result after owner confirmation; accepted only at the tiers in `review.ownerAttestedImpacts`. |
+| `test-digest --root ABS_ROOT [--cwd REL] -- COMMAND...` | Read-only: print the digest a required test can pin for that exact command. |
+| `run-test MISSION_ID WORKFLOW_ID TEST_ID --root ABS_ROOT [--cwd REL] [--timeout-ms N] [--max-output-bytes N] -- COMMAND...` | Run the owner-typed command and record executed evidence (see above). |
 | `propose-action MISSION_ID NODE_ID action.json` | Record an exact proposed action; do not execute it. |
 | `approve-action MISSION_ID ACTION_ID` | Record a separate user execution vote for the exact action. |
 
@@ -602,6 +624,7 @@ The adapters do not implement competing authority systems. Host facts and caller
 | [`ultra/actions.mjs`](../plugins/openai-workers/ultra/actions.mjs) | Exact action proposals, independent authority votes and single-use consumption against actual capabilities. |
 | [`ultra/permissions.mjs`](../plugins/openai-workers/ultra/permissions.mjs) | Actual scoped reads, private staged edits and the fail-closed qualified-executor interface. |
 | [`ultra/service.mjs`](../plugins/openai-workers/ultra/service.mjs), [`ultra/cli.mjs`](../plugins/openai-workers/ultra/cli.mjs) | Owner policy loading, restricted public operations and interactive local authority. |
+| [`ultra/owner-tests.mjs`](../plugins/openai-workers/ultra/owner-tests.mjs), [`scripts/ultra-test-runner.mjs`](../plugins/openai-workers/scripts/ultra-test-runner.mjs) | Owner routes for the required-test manifest (plan, waiver, attested and executed evidence) and the bounded executor; imported only by the owner CLI, and the executor is outside the Desktop bundle. |
 | [`ultra/native-controller.mjs`](../plugins/openai-workers/ultra/native-controller.mjs), [`hooks/register.js`](../plugins/openai-workers/hooks/register.js) | Trusted host bindings, native hooks and protected model/tool dispatch. |
 | [`bridge/server.mjs`](../plugins/openai-workers/bridge/server.mjs), [`bridge/desktop-server.mjs`](../plugins/openai-workers/bridge/desktop-server.mjs) | Native/shared and Desktop MCP facades using the same transport and control plane. |
 | [`bridge/openai.mjs`](../plugins/openai-workers/bridge/openai.mjs), [`bridge/usage.mjs`](../plugins/openai-workers/bridge/usage.mjs) | Fixed key routing, API transport, request reservations, measured usage and durable cross-interface accounting. |

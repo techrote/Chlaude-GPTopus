@@ -78,6 +78,8 @@ The synthetic model backend does not decide the assertions. It emits ordinary Re
 
 The fixture's function tests only execute the evaluator's fixed, known pure-function source. They are not an operating-system sandbox and must not be repurposed to run arbitrary generated code.
 
+Scenario A's verification plan and its executor attestation are created by the evaluator itself with in-process fixture principals; they stand in for the owner routes a real installation uses (`ultra/cli.mjs plan-add`, `run-test`, `waive-test`; see [ULTRA.md](ULTRA.md#getting-high--critical--and-unknown-impact-work-to-code-approval)) and are not evidence of those commands. The owner routes have their own end-to-end tests (`tests/ultra-owner-tests.test.mjs`: the real CLI, review controller, ledger and a real child process).
+
 ## Reading the report
 
 | File | Purpose |

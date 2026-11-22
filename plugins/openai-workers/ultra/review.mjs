@@ -152,6 +152,128 @@ export class ReviewController {
     const latest = new Map(w.tests.filter(t => t.sourceHash === sourceHash).map(t => [t.name, t]));
     return latest.size > 0 && [...latest.values()].every(t => t.passed === true);
   }
+  assertPlanner(m, principal) {
+    const identity = orchestratorIdentity(m.config, m, this.broker.now());
+    invariant(principal?.trusted === true && (principal.source === 'local-user' && principal.authority === 'user'
+      || principal.source === 'native-host' && principal.authority === 'trusted-orchestrator' && identity.trusted && identity.profile.authority === 'full'),
+    'A verification plan needs the trusted local owner or a full trusted orchestrator');
+  }
+  ensurePlan(m, w) {
+    w.waivers ??= [];
+    w.testPlan ??= { id: null, policyHash: m.policyHash, policyEntries: policyRequirements(m.config, w.assessment), entries: [], revision: 0, registeredBy: null, at: this.broker.now(), history: [] };
+    return w.testPlan;
+  }
+  effective(plan) {
+    const byId = new Map();
+    for (const e of [...plan.policyEntries, ...plan.entries]) if (!byId.has(e.id)) byId.set(e.id, e);
+    return [...byId.values()].sort((x, y) => x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
+  }
+  planHashOf(w, plan, entries) {
+    return digest({ kind: 'verification-plan', workflowId: w.id, planId: plan.id ?? null, sourceHash: w.source.hash, tests: entries.map(core) });
+  }
+  /** Trusted additions only: an identical re-registration is a no-op, a different definition of an existing id is refused. */
+  admit(existing, raws, origin) {
+    invariant(Array.isArray(raws) && raws.length <= MAX_REQUIREMENTS, 'Invalid required-test list');
+    const added = [], all = [...existing];
+    for (const raw of raws) {
+      const e = requirement(raw, origin), prior = all.find(x => x.id === e.id);
+      if (prior) { invariant(sameRequirement(prior, e), `Required test ${e.id} is already defined differently; only the local owner can change a requirement`); continue; }
+      all.push(e); added.push(e);
+    }
+    invariant(all.length <= MAX_REQUIREMENTS, 'Too many required tests');
+    return added;
+  }
+  buildPlan(m, assessment, testPlan, principal) {
+    const policyEntries = policyRequirements(m.config, assessment), plan = { id: randomUUID(), policyHash: m.policyHash, policyEntries, entries: [], revision: 0, registeredBy: null, at: this.broker.now(), history: [] };
+    if (testPlan === undefined) return plan;
+    invariant(testPlan && typeof testPlan === 'object' && !Array.isArray(testPlan) && Object.keys(testPlan).every(k => ['id', 'entries'].includes(k)), 'Invalid verification plan');
+    this.assertPlanner(m, principal);
+    if (testPlan.id !== undefined) { invariant(typeof testPlan.id === 'string' && testPlan.id.trim() && testPlan.id.length <= 128, 'Invalid verification plan id'); plan.id = testPlan.id; }
+    plan.entries = this.admit(policyEntries, testPlan.entries, `plan:${principal.source}`);
+    plan.registeredBy = clone(principal);
+    return plan;
+  }
+  /** Agents (reviewers, inspectors, judges) can only request more verification, as executable tests, and never alter an existing one. */
+  addAgentRequirements(m, w, requested, nodeId) {
+    const plan = this.ensurePlan(m, w), added = [], ignored = [];
+    for (const raw of requested ?? []) {
+      let e;
+      try { e = requirement({ id: raw.id, description: raw.description, executable: true, commandDigest: raw.commandDigest }, `agent:${nodeId}`); }
+      catch (error) { ignored.push({ id: String(raw?.id ?? '').slice(0, 128), reason: error.message }); continue; }
+      const all = this.effective(plan);
+      if (all.some(x => x.id === e.id)) { ignored.push({ id: e.id, reason: 'Already designated; an agent cannot change a requirement' }); continue; }
+      if (all.length >= MAX_REQUIREMENTS) { ignored.push({ id: e.id, reason: 'Required-test limit reached' }); continue; }
+      plan.entries.push(e); added.push(e.id);
+    }
+    if (added.length) { plan.revision++; plan.history.push({ at: this.broker.now(), kind: 'agent-added', nodeId, ids: added }); }
+    return { added, ignored };
+  }
+  staleActions(m, workflowId) {
+    staleUnconsumedActions(m, action => action.workflowId === workflowId);
+  }
+  /** Evaluate the manifest against current, source- and plan-bound evidence and store the precise state on the workflow. */
+  refresh(m, w) {
+    const plan = this.ensurePlan(m, w), entries = this.effective(plan), planHash = this.planHashOf(w, plan, entries);
+    const cfg = m.config.review, tier = w.assessment.effectiveImpact, sourceHash = w.source.hash;
+    const ownerOk = cfg.ownerAttestedImpacts.includes(tier);
+    const eligible = t => t.provenance === 'executed' || (t.provenance === 'owner-attested' && ownerOk);
+    const waiverOk = tier !== 'critical' || cfg.allowCriticalWaivers === true;
+    const current = w.tests.filter(t => t.sourceHash === sourceHash);
+    const tests = entries.map(e => {
+      const out = { id: e.id, description: e.description, executable: e.executable, origin: e.origin, commandDigest: e.commandDigest, state: 'missing', evidenceIds: [], waiverId: null, detail: '' };
+      if (!e.executable) {
+        const waiver = w.waivers.find(x => x.testId === e.id && x.sourceHash === sourceHash && x.planHash === planHash);
+        if (waiver && waiverOk) { out.state = 'waived'; out.waiverId = waiver.id; }
+        else out.detail = waiver ? 'Owner policy does not allow this waiver at this impact' : 'Non-executable: needs an explicit trusted-owner waiver with rationale';
+        return out;
+      }
+      const records = current.filter(t => (t.testId ?? t.name) === e.id && t.planHash === planHash && !(e.commandDigest && t.provenance === 'executed' && t.attestation?.commandDigest !== e.commandDigest));
+      const c = classify(records, eligible);
+      out.state = c.state; out.evidenceIds = c.live.map(r => r.id);
+      if (c.state === 'missing' && c.live.some(r => r.passed)) out.detail = 'Only passing evidence of a class this impact tier does not accept (independent execution is required)';
+      return out;
+    });
+    const ids = state => tests.filter(t => t.state === state).map(t => t.id);
+    const named = new Set(entries.map(e => e.id));
+    const unrelated = [...new Set(current.filter(t => !named.has(t.testId ?? t.name)).map(t => t.testId ?? t.name))];
+    let mode, state, accepted, reason = null;
+    if (entries.length) {
+      mode = 'manifest'; accepted = tests.every(t => ['satisfied', 'waived'].includes(t.state));
+      state = ids('contradictory').length ? 'contradictory' : ids('failing').length ? 'failing' : ids('missing').length ? 'missing' : ids('waived').length ? 'waived' : 'satisfied';
+      if (!accepted) reason = `${TEST_HOLD}: ${[['missing', ids('missing')], ['failing', ids('failing')], ['contradictory', ids('contradictory')]].filter(([, list]) => list.length).map(([label, list]) => `${label} [${list.join(', ')}]`).join('; ')}`;
+    } else if (cfg.requireTests && w.assessment.controls.tests) {
+      if (tierMatches(cfg.testPlanRequiredImpacts, tier)) {
+        mode = 'unplanned'; state = 'unplanned'; accepted = false;
+        reason = `${TEST_HOLD}: no required tests are designated for work whose risk demands tests; the local owner registers a verification plan (ultra/cli.mjs plan-add) or lists owner-policy review.requiredTests`;
+      } else {
+        // Weakest tier only: "some passing evidence". Designated tests are never replaced by this rule.
+        mode = 'legacy'; const legacy = legacyEvaluate(current); accepted = legacy.accepted; state = accepted ? 'some-passing-evidence' : legacy.state;
+        if (!accepted) reason = `${TEST_HOLD}: ${legacy.state === 'missing' ? 'no passing test evidence is recorded' : `recorded evidence is ${legacy.state}`}`;
+      }
+    } else { mode = 'not-required'; state = 'not-required'; accepted = true; }
+    return w.requiredTests = { mode, state, accepted, reason, planId: plan.id, planHash, sourceHash, impact: tier, ownerAttestedAccepted: ownerOk, tests,
+      satisfied: ids('satisfied'), missing: ids('missing'), failing: ids('failing'), contradictory: ids('contradictory'), waived: ids('waived'), unrelated, evaluatedAt: this.broker.now() };
+  }
+  /** Re-evaluate after any evidence/plan change: revoke approval that is no longer supported; optionally re-adjudicate once satisfied. */
+  enforce(m, w, event, { readjudicate = false } = {}) {
+    const gate = this.refresh(m, w);
+    if (w.status === 'code_approved' && !gate.accepted) { w.status = 'held'; w.approval = null; w.reason = gate.reason; }
+    if (w.status === 'held' && isTestHold(w.reason)) {
+      const maximum = m.config.mission.maxRetries, used = m.retryCount ?? 0, generation = w.judgementGeneration ?? 0;
+      if (!gate.accepted) w.reason = gate.reason;
+      else if (readjudicate && generation < maximum && used < maximum) {
+        this.broker.consumeRetry(m, event, { kind: 'evidence-readjudication', workflowId: w.id });
+        w.judgementGeneration = generation + 1; w.status = 'adjudication'; w.reason = null;
+        event('review.readjudication_required', m.id, { workflowId: w.id, generation: w.judgementGeneration, sourceHash: w.source.hash });
+      } else if (readjudicate) {
+        // Say what is actually true: the evidence is complete, only the budget for another adjudication is gone.
+        w.reason = `${RETRY_HOLD}: the retry limit is reached (mission ${used} of ${maximum} retries used, this workflow ${generation} re-adjudications). Owner remedy: restart the workflow (ReviewController.restart, local owner, with a reason) to review the same source afresh`;
+      }
+    }
+    return gate;
+  }
+  /** Legacy helper retained for "some passing evidence" semantics; contradiction-aware rather than latest-wins. */
+  testsPass(w, sourceHash) { return legacyEvaluate(w.tests.filter(t => t.sourceHash === sourceHash)).accepted; }
   async recordTest(missionId, workflowId, evidence, principal) {
     return this.store.transaction((state, event) => {
       const m = state.missions[missionId], w = m?.workflows[workflowId]; invariant(w && evidence.sourceHash === w.source.hash, 'Test evidence has stale source');
@@ -169,6 +291,79 @@ export class ReviewController {
       }
       for (const action of Object.values(m.actions)) if (action.workflowId === workflowId && action.status !== 'executed') action.status = 'stale';
       event('review.test_evidence', missionId, { workflowId, ...t }); return t;
+    });
+  }
+  /** A non-executable required test can only be satisfied by this explicit, rationale-carrying owner waiver. */
+  async waiveTest(missionId, workflowId, waiver, principal) {
+    return this.store.transaction((state, event) => {
+      const m = state.missions[missionId], w = m?.workflows[workflowId]; invariant(w, 'Unknown workflow'); superseded(w);
+      assertWorkflowRisk(m, w, this.broker.now()); this.assertOwner(principal);
+      invariant(waiver && typeof waiver === 'object' && Object.keys(waiver).every(k => ['testId', 'rationale', 'sourceHash', 'planHash'].includes(k)), 'Invalid waiver');
+      const gate = this.refresh(m, w), entry = this.effective(this.ensurePlan(m, w)).find(e => e.id === waiver.testId);
+      invariant(waiver.sourceHash === w.source.hash && waiver.planHash === gate.planHash, 'Waiver is bound to a different source or verification plan');
+      invariant(entry && !entry.executable, 'Only a non-executable required test can be waived; executable tests need executed or owner-attested evidence');
+      invariant(w.assessment.effectiveImpact !== 'critical' || m.config.review.allowCriticalWaivers === true, 'Owner policy does not allow waivers for critical-impact work');
+      invariant(typeof waiver.rationale === 'string' && waiver.rationale.trim() && waiver.rationale.length <= 2000, 'A waiver needs a rationale');
+      invariant(!w.waivers.some(x => x.testId === entry.id && x.sourceHash === gate.sourceHash && x.planHash === gate.planHash), 'Test is already waived');
+      const record = { id: randomUUID(), testId: entry.id, rationale: waiver.rationale, sourceHash: gate.sourceHash, planHash: gate.planHash, principal: clone(principal), at: this.broker.now() };
+      w.waivers.push(record);
+      this.enforce(m, w, event, { readjudicate: true }); this.staleActions(m, workflowId);
+      event('review.test_waived', missionId, { workflowId, ...record }); return record;
+    });
+  }
+  planChanged(m, w, event, change) {
+    const plan = w.testPlan; plan.revision++; plan.history.push({ at: this.broker.now(), ...change });
+    // Approval rested on the previous plan; it cannot survive any change, even one that looks harmless.
+    if (w.status === 'code_approved') { w.status = 'held'; w.approval = null; w.reason = `${TEST_HOLD}: the verification plan changed after approval; re-adjudication required`; }
+    this.enforce(m, w, event, { readjudicate: true }); this.staleActions(m, w.id);
+    event('review.plan_changed', m.id, { workflowId: w.id, planId: plan.id, revision: plan.revision, planHash: w.requiredTests.planHash, change });
+  }
+  /** Read-only: the current manifest state of a workflow, evaluated on a copy of the ledger snapshot (nothing is written). */
+  async inspect(missionId, workflowId) {
+    const m = await this.store.snapshot(missionId), w = m.workflows[workflowId]; invariant(w, 'Unknown workflow');
+    const gate = this.refresh(m, w), plan = this.ensurePlan(m, w), config = m.config.review;
+    return { workflowId: w.id, status: w.status, reason: w.reason ?? null, source: { id: w.source.id ?? null, hash: w.source.hash }, impact: gate.impact,
+      ownerAttestedAccepted: gate.ownerAttestedAccepted, ownerAttestedImpacts: [...config.ownerAttestedImpacts], criticalWaiversAllowed: config.allowCriticalWaivers === true,
+      plan: { id: plan.id, hash: gate.planHash, revision: plan.revision }, gate: clone(gate), evidence: w.tests.filter(t => t.sourceHash === w.source.hash).map(t => ({ id: t.id, testId: t.testId ?? t.name, passed: t.passed, provenance: t.provenance, at: t.at })) };
+  }
+  /** Read-only preview of an additive owner plan registration: exactly what would be added, and the plan hash before and after. */
+  async previewRequiredTests(missionId, workflowId, entries) {
+    const m = await this.store.snapshot(missionId), w = m.workflows[workflowId]; invariant(w, 'Unknown workflow');
+    const plan = this.ensurePlan(m, w), existing = this.effective(plan), added = this.admit(existing, entries, 'plan:local-user');
+    const after = { ...plan, entries: [...plan.entries, ...added] };
+    return { workflowId: w.id, source: { id: w.source.id ?? null, hash: w.source.hash }, impact: w.assessment.effectiveImpact, planId: plan.id,
+      planHashBefore: this.planHashOf(w, plan, existing), planHashAfter: this.planHashOf(w, after, this.effective(after)),
+      existing: existing.map(core), added: added.map(core), unchanged: added.length === 0 };
+  }
+  /** Additive registration by the trusted owner (or a full trusted orchestrator). It can never shrink or alter the suite. */
+  async addRequiredTests(missionId, workflowId, entries, principal, { expectedPlanHash } = {}) {
+    return this.store.transaction((state, event) => {
+      const m = state.missions[missionId], w = m?.workflows[workflowId]; invariant(w, 'Unknown workflow'); superseded(w);
+      assertWorkflowRisk(m, w, this.broker.now()); this.assertPlanner(m, principal);
+      const plan = this.ensurePlan(m, w);
+      // A confirmation binds the exact plan (and source) the owner was shown; anything that changed it since is refused.
+      invariant(expectedPlanHash === undefined || this.planHashOf(w, plan, this.effective(plan)) === expectedPlanHash, 'The verification plan or source changed after it was displayed; review it again');
+      const added = this.admit(this.effective(plan), entries, `plan:${principal.source}`);
+      if (!added.length) return w;
+      plan.entries.push(...added);
+      this.planChanged(m, w, event, { kind: 'added', ids: added.map(e => e.id), principal: clone(principal) }); return w;
+    });
+  }
+  /** Removing or redefining a requirement is a local-owner decision with a reason; owner-policy tests change only in owner configuration. */
+  async changeRequiredTests(missionId, workflowId, { remove = [], replace = [], reason } = {}, principal) {
+    return this.store.transaction((state, event) => {
+      const m = state.missions[missionId], w = m?.workflows[workflowId]; invariant(w, 'Unknown workflow'); superseded(w);
+      assertWorkflowRisk(m, w, this.broker.now()); this.assertOwner(principal);
+      invariant(typeof reason === 'string' && reason.trim() && reason.length <= 2000, 'Changing the verification plan needs a reason');
+      invariant(Array.isArray(remove) && Array.isArray(replace) && remove.length + replace.length >= 1 && remove.length + replace.length <= MAX_REQUIREMENTS, 'Nothing to change');
+      const plan = this.ensurePlan(m, w), policyIds = new Set(plan.policyEntries.map(e => e.id));
+      const replacements = replace.map(r => requirement(r, 'plan:local-user'));
+      const touched = [...remove, ...replacements.map(r => r.id)];
+      invariant(new Set(touched).size === touched.length, 'A requirement can be changed only once per request');
+      for (const id of touched) { invariant(!policyIds.has(id), 'Owner-policy tests change only in owner configuration'); invariant(plan.entries.some(e => e.id === id), `Unknown plan test ${String(id)}`); }
+      const before = plan.entries.filter(e => touched.includes(e.id)).map(core);
+      plan.entries = plan.entries.filter(e => !remove.includes(e.id)).map(e => replacements.find(r => r.id === e.id) ?? e);
+      this.planChanged(m, w, event, { kind: 'changed', removed: remove, replaced: replacements.map(core), before, reason, principal: clone(principal) }); return w;
     });
   }
   needsRework(w) {
