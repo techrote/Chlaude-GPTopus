@@ -269,7 +269,10 @@ export class RecruitmentBroker {
         invariant(independent(m, n.id, r.parentId), 'An author or its descendant cannot approve itself');
       } else if (principal.source === 'local-user') invariant(principal.authority === 'user', 'Local user authority mismatch');
       else { const identity = orchestratorIdentity(m.config, m, this.now()); invariant(principal.authority === 'trusted-orchestrator' && identity.trusted && (identity.profile.authority === 'full' || identity.profile.final === false), 'Native orchestrator cannot impersonate independent/human authority'); }
-      invariant(!r.approvals.some(id => m.approvals[id].authority === principal.authority), 'Authority already decided; submit a revised request');
+      // An unexpired vote stands. Once it has lapsed it no longer counts in the combination, so the same authority may decide again;
+      // otherwise a slow co-approver would leave the request unanswerable (the owner can also expire it: `expire`).
+      invariant(!r.approvals.some(id => m.approvals[id].authority === principal.authority && m.approvals[id].expiresAt > this.now()),
+        'Authority already has an unexpired vote on this request; it stays in force until it lapses, after which the authority may decide again (or the owner may expire the request and a new one be submitted)');
       const a = { id: randomUUID(), requestId, inputHash: r.inputHash, policyHash: m.policyHash, authority: principal.authority,
         principal: clone(principal), decision: decision.decision, rationale: String(decision.rationale ?? '').slice(0, 20000),
         modification: decision.modification ? clone(decision.modification) : null, scope: 'recruitment', createdAt: this.now(), expiresAt: this.now() + Math.min(3600000, positive(decision.ttlMs, 'approval TTL', 900000)), consumed: false };
@@ -346,6 +349,28 @@ export class RecruitmentBroker {
       prior.status = 'revising'; event('recruitment.revision_claimed', missionId, { requestId }); return prior;
     });
     return this.request(missionId, parentId, { ...r.proposal, ...changes }, key, { predecessorId: requestId, reviewerPolicy: r.reviewerPolicy, originId: r.originId, protectedAuthority: r.protectedAuthority, binding: r.binding, gapReuseAuthorId: r.gapReuseAuthorId });
+  }
+  /**
+   * Owner/full-orchestrator closure of a recruitment request that is still waiting for votes (typically because a co-approver's
+   * vote lapsed before the others answered and its authority cannot or will not decide again). The request becomes the terminal
+   * status 'expired': it stops counting toward the outstanding-recruitment limit, its not-yet-finished supervisors are cancelled and
+   * no further vote is accepted. It confers nothing; recruiting the work still needs a new request (with a new idempotency key)
+   * that is adjudicated from scratch. Recorded votes and incurred usage are retained.
+   */
+  async expire(missionId, requestId, reason, principal) {
+    return this.store.transaction((state, event) => {
+      const m = missionOf(state, missionId), r = m.requests[requestId], identity = orchestratorIdentity(m.config, m, this.now());
+      invariant(principal?.trusted && (principal.source === 'local-user' && principal.authority === 'user' || principal.source === 'native-host' && principal.authority === 'trusted-orchestrator' && identity.trusted && identity.profile.authority === 'full'), 'Expiring a recruitment request needs authorised owner or full orchestrator authority');
+      invariant(r && r.status === 'pending' && !r.successor, 'Only a recruitment request still awaiting votes can be expired');
+      invariant(typeof reason === 'string' && reason.trim() && reason.length <= 2000, 'Expiring a recruitment request needs a reason');
+      r.status = 'expired'; r.expiredAt = this.now(); r.expiredBy = clone(principal); r.expiryReason = reason;
+      for (const n of Object.values(m.nodes)) if (n.supervises === requestId && !terminal.has(n.status)) {
+        n.status = 'cancelled'; n.lease = null;
+        const synthetic = m.requests[n.requestId]; if (synthetic && ['pending', 'queued', 'running'].includes(synthetic.status)) synthetic.status = 'cancelled';
+      }
+      refreshWaiting(m, event);
+      event('recruitment.expired', missionId, { requestId, reason, principal: clone(principal) }); return r;
+    });
   }
   async escalate(missionId, requestId, changes, key, principal) {
     const prior = await this.store.transaction((state, event) => {

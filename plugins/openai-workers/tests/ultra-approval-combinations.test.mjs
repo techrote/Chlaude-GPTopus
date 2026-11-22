@@ -465,7 +465,7 @@ async function recruitSession(directory, helicop) {
   await broker.createMission({ id: 'r', task: 'Recruitment approval fixture', orchestrator: { model: 'opus', trusted: true, source: 'offline-fixture' } });
   const request = await broker.request('r', 'root', { worker: 'astra', role: 'implementation', task: 'Independent implementation of the proposal.', risk: RISK }, 'request');
   assert.equal(request.status, 'pending');
-  return { broker, store, request, principals: {},
+  return { broker, store, request, principals: {}, advance: ms => { now += ms; },
     async principalsFor(authorities) {
       const principals = { user: { source: 'local-user', trusted: true, authority: 'user' } };
       for (const authority of authorities.filter(a => a.startsWith('helicop-'))) {
@@ -556,4 +556,70 @@ test('recruitment: the shipped default HELICOP rules remain mandatory and unaffe
   await assert.rejects(broker.decide(mission.id, child.id, { decision: 'APPROVE', rationale: 'wrong authority' }, { source: 'local-user', trusted: true, authority: 'user' }), /not assigned/);
   const after = await broker.decide(mission.id, child.id, { decision: 'REJECT', rationale: 'Astra vetoes.' }, { source: 'supervisor', trusted: true, authority: ASTRA, nodeId: node.id });
   assert.equal(after.status, 'rejected');
+});
+
+/* ------------------------------------------------------------------ VOTE-01: a lapsed recruitment vote never strands the request */
+
+const OWNER = { source: 'local-user', trusted: true, authority: 'user' };
+const BOTH_MANDATORY = { combination: 'AND', rules: [['sol', SOL, { mandatory: true, veto: true }], ['astra', ASTRA, { mandatory: true, veto: true }]] };
+const outstanding = async session => Object.values((await session.store.snapshot('r')).requests).filter(r => ['pending', 'queued', 'running'].includes(r.status)).length;
+const VOTE_TTL = 15 * 60 * 1000 + 1;
+const ORIGINAL = { worker: 'astra', role: 'implementation', task: 'Independent implementation of the proposal.', risk: RISK };
+
+test('VOTE-01: an authority whose vote lapsed may decide again, so the slow co-approver no longer strands the request', async t => {
+  const session = await recruitSession(await scratch(t), BOTH_MANDATORY), principals = await session.principalsFor([SOL, ASTRA]);
+  await session.vote(SOL, 'APPROVE', principals);
+  // A vote that is still in force really is final, and the error no longer names the impossible "revised request" remedy.
+  await assert.rejects(session.vote(SOL, 'REJECT', principals), error => /unexpired vote/.test(error.message) && !/revised request/.test(error.message));
+  session.advance(VOTE_TTL);
+  await session.vote(ASTRA, 'APPROVE', principals);
+  assert.equal(await session.status(), 'pending', "Sol's lapsed vote no longer counts, so Astra alone cannot approve");
+  await session.vote(SOL, 'APPROVE', principals);
+  assert.equal(await session.status(), 'queued', 'the renewed vote completes the combination');
+  const request = (await session.store.snapshot('r')).requests[session.request.id];
+  assert.equal(request.approvals.length, 3, 'the lapsed vote stays on record next to the fresh one');
+  // The renewed vote is itself an unexpired decision: a second renewal is refused once the request is no longer pending.
+  await assert.rejects(session.vote(SOL, 'APPROVE', principals), /not pending/);
+});
+
+test('VOTE-01: a lapsed vote whose authority never answers again can be expired by the owner, which frees the slot and ends supervision', async t => {
+  const session = await recruitSession(await scratch(t), BOTH_MANDATORY), principals = await session.principalsFor([SOL, ASTRA]);
+  const before = await outstanding(session);
+  assert.equal(before, 3, 'the stuck request and its two supervisor allocations occupy slots');
+  await session.vote(SOL, 'APPROVE', principals);
+  session.advance(VOTE_TTL);
+  await session.vote(ASTRA, 'APPROVE', principals);
+  assert.equal(await session.status(), 'pending');
+  // revise() was never the remedy: the request is not modify/rejected/escalated.
+  await assert.rejects(session.broker.revise('r', session.request.id, 'root', {}, 'revise-key'), /cannot be revised/);
+  // Nobody but the owner or a full orchestrator can close it, and a reason is required.
+  const restricted = { source: 'supervisor', trusted: true, authority: SOL, nodeId: principals[SOL].nodeId };
+  await assert.rejects(session.broker.expire('r', session.request.id, 'x', restricted), /authorised owner/);
+  await assert.rejects(session.broker.expire('r', session.request.id, 'x', { source: 'local-user', trusted: false, authority: 'user' }), /authorised owner/);
+  await assert.rejects(session.broker.expire('r', session.request.id, ' ', OWNER), /needs a reason/);
+  await assert.rejects(session.broker.expire('r', 'unknown', 'x', OWNER), /awaiting votes/);
+  assert.equal(await session.status(), 'pending', 'refused expiries change nothing');
+  const expired = await session.broker.expire('r', session.request.id, 'Sol never answered again; resubmitting', OWNER);
+  assert.equal(expired.status, 'expired'); assert.equal(expired.expiryReason, 'Sol never answered again; resubmitting');
+  assert.equal(await outstanding(session), 0, 'the request and its unfinished supervisors no longer occupy outstanding slots');
+  const m = await session.store.snapshot('r');
+  assert.ok(Object.values(m.nodes).filter(n => n.supervises === session.request.id).every(n => n.status === 'cancelled'));
+  // Terminal: no further votes, no second expiry, no revival through the same idempotency key.
+  await assert.rejects(session.vote(SOL, 'APPROVE', principals), /not pending/);
+  await assert.rejects(session.broker.expire('r', session.request.id, 'again', OWNER), /awaiting votes/);
+  assert.equal((await session.broker.request('r', 'root', ORIGINAL, 'request')).status, 'expired');
+  // A new request is adjudicated from scratch: it carries none of the old votes.
+  const fresh = await session.broker.request('r', 'root', ORIGINAL, 'request-2');
+  assert.notEqual(fresh.id, session.request.id); assert.equal(fresh.status, 'pending'); assert.deepEqual(fresh.approvals, []);
+  assert.equal(await outstanding(session), 1);
+});
+
+test('VOTE-01: repeatedly lapsing requests no longer leak outstanding slots once the owner expires them', async t => {
+  const session = await recruitSession(await scratch(t), BOTH_MANDATORY);
+  for (let i = 0; i < 3; i++) {
+    const stuck = await session.broker.request('r', 'root', ORIGINAL, `again-${i}`);
+    session.advance(VOTE_TTL);
+    await session.broker.expire('r', stuck.id, 'lapsed', OWNER);
+  }
+  assert.equal(await outstanding(session), 1, 'only the original request still holds a slot');
 });
