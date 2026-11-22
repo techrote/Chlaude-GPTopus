@@ -38,6 +38,9 @@ const defs = [
   { name: 'cancel', description: 'Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id', 'worker_type'] } },
 ];
 const has = (o, key) => Object.prototype.hasOwnProperty.call(o ?? {}, key);
+/** Mark an error as raised before any POST (unless something more specific already classified it). */
+function notSent(error) { if (error && typeof error === 'object' && error.usageDisposition === undefined) error.usageDisposition = 'not_started'; return error; }
+function ambiguous(error) { if (error && typeof error === 'object') error.usageDisposition = 'ambiguous'; return error; }
 function pack(value) {
   const str = JSON.stringify(value);
   if (str.length <= PAGESIZE) return value;
@@ -108,19 +111,26 @@ export async function dispatch(name, args = {}, options = {}) {
       platform: process.platform,
     };
     case 'create': {
-      const { selected, effective } = checkedCreate(args, env);
-      // Never accept an agent-supplied claim about invisible Responses history.
-      const freshQuote = quoteRequest({ ...effective, previous_response_id: undefined, inputTokenUpperBound: undefined }, ledgerOptions);
-      let inputTokenUpperBound;
-      if (effective.previous_response_id) {
-        const previous = await boundResponse({ worker_type: selected.name, id: effective.previous_response_id }, ledgerOptions);
-        if (!previous.settled || !Number.isSafeInteger(previous.contextTokenUpperBound)) throw new Error('Previous response has no verified complete history bound; reconcile it before continuing.');
-        if (previous.model !== selected.model) throw new Error('Continuation model differs from the stored response model.');
-        inputTokenUpperBound = previous.contextTokenUpperBound + freshQuote.inputTokens;
-      }
-      const quote = quoteRequest({ ...effective, inputTokenUpperBound }, ledgerOptions);
-      const ticket = await reserveRequest({ workerType: selected.name, model: selected.model, profile: selected.key_profile,
-        serviceTier: effective.service_tier, ...(args.request_id && { requestId: args.request_id }), ...quote }, ledgerOptions);
+      // Everything up to and including the ledger reservation runs BEFORE the transport is called, so
+      // any refusal here (validation, price guard, spending guard, daily allowance, unknown continuation,
+      // ledger admission) proves that no POST was sent. The error carries that fact for in-process callers
+      // (the native controller releases its step on it); an error that already names a disposition keeps it.
+      let selected, effective, ticket;
+      try {
+        ({ selected, effective } = checkedCreate(args, env));
+        // Never accept an agent-supplied claim about invisible Responses history.
+        const freshQuote = quoteRequest({ ...effective, previous_response_id: undefined, inputTokenUpperBound: undefined }, ledgerOptions);
+        let inputTokenUpperBound;
+        if (effective.previous_response_id) {
+          const previous = await boundResponse({ worker_type: selected.name, id: effective.previous_response_id }, ledgerOptions);
+          if (!previous.settled || !Number.isSafeInteger(previous.contextTokenUpperBound)) throw new Error('Previous response has no verified complete history bound; reconcile it before continuing.');
+          if (previous.model !== selected.model) throw new Error('Continuation model differs from the stored response model.');
+          inputTokenUpperBound = previous.contextTokenUpperBound + freshQuote.inputTokens;
+        }
+        const quote = quoteRequest({ ...effective, inputTokenUpperBound }, ledgerOptions);
+        ticket = await reserveRequest({ workerType: selected.name, model: selected.model, profile: selected.key_profile,
+          serviceTier: effective.service_tier, ...(args.request_id && { requestId: args.request_id }), ...quote }, ledgerOptions);
+      } catch (error) { throw notSent(error); }
       let response;
       try {
         response = await transport.create(effective, { profile: selected.key_profile, env });
@@ -129,8 +139,9 @@ export async function dispatch(name, args = {}, options = {}) {
         else await releaseRequest(ticket, { ...ledgerOptions, reason: error.usageDisposition });
         throw error;
       }
+      // The provider answered: whatever fails from here on is NOT a refusal before the send.
       try { await accountResponse(ticket, response, ledgerOptions); }
-      catch (error) { await markRequestAmbiguous(ticket, ledgerOptions); throw error; }
+      catch (error) { await markRequestAmbiguous(ticket, ledgerOptions); throw ambiguous(error); }
       return pack(response);
     }
     case 'poll': {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { clone, digest, invariant } from './store.mjs';
 import { PermissionBoundary } from './permissions.mjs';
 import { quoteRequest } from '../bridge/usage.mjs';
+import { mayHaveIncurredUsage } from '../bridge/openai.mjs';
 import { selectWorkerEffort } from '../bridge/workers.mjs';
 import { assertApiAdmission } from './broker.mjs';
 import { ReviewController } from './review.mjs';
@@ -301,7 +302,21 @@ export class NativeController {
     });
     try { return await this.recordResponse(m.id, n.id, args.requestKey, await this.callBackend('create', request)); }
     catch (error) {
-      await this.store.transaction((state, event) => { const current = state.missions[m.id].nodes[n.id]; current.native.lastError = String(error.message).slice(0, 500); event('native.api_held', m.id, { nodeId: n.id, reason: current.native.lastError }); });
+      // Only an error that PROVES no usage was incurred may free the step: the bridge tags a refusal raised before
+      // any POST ('not_started': validation, price/spending guard, ledger admission, missing key) and a definitive
+      // HTTP rejection ('rejected'). Anything else (an untagged error, a transport failure, a failure after the
+      // provider answered) may have left an accepted POST behind, so the step stays held and is never replayed.
+      const definitive = !mayHaveIncurredUsage(error), disposition = error?.usageDisposition;
+      await this.store.transaction((state, event) => {
+        const mission = state.missions[m.id], current = mission.nodes[n.id], step = current.native.steps[args.requestKey];
+        current.native.lastError = String(error?.message ?? error).slice(0, 500);
+        if (definitive && step?.phase === 'sending' && !step.response && step.lease === n.lease.token) {
+          delete current.native.steps[args.requestKey];
+          // A request that never left must not count against rate or per-key request limits; a rejected one was transmitted.
+          if (disposition === 'not_started') mission.apiRequests = mission.apiRequests.filter(r => r.id !== request.request_id);
+          event('native.api_released', m.id, { nodeId: n.id, requestKey: args.requestKey, disposition, reason: current.native.lastError });
+        } else event('native.api_held', m.id, { nodeId: n.id, reason: current.native.lastError });
+      });
       throw error;
     }
   }

@@ -174,12 +174,17 @@ export function validateTurnArgs(args) {
 }
 
 export async function createTurn(args, options = {}) {
-  if (args.worker_type !== undefined) {
-    const expected = keyProfileForWorker(args.worker_type);
-    if (options.profile !== undefined && options.profile !== expected) throw new Error('Worker key-profile mismatch; no fallback is permitted.');
-    options = { ...options, profile: expected };
-  }
-  const payload = validateTurnArgs(args);
+  // Everything before request() is local validation: no POST was ever sent, which callers
+  // (and the native controller) may rely on to release a reservation or a step.
+  let payload;
+  try {
+    if (args.worker_type !== undefined) {
+      const expected = keyProfileForWorker(args.worker_type);
+      if (options.profile !== undefined && options.profile !== expected) throw new Error('Worker key-profile mismatch; no fallback is permitted.');
+      options = { ...options, profile: expected };
+    }
+    payload = validateTurnArgs(args);
+  } catch (error) { if (error && typeof error === 'object') error.usageDisposition = 'not_started'; throw error; }
   return normalize(await request('POST', '/responses', payload, options));
 }
 export async function pollTurn(id, options = {}) {
