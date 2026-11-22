@@ -8,7 +8,9 @@ The review covers the policy/configuration/risk foundation independently, then f
 
 All regression scenarios use temporary synthetic state and explicitly offline provider doubles. The tests call the real policy, store, broker, runtime and workflow code. No live API credit, live user-project edit, external action or production deployment was authorized or performed by this review.
 
-## Current qualification checkpoint
+## Qualification checkpoint of the reviewed snapshot
+
+**Scope of the figures in this document.** Every test count, file hash, bundle hash and CI run quoted here describes the frozen tree that was reviewed at the time. It predates the owner-key native channel, the per-surface capability ceilings, the required-test manifest and the later review rounds, and therefore does **not** qualify the current head. The figures are kept as the historical record of that review and are not restated per commit; derive the current ones as described in the [qualification record](ULTRA_HANDOFF.md#qualification-record).
 
 The independent architecture suite contains **27 tests, all passing**. The final post-portability integration run passed **215/215 tests**, with zero failures, skips or cancellations, on Linux with Node **v24.22.3**. Every finding listed below has been corrected and its behavior rechecked; no confirmed finding from this review remains open within the reviewed scope. The exact source hashes and remaining qualification boundaries are recorded below.
 

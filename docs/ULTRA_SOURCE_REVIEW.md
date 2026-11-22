@@ -6,7 +6,9 @@ This final source review was performed by a fresh reviewer that authored **none 
 
 The review complements the [architecture review](ULTRA_ARCHITECTURE_REVIEW.md) and [security/source regression review](ULTRA_INDEPENDENT_REVIEW.md). It is a focused source review with independent executable regressions, not a formal proof or installed-host acceptance certificate.
 
-**Final checkpoint: 8/8 independent source regressions PASS; deterministic MCPB source match PASS. No unresolved finding in this reviewed scope remains at this checkpoint.** The six findings below were reported with their source locations and, where applicable, failing reproductions before the implementation owner corrected them.
+**Scope of the figures in this review.** Every test count, file hash, bundle hash and CI run quoted here describes the frozen tree that was reviewed at the time. It predates the owner-key native channel, the per-surface capability ceilings, the required-test manifest and the later review rounds, and therefore does **not** qualify the current head. The figures are kept as the historical record of that review and are not restated per commit; derive the current ones as described in the [qualification record](ULTRA_HANDOFF.md#qualification-record).
+
+**Final checkpoint (at the frozen tree reviewed here): 8/8 independent source regressions PASS; deterministic MCPB source match PASS. No unresolved finding in this reviewed scope remains at this checkpoint.** The six findings below were reported with their source locations and, where applicable, failing reproductions before the implementation owner corrected them.
 
 ## Findings and verified corrections
 
