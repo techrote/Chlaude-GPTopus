@@ -13,6 +13,12 @@ const owner = (type) => `${PLUGIN}:${type}`;
 const envSuffix = (type) => type.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 const errorText = err => String(err?.message ?? err).slice(0, 800);
 const nativeMarker = /^\[ULTRA_BIND:([A-Za-z0-9_-]+):([A-Za-z0-9_.:-]+):([a-f0-9]{64})\]\n/;
+function rateLimitWaitMs(response) {
+  if (response?.status !== 'failed' || !/rate limit/i.test(response.reason ?? '')) return null;
+  const m = /try again in ([0-9.]+)s*(ms|s)/i.exec(response.reason);
+  const ms = m ? Number(m[1]) * (m[2].toLowerCase() === 'ms' ? 1 : 1000) : 20000;
+  return Math.min(65000, Math.max(1000, Math.ceil(ms) + 1000));
+}
 
 // On current hosts the mod's own $.mcp.call also passes through tool.check/tool.run.
 // Count the mod's in-flight bridge calls so the private-tool guard admits only those.
@@ -654,14 +660,23 @@ export function register(on) {
               input: plan.input, previous_response_id: plan.previous_response_id, effort: effortSelection.effective,
               max_output_tokens: Math.min(8000, Math.max(256, Math.floor(remaining / 2))) }, next.signal,
               nativeContext.serviceTier === 'flex' ? flexWait : 15);
-          } else response = await query(host.call, { worker_type: type, model, input: plan.input, previous_response_id: plan.previous_response_id,
+          } else {
+            // OpenAI rate limits (TPM/RPM) come back as failed responses: wait as told and retry.
+            for (let attempt = 0; ; attempt++) {
+              response = await query(host.call, { worker_type: type, model, input: plan.input, previous_response_id: plan.previous_response_id,
               instructions: await instructions(() => $.session.cwd(), p => $.fs.read(p)), tools: OPENAI_TOOLS, effort: effortSelection.effective,
               max_output_tokens: effortSelection.effective === 'max' ? 32000 : 16000, ...(service_tier && { service_tier }) }, next.signal,
               service_tier === 'flex' ? flexWait : 15);
+              const wait = rateLimitWaitMs(response);
+              if (wait === null || attempt >= 4 || next.signal?.aborted) break;
+              await new Promise(r => setTimeout(r, wait));
+            }
+          }
           const verifiedCost = Number.isFinite(response.estimatedUsd) && response.estimatedUsd >= 0;
-          result = verifiedCost ? responseStep(response, seed, handback, nativeContext && { allowedTools: nativeContext.tools.map(tool => tool.name) }) :
+          const failedUnbilled = response.status !== 'completed' && !response.usage;
+          result = failedUnbilled ? finalStep(`OpenAI request ${response.status}: ${response.reason ?? 'no reason given'}`, seed, handback) : verifiedCost ? responseStep(response, seed, handback, nativeContext && { allowedTools: nativeContext.tools.map(tool => tool.name) }) :
             finalStep(`OpenAI accounting HOLD: response ${response.id ?? '(unknown)'} has unverified usage or pricing. No returned tool call was executed. Existing reservations are retained.\n${response.text ?? ''}`, seed, handback);
-          nextState = { responseId: response.id, pending: result.pending, seenPrompts: plan.seenPrompts,
+          nextState = { responseId: failedUnbilled ? run.responseId : response.id, pending: result.pending, seenPrompts: plan.seenPrompts,
             steps: run.steps + 1, estimatedUsd: verifiedCost ? run.estimatedUsd + response.estimatedUsd : run.estimatedUsd,
             usageStatus: verifiedCost ? 'verified' : 'unverified', finished: result.finished, handback: result.handback };
         }
