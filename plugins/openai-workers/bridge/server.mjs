@@ -2,11 +2,12 @@
 import readline from 'node:readline';
 import { basename } from 'node:path';
 import { configuredKey, keyProfileForWorker, createTurn, pollTurn, cancelTurn, validateTurnArgs, mayHaveIncurredUsage } from './openai.mjs';
-import { workerSettings, selectWorkerEffort, workerEnvSuffix, canonicalWorker, isProviderWorker } from './workers.mjs';
+import { WORKER_TYPES, workerSettings, selectWorkerEffort, workerEnvSuffix, canonicalWorker, isProviderWorker } from './workers.mjs';
 import { chat as defaultChat, providerUrl } from './chat.mjs';
 import { rotationSnapshot } from './rotation.mjs';
 import { traceRequest, traceResponse, writeTrace } from './trace.mjs';
 import * as steer from './steer.mjs';
+import * as direct from './direct-run.mjs';
 import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot, quoteRequest,
   markRequestAmbiguous, responseRecord } from './usage.mjs';
 
@@ -42,6 +43,7 @@ const defs = [
   { name: 'steer', description: 'INTERNAL plugin transport for operator steering, refused for model calls. Operators steer workers with /oai:s or the /oai:config console.', inputSchema: { type: 'object', properties: {
     op: { type: 'string', enum: ['reserve', 'sync', 'wait', 'send', 'list', 'hard', 'reply', 'end'] }, agentId: { type: 'string' }, worker: { type: 'string' }, description: { type: 'string' },
     step: { type: 'integer' }, status: { type: 'string' }, callsign: { type: 'string' }, peek: { type: 'boolean' }, args: { type: 'string' }, workers: { type: 'array' }, ms: { type: 'integer' }, tools: { type: 'array' }, text: { type: 'string' }, tipIds: { type: 'array' } }, required: ['op'] } },
+  { name: 'run', description: 'INTERNAL plugin transport for /oai:run, refused for model calls.', inputSchema: { type: 'object', properties: { args: { type: 'string' } } } },
   { name: 'cancel', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id', 'worker_type'] } },
 ];
 const has = (o, key) => Object.prototype.hasOwnProperty.call(o ?? {}, key);
@@ -82,6 +84,17 @@ function checkedCreate(args, env) {
   return { selected, effective };
 }
 /** options are trusted in-process adapter configuration, never MCP arguments. */
+/** /oai:run: start (args set), show one run (id) or list recent runs. */
+function runOp(args, options) {
+  const env = options.env ?? process.env, workers = Object.keys(WORKER_TYPES);
+  const text = String(args.args ?? '').trim();
+  if (!text) return { runs: direct.listDirect(env) };
+  if (/^D\d{1,6}$/i.test(text)) { const run = direct.getDirect(text, env); return run ? { run } : { error: `No run ${text}.` }; }
+  const parsed = direct.parseRun(text, workers);
+  if (parsed.error) return parsed;
+  const started = direct.startDirect(parsed, { env, workers, call: (n, a) => dispatch(n, a, options) });
+  return { started };
+}
 export async function dispatch(name, args = {}, options = {}) {
   if (typeof name === 'string' && name.startsWith('ultra_native_')) {
     // Reaching this dispatcher is NOT authority: stdio carries no caller identity,
@@ -195,6 +208,7 @@ export async function dispatch(name, args = {}, options = {}) {
       return usageSnapshot(ledgerOptions);
     }
     case 'steer': return steerOp(args, options.env ?? process.env);
+    case 'run': return runOp(args, options);
     case 'page': {
       const str = cache.get(args.id);
       if (str === undefined) throw new Error('Paged response not found (bridge may have restarted).');

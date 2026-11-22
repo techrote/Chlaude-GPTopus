@@ -3,6 +3,7 @@ import { OPENAI_TOOLS } from './tools.js';
 import { newRun, nextInput, responseStep, stopStep, finalStep } from './step.js';
 import { ULTRA_NATIVE_SPECS, NATIVE_PREFIX, nativeWorker, isPrivateBridgeTool, hostVersionSupported } from './ultra.js';
 import { renderStatus } from './status-art.js';
+import { directReply } from './direct-reply.js';
 import { signRequest, parseChannelKey, modKeyPath, isWindowsHost, CHANNEL_STALE, SESSION_CLOSED, CHANNEL_DENIED, CHANNEL_HELLO, HELLO_EPOCH } from './channel.js';
 
 const PLUGIN = 'oai';
@@ -280,6 +281,7 @@ async function instructions(cwdOf, read) {
 export function register(on) {
   // Session-local capability, never in prompts, model-visible state or diagnostics.
   let ultraEnabled = true; // Unknown bootstrap is restricted, never legacy.
+  let ultraRequested = null; // null until session.start has read OPENAI_ULTRA_ENABLED.
   let bootstrapObserved = false;
   let nativeChannel = null;
   const knownCapabilities = new Map();
@@ -298,6 +300,7 @@ export function register(on) {
     bootstrapObserved = true;
     ultraEnabled = true;
     ultraEnabled = await $.env.get('OPENAI_ULTRA_ENABLED') === '1';
+    ultraRequested = ultraEnabled;
     envSnapshot = {
       OPENAI_ULTRA_CHANNEL_KEY_FILE: await $.env.get('OPENAI_ULTRA_CHANNEL_KEY_FILE'),
       OPENAI_ULTRA_STATE_DIR: await $.env.get('OPENAI_ULTRA_STATE_DIR'),
@@ -472,10 +475,15 @@ export function register(on) {
         tools: ultraEnabled ? Object.keys(ULTRA_NATIVE_SPECS) : ['Read', 'Edit', 'Write', 'Bash'] });
     }
     await $.command.register({ name: 'oai', description: 'OpenAI subagent diagnostics (usage: /oai)' });
-    await $.command.register({ name: 'oai:s', description: 'Steer a running OpenAI worker verbatim: /oai:s [T3|worker|*] [!][+][?ack ?assess ?conseq] <tip>' });
+    // A refused optional command must never fail the whole bootstrap (that would hold every tool).
+    try { await $.command.register({ name: 'oai:s', description: 'Steer a running OpenAI worker verbatim: /oai:s [T3|worker|*] [!][+][?ack ?assess ?conseq] <tip>' }); }
+    catch { try { await $.command.register({ name: 'oai-s', description: 'Steer a running OpenAI worker verbatim: /oai-s [T3|worker|*] [!][+][?ack ?assess ?conseq] <tip>' }); } catch {} }
+    try { await $.command.register({ name: 'oai:run', description: 'Run a worker directly with your exact text, no Claude: /oai:run <worker> [effort] <task> (@file attaches), /oai:run [D3]' }); }
+    catch { try { await $.command.register({ name: 'oai-run', description: 'Run a worker directly with your exact text, no Claude: /oai-run <worker> [effort] <task> (@file attaches), /oai-run [D3]' }); } catch {} }
     return next(e);
   }).catch(($, e, next) => {
-    ultraEnabled = true; nativeChannel = null; nativeError = 'Native bootstrap failed or timed out; protected workers remain held.';
+    // Only an owner who asked for ULTRA is held on a failed bootstrap; otherwise tools stay ordinary.
+    ultraEnabled = ultraRequested !== false; nativeChannel = null; nativeError = 'Native bootstrap failed or timed out; protected workers remain held.';
     return next(e);
   });
 
@@ -573,6 +581,24 @@ export function register(on) {
   }).catch(($, e, next) => next.called ? next(e) : { deny: 'ULTRA tool execution guard failed or timed out; no operation is authorised.' });
 
   on('command.run', { command: 'oai:s' }, async ($, e) => {
+    const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
+    if (await $.env.get('OAI_STEER') !== '1') return { text: 'Steering is off. Turn on STEERING in /oai:config (OAI_STEER=1), then restart Claude Code.' };
+    let r;
+    try { r = await bridge(call, 'steer', { op: 'send', args: String(e.args ?? ''), workers: Object.keys(TYPES) }); }
+    catch (err) { return { text: `Steer failed: ${errorText(err)}` }; }
+    return { text: steerReply(r) };
+  });
+  on('command.run', { command: 'oai:run' }, async ($, e) => {
+    const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
+    try { return { text: directReply(await bridge(call, 'run', { args: String(e.args ?? '') })) }; }
+    catch (err) { return { text: `Run failed: ${errorText(err)}` }; }
+  });
+  on('command.run', { command: 'oai-run' }, async ($, e) => {
+    const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
+    try { return { text: directReply(await bridge(call, 'run', { args: String(e.args ?? '') })) }; }
+    catch (err) { return { text: `Run failed: ${errorText(err)}` }; }
+  });
+  on('command.run', { command: 'oai-s' }, async ($, e) => {
     const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
     if (await $.env.get('OAI_STEER') !== '1') return { text: 'Steering is off. Turn on STEERING in /oai:config (OAI_STEER=1), then restart Claude Code.' };
     let r;

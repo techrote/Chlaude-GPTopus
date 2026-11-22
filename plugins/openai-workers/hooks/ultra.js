@@ -66,7 +66,7 @@ export function isNativeNamespaceName(name) {
 }
 export function isPrivateBridgeTool(name) {
   if (typeof name !== 'string') return false;
-  return isNativeNamespaceName(name) || /^mcp__.*(?:openai|bridge).*__(?:create|poll|cancel|page|steer)$/.test(normalizeToolName(name));
+  return isNativeNamespaceName(name) || /^mcp__.*(?:openai|bridge).*__(?:create|poll|cancel|page|steer|run)$/.test(normalizeToolName(name));
 }
 export function nativeWorker(type) {
   const match = /^oai:(sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free)$/.exec(String(type ?? ''));
