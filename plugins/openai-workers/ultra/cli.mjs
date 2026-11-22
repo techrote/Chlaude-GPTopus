@@ -112,8 +112,10 @@ export async function main(argv = process.argv.slice(2), { env = process.env, io
     }
     config.permissions.roots = [...new Set([...config.permissions.roots, root])];
     config.permissions.tools = [...new Set([...config.permissions.tools, 'read_file', ...(profile === 'C' ? ['stage_write'] : [])])];
+    // Ceilings are independent; the root and tool grant is NOT: say exactly who can now read this root.
+    const readableBy = [['chat', config.desktop.profile], ['codeCli', config.surfaces.codeCli.profile], ['desktopCode', config.surfaces.desktopCode.profile]].filter(([, level]) => level !== 'A').map(([name, level]) => `${name} (${level})`);
     print({ file: await writeOwnerConfig(config, env), surface: flags.surface, profile, root, execution: 'Private stages only; live writes and arbitrary commands remain unavailable.',
-      note: flags.surface === 'chat' ? 'Only the Desktop Chat ceiling and its root allowlist changed; Code surfaces are unchanged.' : 'Only this Code surface ceiling changed; Desktop Chat and the other Code surface are unchanged. Workers still need the granted tools and roots.' }); return;
+      note: `Only the ${flags.surface === 'chat' ? 'Desktop Chat' : flags.surface} capability CEILING changed; the other surfaces' ceilings are unchanged. Roots and tools are one grant shared by every surface, so this root is now readable by every surface whose own ceiling is B or higher: ${readableBy.join(', ') || 'none'}. Only the public Chat read tool additionally requires desktop.roots.`, sharedGrant: { readableBy, roots: config.permissions.roots, tools: config.permissions.tools } }); return;
   }
   const backend = async (name, input) => {
     const result = await dispatch(name, input, { env });

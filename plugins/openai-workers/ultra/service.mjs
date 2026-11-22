@@ -88,7 +88,8 @@ export class UltraService {
       exactArgs(args, ['mission_id']);
       return args.mission_id ? this.broker.diagnostics(args.mission_id) : {
         enabled: this.config.enabled, policyHash: policyHash(this.config), profile: this.config.profile, recruitment: this.config.recruitment,
-        desktop: this.config.desktop, fleets: this.config.fleets, liveApiAuthorised: this.runtime.live,
+        desktop: this.config.desktop, surfaces: this.config.surfaces, fleets: this.config.fleets, liveApiAuthorised: this.runtime.live,
+        grants: { sharedAcrossSurfaces: true, tools: this.config.permissions.tools, roots: this.config.permissions.roots, note: "permissions.tools and permissions.roots are ONE owner grant shared by every surface. Each surface (Desktop Chat via desktop.profile, Claude Code CLI via surfaces.codeCli, Desktop Code via surfaces.desktopCode) has only its own A/B/C ceiling over that grant, and there are no per-surface root lists: a root added for one surface is readable by every other surface whose ceiling is B or higher. Only the public Chat read tool ultra_read_project additionally requires desktop.roots." },
         workers: Object.keys(WORKER_TYPES).map(w => workerSettings(w, this.env)),
         trustedIdentity: this.config.authority.configuredIdentity ? 'Explicit owner configuration; expiry enforced per decision' : 'Unavailable in Desktop Chat; restricted authority applies',
         consequentialExecution: 'Separate explicit authority and actual capability required; no general shell or live-project patch executor is installed',
