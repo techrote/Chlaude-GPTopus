@@ -28,14 +28,14 @@ async function ultraService(options = {}) {
   return { key, service: ultraServices.get(key) };
 }
 const defs = [
-  { name: 'health', description: 'Report whether the bridge has a configured API key (never returns it).', inputSchema: { type: 'object', properties: {} } },
-  { name: 'create', description: 'Start a Responses API model step for the plugin.', inputSchema: { type: 'object', properties: {
+  { name: 'health', description: 'Workers are native subagents: use the Agent tool with subagent_type openai-workers:<worker>. Report whether the bridge has a configured API key (never returns it).', inputSchema: { type: 'object', properties: {} } },
+  { name: 'create', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type openai-workers:<sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree>. Start a Responses API model step for the plugin.', inputSchema: { type: 'object', properties: {
     model: { type: 'string' }, worker_type: { type: 'string' }, input: {}, instructions: { type: 'string' }, tools: { type: 'array' }, effort: { type: 'string' }, previous_response_id: { type: 'string' }, max_output_tokens: { type: 'integer' }, request_id: { type: 'string' },
     service_tier: { type: 'string', enum: ['auto', 'default', 'flex', 'fast', 'priority'] } }, required: ['worker_type', 'model', 'input', 'instructions', 'tools'] } },
   { name: 'usage', description: 'Show local free-key daily tokens, reservations and UTC rollover; these are not authoritative API billing counters.', inputSchema: { type: 'object', properties: {} } },
-  { name: 'poll', description: 'Poll an in-progress OpenAI response, up to five seconds.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' }, wait_ms: { type: 'integer' } }, required: ['id', 'worker_type'] } },
-  { name: 'page', description: 'Fetch a page of an oversized completed response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, page: { type: 'integer' } }, required: ['id', 'page'] } },
-  { name: 'cancel', description: 'Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id', 'worker_type'] } },
+  { name: 'poll', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type openai-workers:<sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree>. Poll an in-progress OpenAI response, up to five seconds.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' }, wait_ms: { type: 'integer' } }, required: ['id', 'worker_type'] } },
+  { name: 'page', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type openai-workers:<sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree>. Fetch a page of an oversized completed response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, page: { type: 'integer' } }, required: ['id', 'page'] } },
+  { name: 'cancel', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type openai-workers:<sol|astra|luna|flex6-1|daily-astrafree|daily-terrafree>. Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id', 'worker_type'] } },
 ];
 const has = (o, key) => Object.prototype.hasOwnProperty.call(o ?? {}, key);
 /** Mark an error as raised before any POST (unless something more specific already classified it). */
