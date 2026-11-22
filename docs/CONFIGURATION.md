@@ -145,6 +145,19 @@ See [Daily usage and billing](QUOTAS_AND_BILLING.md) for the exact accounting se
 
 These limits use model-reported usage and local estimates. They are **not prepaid limits**, and step limits stop further requests only *after* the current request completes. Actual costs may be higher than estimates.
 
+## ULTRA review verification (owner configuration only)
+
+ULTRA stays disabled unless `enabled` is true. These `review` fields (also present in `config/ultra-*.json`) control which tests must be proven before code approval; scoped project/mission/stage layers cannot change them.
+
+| Field | Default | Behaviour |
+|---|---|---|
+| `requiredTests` | `[]` | Mandatory tests: `{ id, description?, impacts?, areas?, executable?, commandDigest? }`. Agents can add requirements to a workflow but never remove these. |
+| `testPlanRequiredImpacts` | `high`, `critical`, `unknown` | At these tiers, work that needs tests but designates none is held rather than accepted on "some passing evidence". |
+| `ownerAttestedImpacts` | `low`, `medium` | Tiers where a human owner record may satisfy a test; elsewhere independent executed evidence is required. |
+| `allowCriticalWaivers` | `false` | Whether the owner may waive a non-executable test for critical-impact work. |
+
+See [ULTRA policy](ULTRA_POLICY.md#required-test-manifest) for evidence rules and limitations.
+
 ## Example: careful parallel research setup
 
 ```powershell
@@ -163,3 +176,7 @@ The [desktop extension](DESKTOP.md) exposes **two masked API-key fields** at ins
 The Desktop MCP server and native Claude Code plugin load the **same worker model/tier environment-variable names** and **same quota settings**, although per-worker CLI mod configuration changes only apply to newly started sessions. Restart Claude Desktop after changing Windows user environment variables. The `.mcpb` cannot be configured to silently bypass a missing free key with the paid key.
 
 Regular Desktop Chat only has text-only MCP delegation; the Code tab uses native permission-gated file/shell tools.
+
+## ULTRA execution approvals
+
+ULTRA stays disabled by default. When enabled, owner configuration chooses who may approve a consequential action: `execution.consequentialAuthorities` (default `["user"]`), `execution.combination` (`AND`, `OR`, `veto`, `prioritised` or `escalation`; default `AND`), and optionally `execution.mandatoryAuthorities` / `execution.vetoAuthorities` (default empty; subsets of the authorities, strictly validated). The verdict does not depend on the order in which authorities answer; see [ULTRA policy](ULTRA_POLICY.md#approval-combinations) for the truth table and its limits. Project or stage layers cannot change these settings.

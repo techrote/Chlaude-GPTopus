@@ -131,8 +131,9 @@ test('descendants cannot relabel SWARM as SKYNET or launder authority through a 
 
 test('Luna SWARM has a distinct higher reviewer exception without implementation recruitment', () => {
   const c = config({ permissions: { tools: ['Read', 'Edit'], roots: ['/project'] } });
+  const mission = root(c).mission;
   const p = parent(c, 'luna');
-  const result = evaluateRecruitment({ config: c, parent: p, request: req('astra', { role: 'reviewer' }) });
+  const result = evaluateRecruitment({ config: c, mission, parent: p, request: req('astra', { role: 'reviewer' }) });
   assert.equal(result.decision, 'APPROVE');
   assert.equal(result.pool, 'review');
   assert.equal(result.reviewException, true);
@@ -170,14 +171,15 @@ test('unverified claimed Opus never receives full authority; explicit identity c
 
 test('HELICOP defaults independently gate Sol peers and Sol to Astra and match compound rule conditions', () => {
   const c = config();
-  const peer = evaluateRecruitment({ config: c, parent: parent(c, 'sol', 'REPLICATOR'), request: req('sol') });
+  const mission = root(c).mission;
+  const peer = evaluateRecruitment({ config: c, mission, parent: parent(c, 'sol', 'REPLICATOR'), request: req('sol') });
   assert.equal(peer.requiredApprovals[0].authority, 'helicop-sol');
-  const up = evaluateRecruitment({ config: c, parent: parent(c, 'sol', 'SKYNET'), request: req('astra') });
+  const up = evaluateRecruitment({ config: c, mission, parent: parent(c, 'sol', 'SKYNET'), request: req('astra') });
   assert.equal(up.requiredApprovals[0].authority, 'helicop-astra');
   const rules = [...c.helicop.rules, { id: 'cost-and-confidence', enabled: true, authority: 'helicop-sol', mandatory: true, veto: true, priority: 75,
     when: { modes: ['SKYNET'], parentModels: ['gpt-6.2-sol'], childModels: ['gpt-6.2-astra'], purposes: ['implementation'], minimumUsd: 0.02, maximumTokens: 3000, minimumDepth: 2, confidenceBelow: 0.99 } }];
   const custom = config({ helicop: { rules } });
-  const both = evaluateRecruitment({ config: custom, parent: parent(custom, 'sol', 'SKYNET'), request: req('astra') });
+  const both = evaluateRecruitment({ config: custom, mission, parent: parent(custom, 'sol', 'SKYNET'), request: req('astra') });
   assert.deepEqual(new Set(both.requiredApprovals.map(a => a.authority)), new Set(['helicop-sol', 'helicop-astra']));
   assert.equal(evaluateRecruitment({ ...root(config({ helicop: { sol: false } }), 'sonnet'), request: req('astra') }).decision, 'REJECT');
 });
@@ -237,9 +239,10 @@ test('free-to-paid A/B/C use explicit budgets and policy C always requires human
 
 test('Core and Review depth are independent but inherited lineage cannot reset a pool', () => {
   const c = config();
+  const mission = root(c).mission;
   const p = { ...parent(c, 'luna'), depth: { core: 2, review: 0 } };
   assert.equal(evaluateRecruitment({ config: c, parent: p, request: req('daily-terrafree') }).decision, 'REJECT');
-  assert.equal(evaluateRecruitment({ config: c, parent: p, request: req('astra', { role: 'reviewer' }) }).decision, 'APPROVE');
+  assert.equal(evaluateRecruitment({ config: c, mission, parent: p, request: req('astra', { role: 'reviewer' }) }).decision, 'APPROVE');
   assert.equal(evaluateRecruitment({ config: c, parent: { ...p, depth: { core: 2, review: 2 } }, request: req('astra', { role: 'reviewer' }) }).decision, 'REJECT');
 });
 

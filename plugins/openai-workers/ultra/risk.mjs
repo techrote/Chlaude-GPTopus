@@ -5,6 +5,16 @@ const FLAGS = ['destructive', 'securitySensitive', 'privacySensitive', 'external
 const FIELDS = ['complexity', 'impact', 'verifiability', 'confidence', 'rationale', 'blastRadius', 'reversibility', 'testsAvailable', 'independentEvidence', ...FLAGS];
 const level = impact => IMPACTS.indexOf(impact === 'unknown' ? 'high' : impact);
 
+export const riskInput = assessment => Object.fromEntries(FIELDS.filter(k => Object.hasOwn(assessment ?? {}, k)).map(k => [k, assessment[k]]));
+export const activeRisk = (node, now = Date.now()) => node.riskOverride && node.riskOverride.expiresAt <= now ? node.riskOverride.original : node.risk;
+export function assertWorkflowRisk(mission, workflow, now = Date.now()) {
+  const node = mission.nodes[workflow.authorId];
+  if ((node?.riskRevision ?? 0) !== (workflow.riskRevision ?? 0)) throw new Error('Risk classification changed; this review evidence is invalid and a fresh workflow is required');
+  if (!workflow.riskOverrideId) return;
+  const grant = node?.riskOverride;
+  if (!grant || grant.id !== workflow.riskOverrideId || grant.expiresAt <= now) throw new Error('Risk override expired or changed; fresh review against the current assessment is required');
+}
+
 /** Complexity selects an author; consequence and evidence select controls independently. */
 export function assessRisk(input = {}, options = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Risk assessment must be a structured object.');
