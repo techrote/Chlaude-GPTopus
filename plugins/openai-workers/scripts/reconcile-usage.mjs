@@ -11,6 +11,7 @@
  * Nothing here reads OPENAI_WORKER_MONTHLY_ALLOWANCE_USD or any API key.
  */
 import { resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
@@ -80,6 +81,14 @@ export async function main(argv = process.argv.slice(2), { env = process.env, io
   print(result.alreadyApplied ? 'This exact reconciliation was already recorded; no change.' : `Recorded reconciliation ${result.id.slice(0, 16)} for ${result.entries.map(e => e.month).join(', ')}.`);
   return { command, recorded: result.applied, result };
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+/** True when this module is the process entry point, also when launched through a symlink or junction
+ * (Node realpaths the module URL but leaves process.argv[1] as typed) or with different path casing. */
+export function isEntryPoint(metaUrl, argv1 = process.argv[1]) {
+  if (!argv1) return false;
+  const self = fileURLToPath(metaUrl);
+  try { return realpathSync.native(resolve(argv1)) === realpathSync.native(self); }
+  catch { return resolve(argv1) === self; }
+}
+if (isEntryPoint(import.meta.url)) {
   main().then(r => { if (r?.recorded === false) process.exitCode = 2; }).catch(error => { process.stderr.write(`Reconcile: ${error.message}\n`); process.exitCode = 1; });
 }
