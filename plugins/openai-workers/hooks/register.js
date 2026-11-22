@@ -15,7 +15,7 @@ const errorText = err => String(err?.message ?? err).slice(0, 800);
 const nativeMarker = /^\[ULTRA_BIND:([A-Za-z0-9_-]+):([A-Za-z0-9_.:-]+):([a-f0-9]{64})\]\n/;
 function rateLimitWaitMs(response) {
   if (response?.status !== 'failed' || !/rate limit/i.test(response.reason ?? '')) return null;
-  const m = /try again in ([0-9.]+)s*(ms|s)/i.exec(response.reason);
+  const m = /try again in ([0-9.]+)\s*(ms|s)/i.exec(response.reason);
   const ms = m ? Number(m[1]) * (m[2].toLowerCase() === 'ms' ? 1 : 1000) : 20000;
   return Math.min(65000, Math.max(1000, Math.ceil(ms) + 1000));
 }
