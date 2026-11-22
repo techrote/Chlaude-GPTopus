@@ -14,6 +14,7 @@
  *   overridable with OAI_CONFIG_STATE_DIR.
  * API key values are never read, stored, displayed or transmitted by this module.
  */
+import { sanitizeColourway, colourwayNameOk, MAX_COLOURWAYS, BUILTIN_COLOURWAYS } from './oai-colour.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -293,6 +294,26 @@ export function sanitizeUi(doc) {
   for (const [g, v] of Object.entries(doc.locks ?? {})) if (GROUPS.some(x => x.id === g) && v === true) ui.locks[g] = true;
   const m = Number(doc.autoClearMinutes); if (Number.isInteger(m) && m >= 0 && m <= 1440) ui.autoClearMinutes = m;
   if (doc.tooltips === false) ui.tooltips = false;
+  // Panel colourway (UI-only; never touches the env store or the pending marker).
+  if (doc.colourway !== undefined && doc.colourway !== null) {
+    const r = sanitizeColourway(doc.colourway);
+    if (r.cw) ui.colourway = r.cw; else errors.colourway = r.error;
+  }
+  if (doc.colourways !== undefined && doc.colourways !== null) {
+    const entries = typeof doc.colourways === 'object' && !Array.isArray(doc.colourways) ? Object.entries(doc.colourways) : null;
+    if (!entries) errors.colourways = 'colourways must be an object of name -> colourway.';
+    else if (entries.length > MAX_COLOURWAYS) errors.colourways = `At most ${MAX_COLOURWAYS} saved colourways.`;
+    else {
+      const out = {};
+      for (const [name, c] of entries) {
+        if (!colourwayNameOk(name) || Object.hasOwn(BUILTIN_COLOURWAYS, name)) { errors.colourways = `Bad or reserved colourway name: ${String(name).slice(0, 48)}`; break; }
+        const r = sanitizeColourway(c);
+        if (!r.cw) { errors.colourways = `${name}: ${r.error}`; break; }
+        out[name] = r.cw;
+      }
+      if (!errors.colourways && entries.length) ui.colourways = out;
+    }
+  }
   return { ui, errors };
 }
 /** Save UI state; refuses caps that would exclude the current value (spec 1.1). */

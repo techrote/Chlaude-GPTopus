@@ -29,6 +29,14 @@ import { traceDir, traceFile } from '../bridge/trace.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(readFileSync(join(here, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version;
 /** Location-only env names the live panels need; never key values. */
+/** The pure colour module, inlined into the page (CSP allows only the nonce'd inline script). */
+const colourRaw = readFileSync(join(here, 'oai-colour.mjs'), 'utf8');
+const colourNames = [...colourRaw.matchAll(/^export (?:const|function) (\w+)/gm)].map(m => m[1]);
+export const COLOUR_SRC = `const OC = (() => {
+${colourRaw.replace(/^export /gm, '')}
+return { ${colourNames.join(', ')} };
+})();`;
+export const renderPage = (page, nonce) => page.replace('/*__OAI_COLOUR__*/', () => COLOUR_SRC).replaceAll('__NONCE__', nonce);
 const BASE_NAMES = ['LOCALAPPDATA', 'XDG_STATE_HOME', 'HOME', 'USERPROFILE'];
 
 function baseEnv(values, env = process.env) {
@@ -87,7 +95,7 @@ export function createConfigServer({ store = defaultStore(), stateDir = defaultS
         const nonce = randomBytes(16).toString('base64');
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
           'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` });
-        return res.end(page.replaceAll('__NONCE__', nonce));
+        return res.end(renderPage(page, nonce));
       }
       if (!url.pathname.startsWith('/api/')) return json(res, 404, { error: 'Not found.' });
       // API: token header only (a cross-site form cannot set it); JSON bodies only.
