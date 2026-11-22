@@ -1,3 +1,4 @@
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
@@ -132,4 +133,19 @@ test('missing final usage retains an unverified reservation rather than becoming
   assert.equal(snapshot.groups.premium.usedTokens, 0);
   assert.equal(snapshot.groups.premium.reservedTokens, 1234);
   assert.equal(snapshot.profiles.free.unknownUsageRequests, 1);
+});
+
+test('release tombstones are bounded by the same retention horizon as daily detail, while request IDs are kept', async t => {
+  const f = fixture(t, { OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10' }, '2026-09-01T01:00:00Z');
+  const args = { workerType: 'daily-astrafree', model: 'gpt-6-astra' };
+  const old = await reserveRequest({ ...args, requestId: 'req-old-release' }, f);
+  assert.equal(await releaseRequest(old, f), true);
+  let doc = JSON.parse(readFileSync(usagePath(f.env), 'utf8'));
+  assert.equal(Object.keys(doc.releases).length, 1, 'tombstone is written on release');
+  const later = { env: f.env, now: new Date('2026-11-21T01:00:00Z') }; // 81 days on
+  const fresh = await reserveRequest({ ...args, requestId: 'req-new-release' }, later);
+  assert.equal(await releaseRequest(fresh, later), true);
+  doc = JSON.parse(readFileSync(usagePath(f.env), 'utf8'));
+  assert.deepEqual(Object.values(doc.releases).map(r => r.requestId), ['req-new-release'], 'only the stale tombstone is dropped');
+  assert.ok(doc.requests['req-old-release'], 'request IDs are never aged out: replay protection is permanent');
 });

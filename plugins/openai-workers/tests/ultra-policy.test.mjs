@@ -1,3 +1,4 @@
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG, resolveConfig, validateConfig, modeFlags, policyHash, migrateConfig, profileConfig } from '../ultra/config.mjs';
