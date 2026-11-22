@@ -33,12 +33,14 @@ export function recordingTransport(behaviour = {}) {
  * A running bridge host for one temporary owner state directory.
  * `env` is the shared, mutable process-environment view (the bridge reads it on every request).
  */
-export async function bridgeHost(t, { policy = {}, env: extraEnv = {}, transport = recordingTransport(), now, files = {}, key = true } = {}) {
+export async function bridgeHost(t, { policy = {}, env: extraEnv = {}, transport = recordingTransport(), now, project: projectFiles = {}, key = true } = {}) {
   const dir = await realpath(await mkdtemp(join(await realpath(tmpdir()), 'ultra-host-')));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  // A project root OUTSIDE the owner state directory (which is itself a protected path).
+  const project = await realpath(await mkdtemp(join(await realpath(tmpdir()), 'ultra-project-')));
+  t.after(() => Promise.all([rm(dir, { recursive: true, force: true }), rm(project, { recursive: true, force: true })]));
   const env = { OPENAI_ULTRA_ENABLED: '1', OPENAI_ULTRA_ALLOW_API: '1', OPENAI_ULTRA_STATE_DIR: dir, OPENAI_ULTRA_CONFIG: join(dir, 'ultra-policy.json'),
     OPENAI_WORKER_USAGE_DIR: join(dir, 'usage'), ...extraEnv };
-  for (const [name, text] of Object.entries(files)) { await mkdir(join(dir, name, '..'), { recursive: true }); await writeFile(join(dir, name), text); }
+  for (const [name, text] of Object.entries(projectFiles)) { await mkdir(join(project, name, '..'), { recursive: true }); await writeFile(join(project, name), text); }
   const writePolicy = async overrides => writeOwnerConfig(resolveConfig({ enabled: true, ...overrides }), env);
   await writePolicy(policy);
   let keyHex = null;
@@ -55,5 +57,5 @@ export async function bridgeHost(t, { policy = {}, env: extraEnv = {}, transport
     await call('ultra_native_bind', { ...common, toolUseId, nodeId: admitted.nodeId, hostAgentId, bindingTicket: admitted.bindingTicket, hostWorker: worker });
     return { init, common, admitted, missionId: init.missionId, nodeId: admitted.nodeId, hostAgentId, worker };
   }
-  return { dir, env, keyHex, options, call, writePolicy, ledger, session, transport };
+  return { dir, project, env, keyHex, options, call, writePolicy, ledger, session, transport };
 }

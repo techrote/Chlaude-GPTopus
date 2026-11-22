@@ -370,7 +370,7 @@ test('surfaces: changing a ceiling changes the policy hash and cannot silently r
   assert.notEqual(policyHash(raised), m.policyHash);
   const broker = new RecruitmentBroker(first.store, { config: raised });
   await assert.rejects(() => new NativeController(broker, { backend: Object.assign(async () => ({}), { offline: true }) })
-    .handle('ultra_native_init', { sessionId: 'rehash', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] }, transport), /already used for different work or authority/);
+    .handle('ultra_native_init', { sessionId: 'rehash', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] }, transport), /Owner ULTRA policy changed/);
   assert.equal((await first.mission()).config.surfaces.codeCli.profile, 'A', 'the stored mission keeps the ceiling it was authorised under');
   // A fresh session under the raised ceiling is a new mission with the new hash.
   const second = await harness(t, { directory: await tmp(t), sessionId: 'rehash-new', config: { surfaces: { codeCli: code('C') }, permissions } });

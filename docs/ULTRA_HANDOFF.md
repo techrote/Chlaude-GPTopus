@@ -100,7 +100,7 @@ The owner CLI shows exact proposals before interactive human approval. `record-t
 
 **Risk and source meaning require evidence.** Structured risk is supplied by the assigning authority and is not an independent proof that the classification is true. Arbitrary public review snapshots are labelled as caller-supplied immutable content; native review starts from stored author output/private patch evidence. An unchanged hash proves identity, not correctness. Tests must represent observed results, and current high-severity findings must be explicitly resolved.
 
-**Conservative recovery can require an operator.** Known provider response IDs can be polled without another POST. Ambiguous request/tool phases stay held, preserving work and accounting. There is no generic force-resume or unsafe ledger-reset command. An operator must reconcile provider/host evidence before authorising fresh work. Owner-controlled policy changes require a newly authorised mission on the public Chat surface rather than silently widening an existing one.
+**Conservative recovery can require an operator.** Known provider response IDs can be polled without another POST. Ambiguous request/tool phases stay held, preserving work and accounting. There is no generic force-resume or unsafe ledger-reset command. An operator must reconcile provider/host evidence before authorising fresh work. Owner-controlled policy changes require a newly authorised mission on the public Chat surface rather than silently widening an existing one. On a native Code session a policy change can only tighten the open session (the stricter of the frozen and current owner policy applies at once and is never lifted); see "Capability ceilings per surface" in [ULTRA.md](ULTRA.md).
 
 ## Windows owner actions
 

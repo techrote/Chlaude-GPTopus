@@ -8,7 +8,9 @@ import { selectWorkerEffort } from '../bridge/workers.mjs';
 import { assertApiAdmission } from './broker.mjs';
 import { ReviewController } from './review.mjs';
 import { ActionGate } from './actions.mjs';
-import { resolveHostSurface, surfaceCeiling, SURFACE_KEYS } from './config.mjs';
+import { resolveHostSurface, surfaceCeiling, SURFACE_KEYS, policyHash, canonical } from './config.mjs';
+import { attenuateConfig } from './attenuation.mjs';
+import { intersectPermissions } from './policy.mjs';
 import { hostVersionSupported, trustedClaudeFamily, nativeProposal, nativeOpenAITools, nativeToolNames, nativeRootToolNames, filterNativeToolArgs, NATIVE_PREFIX } from '../hooks/ultra.js';
 
 const terminal = new Set(['completed', 'failed', 'cancelled', 'blocked']);
@@ -73,6 +75,8 @@ export class NativeController {
     // Authority is bound to the bridge process (epoch) and owner key that opened the session.
     if (ctx.bound) invariant(m.native.epoch === ctx.epoch && m.native.channelKeyId === ctx.keyId, 'ULTRA_SESSION_CLOSED: the native session is not open on this bridge process; reopen it');
     invariant(m.native.sessionId === args.sessionId && m.status === 'active', 'Native session is not active');
+    // Owner policy can only tighten an open session: the stricter of the frozen mission policy and the CURRENT owner policy governs.
+    m = await this.attenuate(m, name);
     // A configured /model label must not override a pinned effective fallback.
     // Descendant host models are Claude placeholders, not the root identity.
     const pinnedRoot = name === 'ultra_native_admit' && !args.parentAgentId && typeof args.parentModel === 'string' ? args.parentModel : null;
@@ -136,7 +140,9 @@ export class NativeController {
     const model = trustedClaudeFamily(args.model), capability = opaque();
     const missionId = `native-${digest(args.sessionId).slice(0, 32)}`;
     // Refuse an unauthorised reopen BEFORE any write; the transaction below re-checks atomically.
-    if (ctx.bound) authoriseReopen((await this.store.read()).missions[missionId]?.native, args, ctx);
+    const existing = (await this.store.read()).missions[missionId];
+    if (ctx.bound) authoriseReopen(existing?.native, args, ctx);
+    invariant(!existing || existing.policyHash === policyHash(this.broker.config), 'Owner ULTRA policy changed since this native session was opened. An open session is held to the stricter policy, but it cannot be reopened under a different one; start a new host session');
     await this.broker.createMission({ id: missionId, surface: 'native', task: `Native ULTRA session ${args.sessionId}`, orchestrator: { model, trusted: model !== 'unknown', source: 'native-host' } });
     await this.store.transaction((state, event) => {
       const m = state.missions[missionId];
@@ -158,6 +164,35 @@ export class NativeController {
     return { missionId, capability, orchestrator: { model, trusted: model !== 'unknown' }, profile: surfaceCeiling(this.broker.config, surface).profile, surface,
       note: 'Native session opened over the owner-key authenticated channel; caller model strings on public MCP tools convey no authority.' };
   }
+  /**
+   * Hold an open mission to the stricter of its frozen policy and the CURRENT owner policy.
+   * The bridge builds this controller from a policy file it re-reads on every request, so
+   * `broker.config` is the owner's current word. The stricter result is persisted (a one-way,
+   * audited tightening, also applied to every allocation's tool/root grant) so every consumer of
+   * `mission.config` (broker admission, budgets, reviews, tool lists, file boundaries) enforces it
+   * without each having to re-read the owner file. It is never enlarged: raising the owner policy
+   * later does not lift a session that was held down; a new host session gets the new policy.
+   * Disabling ULTRA refuses everything except diagnostics and cancel. An unreadable or invalid
+   * owner policy never reaches here (the bridge refuses), and an unreconcilable one fails closed.
+   */
+  async attenuate(m, operation) {
+    if (!this.broker.config.enabled && !['ultra_native_cancel', 'ultra_native_diagnostics'].includes(operation)) throw new Error('Owner ULTRA policy is disabled; this native session is held (diagnostics and cancel remain available)');
+    let effective;
+    try { effective = attenuateConfig(m.config, this.broker.config); }
+    catch (error) { throw new Error(`Owner ULTRA policy cannot be applied to this native session (${String(error?.message).slice(0, 200)}); the session is held. Cancel it or start a new host session`); }
+    if (canonical(effective) === canonical(m.config)) return m;
+    await this.store.transaction((state, event) => {
+      const mission = state.missions[m.id], next = attenuateConfig(mission.config, this.broker.config);
+      if (canonical(next) === canonical(mission.config)) return;
+      const from = digest(mission.config); // tolerant: a mission persisted before a section existed is not a valid current config
+      mission.config = next;
+      for (const node of Object.values(mission.nodes)) node.permissions = intersectPermissions(node.permissions, next.permissions);
+      const record = { at: this.now(), from, to: policyHash(next), currentOwnerPolicyHash: policyHash(this.broker.config) };
+      (mission.attenuations ??= []).push(record);
+      event('native.policy_attenuated', m.id, record);
+    });
+    return this.store.snapshot(m.id);
+  }
   /** Capability ceiling of the host surface recorded at init; never Desktop Chat's profile. */
   ceiling(m) { return surfaceCeiling(m.config, m.native?.surface); }
   bound(m, hostId) {
@@ -171,6 +206,8 @@ export class NativeController {
       rootTools: nativeRootToolNames(m.nodes.root, this.ceiling(m).profile), actions: clone(m.actions),
       surface: { resolved: m.native.surface ?? 'unknown', hostFacts: clone(m.native.hostSurfaces ?? []), ceiling: this.ceiling(m),
         ceilings: { ...Object.fromEntries(SURFACE_KEYS.map(key => [key, surfaceCeiling(m.config, key)])), desktopChat: { profile: m.config.desktop.profile, enableExecutionBridge: m.config.desktop.enableExecutionBridge, note: 'Desktop Chat only; never applies to native Code.' } } },
+      policy: { authorisedPolicyHash: m.policyHash, effectivePolicyHash: policyHash(m.config), currentOwnerPolicyHash: policyHash(this.broker.config), attenuations: clone(m.attenuations ?? []),
+        note: 'An open session is held to the stricter of the policy it was authorised under and the current owner policy; tightening applies at once, and a later loosening never enlarges it (start a new host session).' },
       protectedMode: 'Primary and worker models are inside the mission boundary; arbitrary shell/live file/unknown external tools are denied.' };
   }
   async admit(m, args) {
@@ -456,10 +493,12 @@ export class NativeController {
     return result;
   }
   boundary(m, n) {
-    const profile = this.ceiling(m).profile, key = `${m.id}:${n.id}:${profile}`;
+    const profile = this.ceiling(m).profile, writable = n.permissions.tools.includes('stage_write');
+    // The key covers the effective roots and write grant, so a tightened grant never reuses a boundary built from a wider one.
+    const key = `${m.id}:${n.id}:${profile}:${digest({ roots: n.permissions.roots, writable })}`;
     if (!this.boundaries.has(key)) {
       const stageBase = `${this.store.path}.stages`;
-      const config = { profile, principal: { id: n.id, role: n.role }, roots: n.permissions.roots.map((root, i) => ({ id: String(i), path: root, read: ['.'], write: n.permissions.tools.includes('stage_write') ? ['.'] : [] })), protectedPaths: [this.store.path, this.store.lockPath, stageBase, ...this.protectedPaths], commands: [] };
+      const config = { profile, principal: { id: n.id, role: n.role }, roots: n.permissions.roots.map((root, i) => ({ id: String(i), path: root, read: ['.'], write: writable ? ['.'] : [] })), protectedPaths: [this.store.path, this.store.lockPath, stageBase, ...this.protectedPaths], commands: [] };
       const dependencies = { stageDirectory: path.join(stageBase, m.id, n.id) };
       this.boundaries.set(key, this.boundaryFactory ? this.boundaryFactory(config, dependencies) : new PermissionBoundary(config, dependencies));
     }
