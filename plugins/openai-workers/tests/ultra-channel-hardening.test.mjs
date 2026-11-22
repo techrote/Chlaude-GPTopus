@@ -155,7 +155,8 @@ test('F8: an overridden key file, the policy file and the usage directory are re
   // The Desktop facade, as the extension process would run it with the same variables.
   const policy = await (await import('../ultra/service.mjs')).readOwnerConfig(env);
   assert.equal(policy.desktop.profile, 'B');
-  await assert.rejects(() => invokeDesktop('ultra_read_project', { root: '0', path: 'channel.cfg' }, name => service.invoke(name, { root: '0', path: 'channel.cfg' }), env), /./);
+  await assert.rejects(() => invokeDesktop('ultra_read_project', { root: '0', path: 'channel.cfg' }, (name, args) => service.invoke(name, args), env), /protected control or credential path/);
+  assert.match((await invokeDesktop('ultra_read_project', { root: '0', path: 'source.txt' }, (name, args) => service.invoke(name, args), env)).content, /open source file/, 'and an ordinary file is still served through the same facade');
 });
 
 test('F8: a key file inside a configured root under a non-secret name is never used by the Code bridge, and the owner is told by validate and show', async t => {
