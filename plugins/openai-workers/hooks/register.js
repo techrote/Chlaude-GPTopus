@@ -13,6 +13,16 @@ const owner = (type) => `${PLUGIN}:${type}`;
 const envSuffix = (type) => type.toUpperCase().replace(/[^A-Z0-9]/g, '_');
 const errorText = err => String(err?.message ?? err).slice(0, 800);
 const nativeMarker = /^\[ULTRA_BIND:([A-Za-z0-9_-]+):([A-Za-z0-9_.:-]+):([a-f0-9]{64})\]\n/;
+
+// On current hosts the mod's own $.mcp.call also passes through tool.check/tool.run.
+// Count the mod's in-flight bridge calls so the private-tool guard admits only those.
+const modInFlight = new Map();
+const bridgeOp = tool => String(tool ?? '').split('__').at(-1);
+async function modCall(name, params, run) {
+  modInFlight.set(name, (modInFlight.get(name) ?? 0) + 1);
+  try { return await run(); } finally { const n = modInFlight.get(name) - 1; if (n > 0) modInFlight.set(name, n); else modInFlight.delete(name); }
+}
+const modOwned = tool => (modInFlight.get(bridgeOp(tool)) ?? 0) > 0;
 // The host validator requires a literal name at every $.env.get call site and never lets $ itself
 // leave a hook body. Hooks therefore read the configuration with literal calls into a plain snapshot
 // and hand helpers small closures (host.call, host.read, ...) instead of $.
@@ -291,7 +301,7 @@ export function register(on) {
       OPENAI_WORKER_DAILY_TERRAFREE_MAX_STEPS: await $.env.get('OPENAI_WORKER_DAILY_TERRAFREE_MAX_STEPS'),
       OPENAI_WORKER_DAILY_TERRAFREE_MAX_USD: await $.env.get('OPENAI_WORKER_DAILY_TERRAFREE_MAX_USD'),
     };
-    const host = { env: envSnapshot, call: (n, p) => $.mcp.call(SERVER, n, p), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
+    const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     if (ultraEnabled) {
       try {
         nativeChannel = await establishChannel(host, nativeChannel, knownCapabilities);
@@ -324,7 +334,7 @@ export function register(on) {
   on('command.run', { command: 'ultra' }, async ($, e) => {
     if (!ultraEnabled) return { text: 'ULTRA is disabled. Enable owner policy and OPENAI_ULTRA_ENABLED=1 explicitly, then start a new native session.' };
     if (!nativeChannel) return { text: `ULTRA is HOLD: ${nativeError || 'native channel unavailable'}. No governed worker can run.` };
-    const host = { env: envSnapshot, call: (n, p) => $.mcp.call(SERVER, n, p), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
+    const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     try {
       const [operation = '', authorAgentId, ...extra] = String(e.args ?? '').trim().split(/\s+/);
       if (!['', 'supervise', 'review', 'cancel'].includes(operation) || extra.length || operation === 'review' && !authorAgentId || operation !== 'review' && authorAgentId) return { text: 'Usage: /ultra, /ultra supervise, /ultra review <completed-native-author-id>, or /ultra cancel. Human approvals use the local interactive ULTRA CLI.' };
@@ -344,7 +354,7 @@ export function register(on) {
     if (!nativeChannel) return { deny: `ULTRA native admission is held: ${nativeError}` };
     if (e.workflow || e.isTeammate || e.fork) return { deny: 'This native spawn form has not been qualified for ULTRA.' };
     if (!e.parentAgentId) nativeChannel.effectiveModel = e.parentModel;
-    const host = { env: envSnapshot, call: (n, p) => $.mcp.call(SERVER, n, p), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
+    const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     const admitted = await nativeBridge(host, nativeChannel, 'admit', { toolUseId: e.tool_use_id,
       parentAgentId: e.parentAgentId, parentModel: e.parentModel, primaryModel: await $.session.model(),
       subagentType: e.subagentType, prompt: e.prompt, background: e.background, resumeAgentId: e.resume?.agentId });
@@ -366,7 +376,7 @@ export function register(on) {
     const agent = (await $.agent.list()).find(a => a.id === e.agentId);
     if (!agent || !nativeWorker(agent.type)) return next(e);
     const marker = nativeMarker.exec(e.text ?? '');
-    const host = { env: envSnapshot, call: (n, p) => $.mcp.call(SERVER, n, p), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
+    const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     if (marker) await nativeBridge(host, nativeChannel, 'bind', { nodeId: marker[1], toolUseId: marker[2], bindingTicket: marker[3],
       hostAgentId: e.agentId, hostParentAgentId: agent.parentId, hostWorker: nativeWorker(agent.type) });
     // No fall-through to Anthropic is possible: turn.step independently requires
@@ -375,6 +385,7 @@ export function register(on) {
   });
 
   on('tool.check', async ($, e, next) => {
+    if (isPrivateBridgeTool(e.tool) && modOwned(e.tool)) return next(e);
     if (isPrivateBridgeTool(e.tool)) return { decision: 'deny', reason: 'Private bridge control is available only to the trusted mod, never model tool calls.' };
     if (!ultraEnabled) return next(e);
     // The primary model is inside the mission boundary too. Otherwise Bash or
@@ -382,17 +393,18 @@ export function register(on) {
     // Preserve native deny/ask outcomes; ULTRA is an additional restriction.
     const decided = await next(e);
     if (decided.decision === 'deny') return decided;
-    const host = { env: envSnapshot, call: (n, p) => $.mcp.call(SERVER, n, p), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
+    const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     await nativeBridge(host, nativeChannel, 'tool_check', { hostAgentId: e.agentId, tool: e.tool, input: e.input });
     return decided;
   }).catch(() => ({ decision: 'deny', reason: 'ULTRA tool permission guard failed or timed out.' }));
 
   on('tool.run', async ($, e, next) => {
+    if (isPrivateBridgeTool(e.tool) && modOwned(e.tool)) return next(e);
     if (isPrivateBridgeTool(e.tool)) return { deny: 'Private bridge control cannot be called by a model.' };
     if (!ultraEnabled) return next(e);
     if (next.signal?.aborted) return { deny: 'ULTRA tool execution was interrupted.' };
     const input = nativeToolInput(e);
-    const host = { env: envSnapshot, call: (n, p) => $.mcp.call(SERVER, n, p), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
+    const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     await nativeBridge(host, nativeChannel, 'tool_check', { hostAgentId: e.agentId, tool: e.tool, input });
     if (e.tool === 'Agent' || e.tool === 'SubagentHandback') return next(e);
     // Custom tool implementations run here, AFTER the host permission path.
@@ -402,7 +414,7 @@ export function register(on) {
   }).catch(($, e, next) => next.called ? next(e) : { deny: 'ULTRA tool execution guard failed or timed out; no operation is authorised.' });
 
   on('command.run', { command: 'openai-workers' }, async ($) => {
-    const call = (n, p) => $.mcp.call(SERVER, n, p);
+    const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
     let health;
     try { health = await bridge(call, 'health', {}); }
     catch (err) { return { text: `OpenAI bridge not connected: ${errorText(err)}. Check /mcp and node --version.` }; }
@@ -471,7 +483,7 @@ export function register(on) {
       OPENAI_WORKER_DAILY_TERRAFREE_MAX_USD: await $.env.get('OPENAI_WORKER_DAILY_TERRAFREE_MAX_USD'),
     };
     envSnapshot = env;
-    const host = { env: envSnapshot, call: (n, p) => $.mcp.call(SERVER, n, p), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
+    const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     for (const [type, spec] of Object.entries(TYPES)) {
       try {
         const tier = await agentTier(env, type);
@@ -601,7 +613,7 @@ export function register(on) {
         OPENAI_WORKER_DAILY_TERRAFREE_MAX_USD: await $.env.get('OPENAI_WORKER_DAILY_TERRAFREE_MAX_USD'),
       };
       envSnapshot = env;
-      const host = { env: envSnapshot, call: (n, p) => $.mcp.call(SERVER, n, p), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
+      const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
       let messages = await $.session.messages({ agentId: e.agentId });
       if ('deny' in messages) throw new Error(`Claude Code transcript unavailable: ${messages.deny}`);
       if (ultraEnabled) messages = messages.map(message => typeof message.text === 'string' ? { ...message, text: message.text.replace(nativeMarker, '') } : message);
@@ -676,7 +688,7 @@ export function register(on) {
 
   on('turn.complete', async ($, e, next) => {
     if (!ultraEnabled || !e.agentId || !await nativeManaged(() => $.agent.list(), e.agentId)) return next(e);
-    const host = { env: envSnapshot, call: (n, p) => $.mcp.call(SERVER, n, p), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
+    const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     try {
       await nativeBridge(host, nativeChannel, 'finish', { hostAgentId: e.agentId, answer: e.answer, aborted: e.isAborted,
         failed: e.reason === 'error' || e.reason === 'refusal' || /^OpenAI worker failed:|^ULTRA native step guard failed/.test(e.answer ?? '') });
