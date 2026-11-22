@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 import readline from 'node:readline';
 import { basename } from 'node:path';
-import { configuredKey, keyProfileForWorker, createTurn, pollTurn, cancelTurn } from './openai.mjs';
-import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot } from './usage.mjs';
+import { configuredKey, keyProfileForWorker, createTurn, pollTurn, cancelTurn, validateTurnArgs, mayHaveIncurredUsage } from './openai.mjs';
+import { workerSettings, selectWorkerEffort } from './workers.mjs';
+import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot, quoteRequest,
+  markRequestAmbiguous, responseRecord } from './usage.mjs';
 
 const PAGESIZE = 22000;
 const cache = new Map(); // only large, completed, redacted responses, never keys
 const defs = [
   { name: 'health', description: 'Report whether the bridge has a configured API key (never returns it).', inputSchema: { type: 'object', properties: {} } },
   { name: 'create', description: 'Start a Responses API model step for the plugin.', inputSchema: { type: 'object', properties: {
-    model: { type: 'string' }, worker_type: { type: 'string' }, input: {}, instructions: { type: 'string' }, tools: { type: 'array' }, effort: { type: 'string' }, previous_response_id: { type: 'string' }, max_output_tokens: { type: 'integer' },
-    service_tier: { type: 'string', enum: ['auto', 'default', 'flex', 'fast', 'priority'] } }, required: ['model', 'input', 'instructions', 'tools'] } },
+    model: { type: 'string' }, worker_type: { type: 'string' }, input: {}, instructions: { type: 'string' }, tools: { type: 'array' }, effort: { type: 'string' }, previous_response_id: { type: 'string' }, max_output_tokens: { type: 'integer' }, request_id: { type: 'string' },
+    service_tier: { type: 'string', enum: ['auto', 'default', 'flex', 'fast', 'priority'] } }, required: ['worker_type', 'model', 'input', 'instructions', 'tools'] } },
   { name: 'usage', description: 'Show local free-key daily tokens, reservations and UTC rollover; these are not authoritative API billing counters.', inputSchema: { type: 'object', properties: {} } },
-  { name: 'poll', description: 'Poll an in-progress OpenAI response, up to five seconds.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' }, wait_ms: { type: 'integer' } }, required: ['id'] } },
+  { name: 'poll', description: 'Poll an in-progress OpenAI response, up to five seconds.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' }, wait_ms: { type: 'integer' } }, required: ['id', 'worker_type'] } },
   { name: 'page', description: 'Fetch a page of an oversized completed response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, page: { type: 'integer' } }, required: ['id', 'page'] } },
-  { name: 'cancel', description: 'Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id'] } },
+  { name: 'cancel', description: 'Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id', 'worker_type'] } },
 ];
 const has = (o, key) => Object.prototype.hasOwnProperty.call(o ?? {}, key);
 function pack(value) {
@@ -26,55 +28,93 @@ function pack(value) {
   if (cache.size > 80) cache.delete(cache.keys().next().value);
   return { id, status: value.status, paged: true, pages: Math.ceil(str.length / PAGESIZE), length: str.length };
 }
-export async function dispatch(name, args = {}) {
+async function boundResponse(args, options) {
+  const selected = workerSettings(args.worker_type, options.env);
+  const binding = await responseRecord(args.id, options);
+  if (!binding || binding.legacy || !binding.workerType) throw new Error('Response ownership is unknown; reconcile this response locally before polling or continuing.');
+  if (binding.workerType !== selected.name || binding.profile !== selected.key_profile) throw new Error('Response worker/key identity mismatch.');
+  return binding;
+}
+function checkedCreate(args, env) {
+  const selected = workerSettings(args.worker_type, env);
+  if (args.model !== selected.model) throw new Error(`Worker ${selected.name} is configured for ${selected.model}; caller model substitution is not permitted.`);
+  const requestedTier = args.service_tier;
+  const configuredTier = selected.service_tier;
+  // An unconfigured tier means the provider's ordinary project/default route.
+  // It never authorises a caller to request Flex or premium processing.
+  if (configuredTier ? requestedTier !== undefined && requestedTier !== configuredTier : requestedTier !== undefined && !['auto', 'default'].includes(requestedTier)) {
+    throw new Error('Caller service-tier substitution is not permitted; configure the worker tier locally.');
+  }
+  const effort = selectWorkerEffort(selected.name, args.effort, env, selected.model).effective;
+  const effective = { ...args, model: selected.model, effort, service_tier: configuredTier ?? requestedTier };
+  validateTurnArgs(effective); // All preflight failures occur before reservation.
+  return { selected, effective };
+}
+/** options are trusted in-process adapter configuration, never MCP arguments. */
+export async function dispatch(name, args = {}, options = {}) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Bridge arguments must be an object.');
+  const env = options.env ?? process.env;
+  const ledgerOptions = { ...options, env };
+  const transport = options.transport ?? { create: createTurn, poll: pollTurn, cancel: cancelTurn };
   switch (name) {
     case 'health': return {
-      standard: { configured: Boolean(configuredKey(process.env, 'standard')), source: configuredKey(process.env, 'standard') || 'none' },
-      free: { configured: Boolean(configuredKey(process.env, 'free')), source: configuredKey(process.env, 'free') || 'none' },
+      standard: { configured: Boolean(configuredKey(env, 'standard')), source: configuredKey(env, 'standard') || 'none' },
+      free: { configured: Boolean(configuredKey(env, 'free')), source: configuredKey(env, 'free') || 'none' },
       platform: process.platform,
     };
     case 'create': {
-      const profile = keyProfileForWorker(args.worker_type);
-      // Straight-key calls never consume or block on complimentary-key ledger.
-      if (profile === 'standard') return pack(await createTurn(args, { profile }));
-      const ticket = await reserveRequest({ workerType: args.worker_type, model: args.model });
+      const { selected, effective } = checkedCreate(args, env);
+      // Never accept an agent-supplied claim about invisible Responses history.
+      const freshQuote = quoteRequest({ ...effective, previous_response_id: undefined, inputTokenUpperBound: undefined }, ledgerOptions);
+      let inputTokenUpperBound;
+      if (effective.previous_response_id) {
+        const previous = await boundResponse({ worker_type: selected.name, id: effective.previous_response_id }, ledgerOptions);
+        if (!previous.settled || !Number.isSafeInteger(previous.contextTokenUpperBound)) throw new Error('Previous response has no verified complete history bound; reconcile it before continuing.');
+        if (previous.model !== selected.model) throw new Error('Continuation model differs from the stored response model.');
+        inputTokenUpperBound = previous.contextTokenUpperBound + freshQuote.inputTokens;
+      }
+      const quote = quoteRequest({ ...effective, inputTokenUpperBound }, ledgerOptions);
+      const ticket = await reserveRequest({ workerType: selected.name, model: selected.model, profile: selected.key_profile,
+        serviceTier: effective.service_tier, ...(args.request_id && { requestId: args.request_id }), ...quote }, ledgerOptions);
       let response;
       try {
-        response = await createTurn(args, { profile: 'free' });
-      } catch (err) {
-        // An ambiguous transport failure could have been accepted and billed.
-        // Hold its reservation rather than incorrectly recording zero tokens.
-        if (!/network error|timeout/i.test(String(err?.message))) {
-          await releaseRequest(ticket).catch(() => {});
-        }
-        throw err;
+        response = await transport.create(effective, { profile: selected.key_profile, env });
+      } catch (error) {
+        if (mayHaveIncurredUsage(error)) await markRequestAmbiguous(ticket, ledgerOptions);
+        else await releaseRequest(ticket, { ...ledgerOptions, reason: error.usageDisposition });
+        throw error;
       }
-      await accountResponse(ticket, response);
+      try { await accountResponse(ticket, response, ledgerOptions); }
+      catch (error) { await markRequestAmbiguous(ticket, ledgerOptions); throw error; }
       return pack(response);
     }
     case 'poll': {
-      const profile = keyProfileForWorker(args.worker_type);
-      const response = await pollTurn(args.id, { wait_ms: args.wait_ms, profile });
-      if (profile === 'free') await accountByResponseId(response);
+      const binding = await boundResponse(args, ledgerOptions);
+      const response = await transport.poll(args.id, { wait_ms: args.wait_ms, profile: binding.profile, env });
+      if (response.id !== args.id) throw new Error('Poll response ID differs from the requested response.');
+      if (response.model && response.model !== binding.model) throw new Error('Poll response model differs from its stored binding.');
+      await accountByResponseId(response, ledgerOptions);
       return pack(response);
     }
     case 'cancel': {
-      const profile = keyProfileForWorker(args.worker_type);
-      const response = await cancelTurn(args.id, { profile });
-      if (profile === 'free' && ['completed', 'failed', 'incomplete', 'cancelled'].includes(response.status)) {
-        await accountByResponseId(response);
-      }
+      const binding = await boundResponse(args, ledgerOptions);
+      const response = await transport.cancel(args.id, { profile: binding.profile, env });
+      if (response.id !== args.id) throw new Error('Cancellation response ID differs from the requested response.');
+      if (response.model && response.model !== binding.model) throw new Error('Cancellation response model differs from its stored binding.');
+      if (['completed', 'failed', 'incomplete', 'cancelled'].includes(response.status)) await accountByResponseId(response, ledgerOptions);
+      else if (binding.ticket) await markRequestAmbiguous(binding.ticket, ledgerOptions);
       return response;
     }
     case 'usage': {
-      const initial = await usageSnapshot();
-      // Reconcile already-accepted responses after an interrupted session.
-      // Read-only GETs against the free key; no new generation requests.
-      for (const id of initial.pendingResponseIds.slice(0, 8)) {
-        try { await accountByResponseId(await pollTurn(id, { wait_ms: 0, profile: 'free' })); }
-        catch { /* retain conservative reservation until next reconciliation */ }
+      const initial = await usageSnapshot(ledgerOptions);
+      // Reconcile accepted responses for either fixed key without new generation.
+      for (const item of initial.pendingResponses.slice(0, 8)) {
+        try {
+          const response = await transport.poll(item.id, { wait_ms: 0, profile: item.profile, env });
+          if (response.id === item.id) await accountByResponseId(response, ledgerOptions);
+        } catch { /* Keep conservative reservations; no automatic POST retry. */ }
       }
-      return usageSnapshot();
+      return usageSnapshot(ledgerOptions);
     }
     case 'page': {
       const str = cache.get(args.id);

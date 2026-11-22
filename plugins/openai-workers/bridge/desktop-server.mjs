@@ -7,6 +7,7 @@
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { dispatch } from './server.mjs';
 import { WORKER_TYPES, workerSettings, EFFORTS, selectWorkerEffort } from './workers.mjs';
 import { configuredKey } from './openai.mjs';
@@ -195,7 +196,15 @@ export async function handleMessage(msg, write = chunk => process.stdout.write(c
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+/** True when this module is the process entry point, also when launched through a symlink or junction
+ * (Node realpaths the module URL but leaves process.argv[1] as typed) or with different path casing. */
+export function isEntryPoint(metaUrl, argv1 = process.argv[1]) {
+  if (!argv1) return false;
+  const self = fileURLToPath(metaUrl);
+  try { return realpathSync.native(resolve(argv1)) === realpathSync.native(self); }
+  catch { return resolve(argv1) === self; }
+}
+if (isEntryPoint(import.meta.url)) {
   const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
   rl.on('line', line => {
     try { void handleMessage(JSON.parse(line)).catch(err => process.stderr.write(`MCP processing failed: ${err?.name || 'Error'}\n`)); }

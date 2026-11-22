@@ -2,12 +2,13 @@ import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { WORKER_TYPES } from './workers.mjs';
 
 const ENDPOINT = 'https://api.openai.com/v1';
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 const FINAL = new Set(['completed', 'failed', 'cancelled', 'incomplete']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
-const prices = {
+export const LOCAL_PRICE_ESTIMATES = Object.freeze({
   'gpt-6.2-astra': [8, 40, 0.4],
   'gpt-6.2-sol': [2, 10, 0.1],
   'gpt-6-luna': [0.1, 0.5, 0.01],
@@ -15,7 +16,7 @@ const prices = {
   'gpt-6.1-terra': [1, 5, 0.05],
   'gpt-6-astra': [10, 50, 1],
   'gpt-5.6-terra': [2, 12, 0.2],
-};
+});
 const myDir = dirname(fileURLToPath(import.meta.url));
 const cachedKeys = new Map();
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -28,6 +29,9 @@ const PROFILES = {
   free: { env: 'OPENAI_FREE_API_KEY', file: 'openai-free-key.dpapi' },
 };
 export function keyProfileForWorker(workerType) {
+  // Undefined is the legacy native bridge's standard-key route; a misspelled
+  // named worker must never silently become a paid worker.
+  if (workerType !== undefined && !Object.hasOwn(WORKER_TYPES, workerType)) throw new Error('Unknown worker key route.');
   return workerType === 'daily-astrafree' || workerType === 'daily-terrafree' ? 'free' : 'standard';
 }
 function providedKey(value) {
@@ -67,7 +71,9 @@ export function getKey(env = process.env, profile = 'standard') {
 
 // Limit errors to upstream status/message. Never expose request headers, the API key, or raw response dumps.
 export async function request(method, route, body, options = {}) {
-  const key = options.key ?? getKey(process.env, options.profile ?? 'standard');
+  let key;
+  try { key = options.key ?? getKey(options.env ?? process.env, options.profile ?? 'standard'); }
+  catch (error) { error.usageDisposition = 'not_started'; throw error; }
   const doFetch = options.fetchFn ?? fetch;
   const maxTries = method === 'GET' ? 3 : 1;
   for (let i = 0; i < maxTries; ++i) {
@@ -82,18 +88,40 @@ export async function request(method, route, body, options = {}) {
           ? 15 * 60 * 1000 : 30000),
       });
     } catch (err) {
-      throw new Error(`OpenAI request failed: ${err?.name === 'TimeoutError' ? 'timeout' : 'network error'}`);
+      const failure = new Error(`OpenAI request failed: ${err?.name === 'TimeoutError' ? 'timeout' : 'network error'}`);
+      failure.usageDisposition = method === 'GET' ? 'read_only' : 'ambiguous';
+      throw failure;
     }
     if (response.ok) {
       try { return await response.json(); }
-      catch { throw new Error('OpenAI returned invalid JSON.'); }
+      catch { const failure = new Error('OpenAI returned invalid JSON (ambiguous network response).'); failure.usageDisposition = method === 'GET' ? 'read_only' : 'ambiguous'; throw failure; }
     }
     if (i + 1 < maxTries && RETRYABLE.has(response.status)) { await pause(300 * (i + 1)); continue; }
     const json = await response.json().catch(() => null);
     const raw = json?.error?.message ?? response.statusText ?? 'request rejected';
     const safe = String(raw).split(key).join('[redacted]').slice(0, 400);
-    throw new Error(`OpenAI HTTP ${response.status}: ${safe}`);
+    const failure = new Error(`OpenAI HTTP ${response.status}: ${safe}`);
+    // A server failure can arrive after a POST was accepted. Do not release
+    // reservations merely because an HTTP response was received.
+    failure.usageDisposition = method === 'GET' ? 'read_only' : response.status >= 400 && response.status < 500 ? 'rejected' : 'ambiguous';
+    throw failure;
   }
+}
+
+/** Frozen local estimates, not authoritative OpenAI billing or eligibility. */
+export function estimateUsageUsd(model, usage, serviceTier = null) {
+  const p = Object.hasOwn(LOCAL_PRICE_ESTIMATES, model) ? LOCAL_PRICE_ESTIMATES[model] : null;
+  if (!p || (serviceTier !== null && !SERVICE_TIERS.has(serviceTier))) return null;
+  if (!usage || !['input', 'output'].every(key => Number.isSafeInteger(usage[key]) && usage[key] >= 0)) return null;
+  const cached = usage.cached ?? 0;
+  if (!Number.isSafeInteger(cached) || cached < 0 || cached > usage.input) return null;
+  const multiplier = serviceTier === 'flex' ? 0.5 : ['fast', 'priority'].includes(serviceTier) ? 2 : 1;
+  return Number(((Math.max(0, usage.input - cached) * p[0] + cached * p[2] + usage.output * p[1]) * multiplier / 1_000_000).toFixed(7));
+}
+
+/** Only explicit HTTP rejection or validation before transport proves no usage. */
+export function mayHaveIncurredUsage(error) {
+  return !['not_started', 'rejected', 'read_only'].includes(error?.usageDisposition);
 }
 
 export function normalize(response) {
@@ -108,20 +136,24 @@ export function normalize(response) {
     catch { args = null; }
     return { call_id: item.call_id, name: item.name, args };
   });
-  const u = response.usage ?? {};
-  const usage = { input: u.input_tokens ?? 0, cached: u.input_tokens_details?.cached_tokens ?? 0, output: u.output_tokens ?? 0, total: u.total_tokens ?? ((u.input_tokens ?? 0) + (u.output_tokens ?? 0)) };
-  const p = prices[response.model];
-  // Estimate using the tier that actually served the request, which can
-  // differ from the requested tier (e.g. Fast capacity downgrade).
+  const u = response.usage;
+  const valid = value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  // Absence, partial fields, inconsistent totals and malformed counts are all
+  // unknown evidence. A fabricated {input:0, output:0} must not settle a bill.
+  const complete = u && valid(u.input_tokens) && valid(u.output_tokens) &&
+    (u.total_tokens === undefined || (valid(u.total_tokens) && u.total_tokens === u.input_tokens + u.output_tokens)) &&
+    (u.input_tokens_details?.cached_tokens === undefined || (valid(u.input_tokens_details.cached_tokens) && u.input_tokens_details.cached_tokens <= u.input_tokens));
+  const usage = complete ? { input: u.input_tokens, cached: u.input_tokens_details?.cached_tokens ?? 0,
+    output: u.output_tokens, total: u.total_tokens ?? u.input_tokens + u.output_tokens } : null;
   const serviceTier = response.service_tier ?? null;
-  const multiplier = serviceTier === 'flex' ? 0.5 : (serviceTier === 'fast' || serviceTier === 'priority') ? 2 : 1;
-  const estimatedUsd = p ? Number(((Math.max(0, usage.input - usage.cached) * p[0] + usage.cached * p[2] + usage.output * p[1]) * multiplier / 1_000_000).toFixed(7)) : 0;
+  const estimatedUsd = usage ? estimateUsageUsd(response.model, usage, serviceTier) : null;
   const reason = response.error?.message ?? response.incomplete_details?.reason ?? undefined;
-  return { id: response.id, status, text, calls, usage, estimatedUsd, serviceTier,
+  return { id: response.id, status, text, calls, usage, usageStatus: usage ? 'verified' : 'unknown', estimatedUsd,
+    priceStatus: estimatedUsd === null ? 'unknown' : 'estimated', model: response.model ?? null, serviceTier,
     ...(reason && { reason: String(reason).slice(0, 300) }) };
 }
 
-export async function createTurn(args, options = {}) {
+export function validateTurnArgs(args) {
   if (typeof args.model !== 'string' || !/^gpt-[\w.-]{1,80}$/.test(args.model)) throw new Error('Invalid model name.');
   if (typeof args.instructions !== 'string' || !args.instructions) throw new Error('Instructions are required.');
   if (!Array.isArray(args.tools)) throw new Error('Tool manifest required.');
@@ -132,13 +164,22 @@ export async function createTurn(args, options = {}) {
     throw new Error(`Flex processing is unavailable for ${args.model}. Choose a supported model (e.g. gpt-6.1-sol) or set the service tier to default/fast.`);
   }
   const effort = ['none', 'low', 'medium', 'high', 'xhigh', 'max'].includes(args.effort) ? args.effort : 'high';
-  const payload = {
+  return {
     model: args.model, instructions: args.instructions, input: args.input, tools: args.tools,
     reasoning: { effort }, store: true, background: true, parallel_tool_calls: true,
     max_output_tokens: Math.min(32000, Math.max(1024, Number(args.max_output_tokens) || 16000)),
     ...(args.previous_response_id && { previous_response_id: args.previous_response_id }),
     ...(args.service_tier !== undefined && { service_tier: args.service_tier }),
   };
+}
+
+export async function createTurn(args, options = {}) {
+  if (args.worker_type !== undefined) {
+    const expected = keyProfileForWorker(args.worker_type);
+    if (options.profile !== undefined && options.profile !== expected) throw new Error('Worker key-profile mismatch; no fallback is permitted.');
+    options = { ...options, profile: expected };
+  }
+  const payload = validateTurnArgs(args);
   return normalize(await request('POST', '/responses', payload, options));
 }
 export async function pollTurn(id, options = {}) {
