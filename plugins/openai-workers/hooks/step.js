@@ -1,4 +1,5 @@
 import { filterToolArgs } from './tools.js';
+import { filterNativeToolArgs } from './ultra.js';
 
 export const newRun = () => ({ responseId: null, pending: [], seenPrompts: 0, steps: 0, estimatedUsd: 0, finished: false, handback: null });
 export const toolId = (callId) => `toolu_${callId}`.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -34,7 +35,7 @@ export function finalStep(text, seed, handback) {
     answer: '', toolUses: [{ name: 'SubagentHandback', input }], stopReason: 'tool_use',
     pending: [], finished: true, handback: { id, message: text } };
 }
-export function responseStep(response, seed, handback) {
+export function responseStep(response, seed, handback, nativeOptions) {
   if (response.status !== 'completed') return finalStep(`OpenAI worker ended with status ${response.status}: ${response.reason ?? 'no further information'}`, seed, handback);
   const calls = response.calls ?? [];
   if (!calls.length) return finalStep(response.text?.trim() || '(OpenAI returned no text.)', seed, handback);
@@ -45,7 +46,12 @@ export function responseStep(response, seed, handback) {
   for (const call of calls) {
     // Unknown or malformed calls are never executed; return a clearly reported error instead.
     let args;
-    try { args = filterToolArgs(call.name, call.args); }
+    try {
+      if (nativeOptions) {
+        if (!nativeOptions.allowedTools.includes(call.name)) throw new Error(`Tool ${call.name} is outside this ULTRA allocation`);
+        args = filterNativeToolArgs(call.name, call.args);
+      } else args = filterToolArgs(call.name, call.args);
+    }
     catch (error) { return finalStep(`OpenAI produced a tool call the bridge refused: ${String(error.message)}.`, seed, handback); }
     const index = toolUses.length + (prefix ? 1 : 0);
     chunks.push({ kind: 'tool', index, id: toolId(call.call_id), name: call.name });

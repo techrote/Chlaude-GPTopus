@@ -137,11 +137,11 @@ export async function scenarioA() {
       return { text: JSON.stringify({ findings: [], coverage: [{ area: 'independent findings and gap note', status: 'examined' }], resolutions: [], summary: 'Synthetic code passes; execution remains separately gated.' }) };
     });
     const runtime = runtimeFor(ctx, backend), reviews = new ReviewController(ctx.broker), actions = new ActionGate(ctx.broker);
-    const authorRequest = await ctx.broker.request(ctx.missionId, 'root', { worker: 'luna', role: 'implementation', task: 'Write a simple cleanup planner in an isolated stage.', risk: HIGH_RISK }, 'author');
+    const authorRequest = await ctx.broker.request(ctx.missionId, 'root', { worker: 'luna6', role: 'implementation', task: 'Write a simple cleanup planner in an isolated stage.', risk: HIGH_RISK }, 'author');
     await drain(ctx, runtime);
     let snapshot = await ctx.store.snapshot(ctx.missionId), author = snapshot.nodes[authorRequest.nodeId];
     const authored = JSON.parse(author.results.at(-1).value.text);
-    assert.equal(author.worker, 'luna'); assert.equal(authored.patch.applied, false); assert.equal(authored.patch.patches[0].content, FLAWED);
+    assert.equal(author.worker, 'luna6'); assert.equal(authored.patch.applied, false); assert.equal(authored.patch.patches[0].content, FLAWED);
     assert.equal(await fs.readFile(path.join(ctx.project, 'src', 'cleanup.js'), 'utf8'), SAFE_BASE);
     // Designated verification: high-impact work needs a plan naming the exact tests; one arbitrary passing test is not enough.
     let workflow = await reviews.start(ctx.missionId, { authorId: author.id, source: authored.source, risk: HIGH_RISK,
@@ -153,7 +153,7 @@ export async function scenarioA() {
     snapshot = await drain(ctx, runtime, { predicate: m => m.workflows[workflow.id].round === 2 && m.workflows[workflow.id].status === 'review' });
     workflow = snapshot.workflows[workflow.id];
     const reworker = Object.values(snapshot.nodes).find(n => n.role === 'reworker');
-    assert.equal(reworker.worker, 'sol'); assert.equal(reworker.pool, 'core');
+    assert.equal(reworker.worker, 'sol6-2'); assert.equal(reworker.pool, 'core');
     const revised = JSON.parse(reworker.results.at(-1).value.text); assert.equal(revised.patch.applied, false);
     const tested = fixtureTests(workflow.source.content); assert.equal(tested.passed, true);
     // The in-process fixture stands in for the trusted executor; its attestation is synthetic, not a sandbox qualification.
@@ -163,7 +163,7 @@ export async function scenarioA() {
     workflow = snapshot.workflows[workflow.id];
     assert.equal(workflow.reviews.filter(r => ['reviewer', 'second_opinion'].includes(r.role)).length, 4);
     const gap = Object.values(snapshot.nodes).find(n => n.role === 'gap_inspector');
-    assert.equal(gap.worker, 'luna'); assert.notEqual(gap.id, author.id);
+    assert.equal(gap.worker, 'luna6'); assert.notEqual(gap.id, author.id);
     assert.equal(workflow.status, 'code_approved');
     const proposed = { kind: 'delete', description: 'Synthetic request to apply the cleanup plan; never executed.', workflowId: workflow.id, sourceHash: workflow.source.hash, targets: ['cache/a.tmp'] };
     const action = await actions.propose(ctx.missionId, author.id, proposed);
@@ -195,7 +195,7 @@ export async function scenarioB() {
       ...(mode === 'SKYNET' ? [{ id: 'combined-sol-check', authority: 'helicop-sol', enabled: true, when: { parentFamilies: ['sol'], childFamilies: ['astra'] }, mandatory: true, veto: true, priority: 50 }] : []),
     ];
     runs.push(await withContext(`B_${mode}`, { recruitment: { mode }, helicop: { rules: baseRules } }, async ctx => {
-      const workers = mode === 'SWARM' ? ['daily-terrafree', 'luna'] : mode === 'REPLICATOR' ? ['sol'] : ['astra'];
+      const workers = mode === 'SWARM' ? ['terra5-6free', 'luna6'] : mode === 'REPLICATOR' ? ['sol6-2'] : ['astra6-2'];
       const backend = backendFor(ctx, ({ node, args, step, state }) => {
         if (node.task !== 'recursive-parent') return { text: 'Bounded child result.' };
         if (state.waiting) return { text: 'Parent received completed child results.' };
@@ -205,11 +205,11 @@ export async function scenarioB() {
         return { calls: [call('agent_results', {})] };
       });
       const runtime = runtimeFor(ctx, backend);
-      const parent = await ctx.broker.request(ctx.missionId, 'root', { worker: 'sol', role: 'exploration', task: 'recursive-parent', mode, risk: LOW_RISK }, 'recursive-parent');
+      const parent = await ctx.broker.request(ctx.missionId, 'root', { worker: 'sol6-2', role: 'exploration', task: 'recursive-parent', mode, risk: LOW_RISK }, 'recursive-parent');
       if (mode === 'SWARM') {
-        const denied = await ctx.broker.request(ctx.missionId, parent.nodeId, { worker: 'astra', role: 'implementation', task: 'Attempt forbidden higher author.', risk: LOW_RISK }, 'forbidden-upgrade');
+        const denied = await ctx.broker.request(ctx.missionId, parent.nodeId, { worker: 'astra6-2', role: 'implementation', task: 'Attempt forbidden higher author.', risk: LOW_RISK }, 'forbidden-upgrade');
         assert.equal(denied.status, 'rejected');
-        const relabel = await ctx.broker.request(ctx.missionId, parent.nodeId, { worker: 'astra', mode: 'SKYNET', role: 'implementation', task: 'Attempt mode laundering.', risk: LOW_RISK }, 'launder');
+        const relabel = await ctx.broker.request(ctx.missionId, parent.nodeId, { worker: 'astra6-2', mode: 'SKYNET', role: 'implementation', task: 'Attempt mode laundering.', risk: LOW_RISK }, 'launder');
         assert.equal(relabel.status, 'rejected');
       }
       const snapshot = await drain(ctx, runtime), nodes = Object.values(snapshot.nodes);
@@ -229,7 +229,7 @@ export async function scenarioB() {
 export async function scenarioC() {
   const runs = [];
   for (const model of ['opus', 'fable', 'sonnet', 'haiku']) runs.push(await withContext(`C_${model}`, {}, async ctx => {
-    const request = await ctx.broker.request(ctx.missionId, 'root', { worker: 'astra', role: 'exploration', task: 'A bounded architect task.', risk: LOW_RISK }, 'identity');
+    const request = await ctx.broker.request(ctx.missionId, 'root', { worker: 'astra6-2', role: 'exploration', task: 'A bounded architect task.', risk: LOW_RISK }, 'identity');
     assert.equal(request.status, ['opus', 'fable'].includes(model) ? 'queued' : 'pending');
     if (model === 'haiku') assert.equal(request.evaluation.requiredApprovals.find(a => a.id === 'orchestrator-authority').decisionMaker, true);
     const runtime = runtimeFor(ctx, backendFor(ctx)); const snapshot = await drain(ctx, runtime);
@@ -242,7 +242,7 @@ export async function scenarioC() {
   runs.push(await withContext('C_unverified', {}, async ctx => {
     // The caller can spell 'opus', but untrusted identity never gains its authority.
     await ctx.store.transaction(state => { state.missions[ctx.missionId].orchestrator = { model: 'opus', trusted: false, source: 'caller-string-fixture' }; });
-    const request = await ctx.broker.request(ctx.missionId, 'root', { worker: 'astra', role: 'exploration', task: 'Unverified caller request.', risk: LOW_RISK }, 'unverified');
+    const request = await ctx.broker.request(ctx.missionId, 'root', { worker: 'astra6-2', role: 'exploration', task: 'Unverified caller request.', risk: LOW_RISK }, 'unverified');
     assert.equal(request.status, 'pending'); assert.ok(request.evaluation.requiredApprovals.some(a => a.authority === 'user'));
     const runtime = runtimeFor(ctx, backendFor(ctx)); assert.equal((await runtime.tick(ctx.missionId)).length, 0);
     ctx.observations.push('A caller-supplied Opus string remains restricted and awaits the configured authority.');
@@ -252,21 +252,21 @@ export async function scenarioC() {
 }
 
 export async function scenarioD() {
-  return withContext('D', { recruitment: { mode: 'REPLICATOR' }, review: { primary: 'sol' }, mission: { maxTokens: 600000, maxUsd: 80 } }, async ctx => {
+  return withContext('D', { recruitment: { mode: 'REPLICATOR' }, review: { primary: 'sol6-2' }, mission: { maxTokens: 600000, maxUsd: 80 } }, async ctx => {
     const core = [];
-    for (let i = 0; i < 12; i++) core.push(await ctx.broker.request(ctx.missionId, 'root', { worker: i === 0 ? 'sol' : 'luna', role: 'exploration', task: `Core saturation ${i}`, risk: LOW_RISK }, `core-${i}`));
-    await assert.rejects(ctx.broker.request(ctx.missionId, 'root', { worker: 'luna', role: 'exploration', task: 'Thirteenth Core allocation', risk: LOW_RISK }, 'overflow'), /invocation limit/);
-    for (let i = 0; i < 3; i++) await ctx.broker.request(ctx.missionId, 'root', { worker: 'astra', role: 'reviewer', task: `Independent critical review ${i}`, risk: HIGH_RISK, budget: { tokens: 16000, usd: 2 } }, `review-${i}`);
+    for (let i = 0; i < 12; i++) core.push(await ctx.broker.request(ctx.missionId, 'root', { worker: i === 0 ? 'sol6-2' : 'luna6', role: 'exploration', task: `Core saturation ${i}`, risk: LOW_RISK }, `core-${i}`));
+    await assert.rejects(ctx.broker.request(ctx.missionId, 'root', { worker: 'luna6', role: 'exploration', task: 'Thirteenth Core allocation', risk: LOW_RISK }, 'overflow'), /invocation limit/);
+    for (let i = 0; i < 3; i++) await ctx.broker.request(ctx.missionId, 'root', { worker: 'astra6-2', role: 'reviewer', task: `Independent critical review ${i}`, risk: HIGH_RISK, budget: { tokens: 16000, usd: 2 } }, `review-${i}`);
     for (let i = 0; i < 4; i++) assert.ok(await ctx.broker.claim(ctx.missionId, 'core-fixture', { pool: 'core' }));
     assert.equal(await ctx.broker.claim(ctx.missionId, 'core-fixture', { pool: 'core' }), null);
     for (let i = 0; i < 2; i++) assert.ok(await ctx.broker.claim(ctx.missionId, 'review-fixture', { pool: 'review' }));
     assert.equal(await ctx.broker.claim(ctx.missionId, 'review-fixture', { pool: 'review' }), null, 'Ordinary review must leave protected slot unused');
     // The fixture owner preauthorises Sol under Policy B; the parent cannot
     // select another reviewer merely because capacity is available.
-    const wrongReviewer = await ctx.broker.request(ctx.missionId, core[0].nodeId, { worker: 'luna', role: 'reviewer', task: 'Attempt to substitute the preauthorised reviewer.', risk: LOW_RISK, budget: { tokens: 16000, usd: 2 } }, 'wrong-reviewer');
+    const wrongReviewer = await ctx.broker.request(ctx.missionId, core[0].nodeId, { worker: 'luna6', role: 'reviewer', task: 'Attempt to substitute the preauthorised reviewer.', risk: LOW_RISK, budget: { tokens: 16000, usd: 2 } }, 'wrong-reviewer');
     assert.equal(wrongReviewer.status, 'rejected');
     assert.ok(wrongReviewer.evaluation.reasons.some(reason => reason.includes('preauthorised')));
-    const pending = await ctx.broker.request(ctx.missionId, core[0].nodeId, { worker: 'sol', role: 'reviewer', task: 'Mandatory peer review under saturation.', risk: LOW_RISK, budget: { tokens: 16000, usd: 2 } }, 'mandatory');
+    const pending = await ctx.broker.request(ctx.missionId, core[0].nodeId, { worker: 'sol6-2', role: 'reviewer', task: 'Mandatory peer review under saturation.', risk: LOW_RISK, budget: { tokens: 16000, usd: 2 } }, 'mandatory');
     assert.equal(pending.status, 'pending');
     const supervisor = await ctx.broker.appointSupervisor(ctx.missionId, pending.id, 'helicop-sol');
     const claimed = await ctx.broker.claim(ctx.missionId, 'supervisor-fixture', { pool: 'review' });
@@ -275,7 +275,7 @@ export async function scenarioD() {
     const diagnostics = await ctx.broker.diagnostics(ctx.missionId);
     assert.equal(diagnostics.fleets.core.invocations, 12); assert.equal(diagnostics.fleets.core.running, 4);
     assert.equal(diagnostics.fleets.review.running, 2);
-    await assert.rejects(ctx.broker.request(ctx.missionId, 'root', { worker: 'astra', role: 'reviewer', task: 'Exceed the shared limit.', risk: LOW_RISK, budget: { tokens: 100000, usd: 2 } }, 'shared-overflow'), /Shared mission token budget/);
+    await assert.rejects(ctx.broker.request(ctx.missionId, 'root', { worker: 'astra6-2', role: 'reviewer', task: 'Exceed the shared limit.', risk: LOW_RISK, budget: { tokens: 100000, usd: 2 } }, 'shared-overflow'), /Shared mission token budget/);
     ctx.observations.push('All 12 Lite Core invocations were allocated; four Core agents and two ordinary reviewers occupied their independent running slots.',
       'Ordinary Review work could not consume the protected third slot; a mandatory HELICOP-SOL executed there.',
       'Policy B used an explicitly owner-preauthorised Sol reviewer and rejected a reviewer substitution.',
@@ -301,7 +301,7 @@ export async function scenarioE() {
         return editorProgram(FIXED)(data);
       });
       const runtime = runtimeFor(ctx, backend);
-      const request = await ctx.broker.request(ctx.missionId, 'root', { worker: 'luna', role: 'implementation', task: `Profile ${profile} fixture.`, risk: LOW_RISK }, 'profile');
+      const request = await ctx.broker.request(ctx.missionId, 'root', { worker: 'luna6', role: 'implementation', task: `Profile ${profile} fixture.`, risk: LOW_RISK }, 'profile');
       await drain(ctx, runtime);
       const snapshot = await ctx.store.snapshot(ctx.missionId), node = snapshot.nodes[request.nodeId], boundary = runtime.boundary(snapshot, node);
       if (profile === 'A') await assert.rejects(boundary.readFile('0', 'README.md'), error => error.code === 'PROFILE');
@@ -327,7 +327,7 @@ export async function scenarioF() {
       if (method === 'create') { creates++; return { id: 'resp_resume_known', status: 'in_progress' }; }
       polls++; return { id: args.id, status: 'completed', text: 'Preserved accepted response after restart.', usage: { total_tokens: 32, total: 32, input: 24, output: 8 }, estimatedUsd: 0.00001 };
     }; backend.offline = true;
-    const request = await ctx.broker.request(ctx.missionId, 'root', { worker: 'luna', role: 'exploration', task: 'Recover an accepted request.', risk: LOW_RISK }, 'recover-known');
+    const request = await ctx.broker.request(ctx.missionId, 'root', { worker: 'luna6', role: 'exploration', task: 'Recover an accepted request.', risk: LOW_RISK }, 'recover-known');
     await runtimeFor(ctx, backend).tick(ctx.missionId);
     const crashed = await ctx.broker.claim(ctx.missionId, 'crashed-process', { leaseMs: 10 }); assert.equal(crashed.id, request.nodeId);
     ctx.advance(100);
@@ -335,7 +335,7 @@ export async function scenarioF() {
     ctx.broker = new RecruitmentBroker(restartedStore, { config: { enabled: true }, now: ctx.now }); ctx.store = restartedStore;
     const resumed = await runtimeFor(ctx, backend).tick(ctx.missionId);
     assert.equal(resumed[0].status, 'completed'); assert.equal(creates, 1); assert.equal(polls, 1);
-    const unknown = await ctx.broker.request(ctx.missionId, 'root', { worker: 'luna', role: 'exploration', task: 'Ambiguous sent request.', risk: LOW_RISK }, 'recover-unknown');
+    const unknown = await ctx.broker.request(ctx.missionId, 'root', { worker: 'luna6', role: 'exploration', task: 'Ambiguous sent request.', risk: LOW_RISK }, 'recover-unknown');
     const claim = await ctx.broker.claim(ctx.missionId, 'crashed-process', { leaseMs: 10 }); assert.equal(claim.id, unknown.nodeId);
     await ctx.broker.checkpoint(ctx.missionId, claim.id, claim.lease.token, { runtime: { phase: 'sending', steps: 0, usage: { tokens: 0, usd: 0 }, requestKey: 'accepted-or-lost' } });
     ctx.advance(100); await ctx.broker.recover(ctx.missionId);

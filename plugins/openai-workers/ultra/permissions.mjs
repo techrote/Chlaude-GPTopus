@@ -13,6 +13,8 @@ const refuse = (code, message) => { throw new PermissionError(code, message); };
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
 const clone = value => JSON.parse(JSON.stringify(value));
 const secret = /^(?:\.env(?:\..*)?|\.git|\.ssh|\.aws|\.azure|\.gnupg|\.kube|\.npmrc|\.pypirc|\.netrc|\.claude|\.codex|\.ultra(?:[-.].*)?|\.claude-openai-workers|ClaudeOpenAIWorkers|free-usage-ledger\.json|credentials?(?:\..*)?|secrets?(?:\..*)?|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|.*\.(?:pem|key|p12|pfx|kdbx|dpapi))$/i;
+/** Does a single path component name a credential or control location the boundary always refuses (e.g. *.key, .env, .claude)? */
+export const isSecretPathComponent = name => secret.test(name);
 const device = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/i;
 const coreRoles = new Set(['author', 'implementation', 'reworker', 'rework']);
 const inside = (root, target) => { const rel = path.relative(root, target); return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel)); };

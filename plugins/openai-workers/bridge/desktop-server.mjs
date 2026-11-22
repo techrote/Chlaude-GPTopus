@@ -9,23 +9,26 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { dispatch } from './server.mjs';
-import { WORKER_TYPES, workerSettings, EFFORTS, selectWorkerEffort } from './workers.mjs';
+import { OPENAI_WORKERS, workerSettings, EFFORTS, selectWorkerEffort, isProviderWorker, canonicalWorker } from './workers.mjs';
 import { configuredKey } from './openai.mjs';
+import { publicDefinitions, readOwnerConfig } from '../ultra/service.mjs';
+import { isNativeNamespaceName } from '../hooks/ultra.js';
 
 const MAX_TASK_CHARS = 60000;
 const MAX_CONTEXT_CHARS = 180000;
 const ID_RE = /^resp_[A-Za-z0-9_-]{4,128}$/;
-const agentEnum = Object.keys(WORKER_TYPES);
+// Desktop Chat delegates to the OpenAI workers only; provider workers run inside Claude Code.
+const agentEnum = [...OPENAI_WORKERS];
 const MODERN_PROTOCOL = '2026-07-28';
 const LEGACY_PROTOCOLS = Object.freeze(['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']);
 const PROTOCOL_VERSION_META = 'io.modelcontextprotocol/protocolVersion';
 const SERVER_INFO_META = 'io.modelcontextprotocol/serverInfo';
-const SERVER_INFO = Object.freeze({ name: 'chlaude-gptopus-desktop', version: '0.7.0' });
+const SERVER_INFO = Object.freeze({ name: 'chlaude-gptopus-desktop', version: '0.8.0' });
 const SERVER_CAPABILITIES = Object.freeze({ tools: Object.freeze({ listChanged: false }) });
 export const definitions = [
-  { name: 'list_openai_workers', description: 'List the six available OpenAI workers, chosen models, tier and two-key configuration. Never returns secrets.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'list_openai_workers', description: 'List the eight available OpenAI workers, chosen models, tier and two-key configuration. Never returns secrets.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'ask_openai_worker', description: 'Delegate a bounded text task to an OpenAI worker. Free workers use a separate free-programme API key and a persistent daily token guardrail; other workers use the straight API key. Returns a response ID to poll if the task is still running. This tool does not read or edit local files.', inputSchema: { type: 'object', properties: {
-    worker: { type: 'string', enum: agentEnum, description: 'One of six OpenAI worker profiles.' },
+    worker: { type: 'string', enum: agentEnum, description: 'One of eight OpenAI worker profiles.' },
     task: { type: 'string', description: 'Your question or task. Include any relevant source code or context explicitly.' },
     context: { type: 'string', description: 'Optional additional context to pass to OpenAI; no files are read automatically.' },
     reasoning_effort: { type: 'string', enum: [...EFFORTS], description: 'Optional API reasoning effort. Claude should choose within the selected worker’s advertised min..max range; out-of-range requests are clamped.' },
@@ -72,14 +75,36 @@ function formatReply(response, worker, effortSelection = null) {
     ...(response.status === 'in_progress' && { next_step: `Call poll_openai_worker with worker="${worker}" and response_id="${response.id}" until completed.` }),
   };
 }
+// Desktop Chat has no private channel at all: not authenticated, not a degraded
+// form of it. Refuse the whole namespace in any spelling BEFORE anything else
+// (including reading policy) and before any backend can be named. The later
+// dispatch is exact-match, so a spelling that slips this filter still cannot
+// reach the Code-only controller, which additionally demands the owner-key proof.
+// The mod's host-side guard uses this very function (hooks/ultra.js), so the two
+// refuse exactly the same set of spellings.
+const privateNamespace = isNativeNamespaceName;
 export async function invoke(name, args = {}, backend = dispatch, env = process.env) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Tool arguments must be an object.');
+  if (privateNamespace(name)) throw new Error('Private native control operations are not available in Desktop Chat');
+  const policy = await readOwnerConfig(env);
+  if (typeof name === 'string' && name.startsWith('ultra_')) {
+    if (!publicDefinitions.some(d => d.name === name)) throw new Error('Unknown public ULTRA operation');
+    if (!policy.enabled && name !== 'ultra_diagnostics') throw new Error('ULTRA is disabled in owner policy');
+    return backend(name, args);
+  }
+  if (policy.enabled && ['ask_openai_worker', 'poll_openai_worker', 'cancel_openai_worker'].includes(name)) {
+    throw new Error('ULTRA policy is enabled. Use ultra_start, ultra_recruit, ultra_step and ultra_cancel so authority, lineage and budgets are enforced. Existing response usage remains reconcilable through daily usage.');
+  }
   if (name === 'list_openai_workers') return {
     workers: agentEnum.map(agent => workerSettings(agent, env)),
     keys: { standard: Boolean(configuredKey(env, 'standard')), free: Boolean(configuredKey(env, 'free')) },
-    note: 'Claude Desktop Chat uses text-only MCP delegation. Native file/shell-enabled agents run in Claude Code CLI and Desktop Code tab. Never put keys into prompts.',
+    note: 'Default Desktop Chat delegation is think-only. Opt-in ULTRA uses owner policy for scoped reads and private stages; inspect ultra_diagnostics. Native tools require separately qualified local Code integration. Never put keys into prompts.',
   };
   if (name === 'openai_worker_daily_usage') return backend('usage', {});
+  // The published enum is not enforcement: NVIDIA / LM Studio provider workers stay inside Claude Code.
+  if (['ask_openai_worker', 'poll_openai_worker', 'cancel_openai_worker'].includes(name) && isProviderWorker(canonicalWorker(args.worker))) {
+    throw new Error(`Desktop Chat delegates to OpenAI workers only (${agentEnum.join(', ')}).`);
+  }
   if (name === 'ask_openai_worker') {
     const selected = workerSettings(args.worker, env); // fails closed for unknown workers
     const task = assertText(args.task, 'task', MAX_TASK_CHARS, true);
@@ -145,12 +170,17 @@ export async function handleMessage(msg, write = chunk => process.stdout.write(c
       return writeError(write, id, -32602, 'server/discover requires io.modelcontextprotocol/protocolVersion metadata');
     }
     if (requestedModern !== MODERN_PROTOCOL) return unsupportedVersion(write, id, requestedModern);
+    let policy;
+    try { policy = await readOwnerConfig(env); }
+    catch { return writeError(write, id, -32603, 'Owner ULTRA policy could not be validated; discovery is held.'); }
     const result = stampModernResult({
       supportedVersions: [MODERN_PROTOCOL],
       capabilities: SERVER_CAPABILITIES,
-      instructions: 'Text-only OpenAI worker delegation. No file system or shell access is exposed by this server.',
-      ttlMs: 3600000,
-      cacheScope: 'public',
+      instructions: policy.enabled
+        ? `ULTRA governed worker orchestration. Desktop profile ${policy.desktop.profile}: ${policy.desktop.profile === 'A' ? 'think-only; no project file access' : policy.desktop.profile === 'B' ? 'read-only access to explicitly owner-selected project roots' : 'scoped reads and private staged patches; no live-project application'}. All recruitment, budgets and approval gates remain binding. No general shell execution is exposed. Inspect ultra_diagnostics before work.`
+        : 'Text-only OpenAI worker delegation. No file system or shell access is exposed by this server.',
+      ttlMs: policy.enabled ? 0 : 3600000,
+      cacheScope: policy.enabled ? 'private' : 'public',
     });
     return write(serialize({ jsonrpc: '2.0', id, result }));
   }
@@ -173,9 +203,11 @@ export async function handleMessage(msg, write = chunk => process.stdout.write(c
         result = {};
         break;
       case 'tools/list':
+        const ultraEnabled = (await readOwnerConfig(env)).enabled;
+        const listed = ultraEnabled ? [...definitions.filter(d => !['ask_openai_worker', 'poll_openai_worker', 'cancel_openai_worker'].includes(d.name)), ...publicDefinitions] : definitions;
         result = modern
-          ? stampModernResult({ tools: definitions, ttlMs: 3600000, cacheScope: 'public' })
-          : { tools: definitions };
+          ? stampModernResult({ tools: listed, ttlMs: ultraEnabled ? 0 : 3600000, cacheScope: ultraEnabled ? 'private' : 'public' })
+          : { tools: listed };
         break;
       case 'tools/call': {
         try {

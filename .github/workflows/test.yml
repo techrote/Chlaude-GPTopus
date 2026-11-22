@@ -1,7 +1,8 @@
-name: Plugin unit tests
+name: ULTRA source qualification
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -22,9 +23,28 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Verify committed desktop MCP extension is reproducible
         run: node scripts/build-desktop.mjs --check
-      - name: Run unit tests
+      - name: Run unit, integration and independent adversarial suites
         working-directory: plugins/openai-workers
         run: npm test
+
+      - name: Run exact-source offline owner scenarios
+        if: matrix.node == '22'
+        run: node scripts/ultra-evaluate.mjs --output "${{ runner.temp }}/ultra-offline" --expect-sha ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Exercise Windows owner entry point
+        if: matrix.node == '22' && matrix.os == 'windows-latest'
+        shell: powershell
+        run: .\scripts\Evaluate-ULTRA.ps1 -NonInteractive -OutputDirectory "$env:RUNNER_TEMP\ultra-windows-owner" -ExpectedSha ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Upload offline evidence
+        if: always() && matrix.node == '22'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultra-offline-${{ matrix.os }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/ultra-offline/
+            ${{ runner.temp }}/ultra-windows-owner/
+          if-no-files-found: warn
 
       - name: Validate desktop MCPB manifest (official toolchain)
         if: matrix.node == '22' && matrix.os == 'ubuntu-latest'

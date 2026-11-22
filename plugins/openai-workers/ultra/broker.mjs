@@ -216,7 +216,7 @@ export class RecruitmentBroker {
       invariant(required && authority !== 'user', 'No automatic supervisor for this authority');
       const previous = Object.values(m.nodes).find(n => n.supervises === requestId && n.authority === authority);
       if (previous) return previous;
-      const worker = authority === 'helicop-astra' ? 'astra' : authority === 'helicop-sol' ? 'sol' : null;
+      const worker = authority === 'helicop-astra' ? 'astra6-2' : authority === 'helicop-sol' ? 'sol6-2' : null;
       invariant(worker && m.config.workers[worker], 'Required supervisor is unavailable');
       const spec = m.config.workers[worker];
       const root = nodeOf(m, m.rootAgentId);

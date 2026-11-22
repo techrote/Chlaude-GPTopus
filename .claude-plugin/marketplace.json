@@ -1,12 +1,14 @@
 {
   "name": "openai-worker-local",
   "description": "Local Claude Code plugins for OpenAI-powered subagents",
-  "owner": { "name": "Local plugin package" },
+  "owner": {
+    "name": "Local plugin package"
+  },
   "plugins": [
     {
-      "name": "openai-workers",
+      "name": "oai",
       "source": "./plugins/openai-workers",
-      "description": "Native Claude Code subagents whose reasoning is performed by the OpenAI Responses API"
+      "description": "Eight OpenAI-backed native workers with opt-in ULTRA recruitment, independent review and protected execution policy"
     }
   ]
 }

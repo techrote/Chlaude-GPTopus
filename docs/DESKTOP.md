@@ -4,9 +4,11 @@
 
 Chlaude-GPTopus supports **both tabs** of the Claude Desktop app, but they use *different* extension mechanisms:
 
+This page describes the preserved default worker integration. The opt-in **ULTRA** candidate adds governed recursion and shared policy. Chat profile A remains think-only; B permits scoped reads; separately enabled C permits private staged edits. General shell execution and live patch application are not supplied by the candidate. See the [ULTRA guide](ULTRA.md), [host compatibility findings](ULTRA_HOSTS.md) and [Windows acceptance steps](ULTRA_ACCEPTANCE.md) before enabling it.
+
 | Where you work | How it works | Can OpenAI workers use Claude Code's file/shell tools? | Install method |
 |---|---|---|---|
-| **Code tab** (a local Claude Code session) | Native Claude Code `openai-workers:*` subagents via the mod/plugin | **Yes**, through Claude Code permission checks | Install the marketplace plugin once; then use the desktop Code tab |
+| **Code tab** (a local Claude Code session) | Native Claude Code `oai:*` subagents via the mod/plugin | **Yes**, through Claude Code permission checks | Install the marketplace plugin once; then use the desktop Code tab |
 | **Chat tab** (regular Claude conversation) | Desktop MCP extension; Claude can delegate prompts and read OpenAI answers | **No.** Text-only OpenAI consultation; Claude may use separate approved tools itself | Install a `.mcpb` extension directly in Claude Desktop |
 
 The Code and Chat integrations **share the same on-device Astra/Terra token ledger** when run under the same Windows user (or on the same platform with the same `OPENAI_WORKER_USAGE_DIR`). Both use the same two key *profiles*; keys entered in the desktop extension are stored by Claude Desktop, while Code-tab keys can stay in the existing Windows DPAPI store. You do not need to paste keys into a conversation.
@@ -23,7 +25,7 @@ The Code and Chat integrations **share the same on-device Astra/Terra token ledg
 
 ### Try it
 
-> Ask `list_openai_workers` to show all OpenAI profiles and which API key profiles are configured. Then use `ask_openai_worker` with `daily-terrafree` to propose three ways to simplify this design. Poll the response using `poll_openai_worker` if the worker is still running.
+> Ask `list_openai_workers` to show all OpenAI profiles and which API key profiles are configured. Then use `ask_openai_worker` with `terra5-6free` to propose three ways to simplify this design. Poll the response using `poll_openai_worker` if the worker is still running.
 
 Claude can call these tools in a normal Chat conversation. Depending on your Claude Desktop settings, tool approval may be requested.
 
@@ -37,7 +39,7 @@ These levels are **OpenAI API efforts**, not Claude Desktop's host intelligence 
 
 | Tool | Purpose |
 |---|---|
-| `list_openai_workers` | Show six worker names, models, selected tiers and whether both keys are configured |
+| `list_openai_workers` | Show eight worker names, models, selected tiers and whether both keys are configured |
 | `ask_openai_worker` | Start a new OpenAI task; specify `worker` and `task`, optionally `context`, `reasoning_effort`, `max_output_tokens`, `previous_response_id` |
 | `poll_openai_worker` | Collect an asynchronous response; use the same worker and returned response ID |
 | `cancel_openai_worker` | Request best-effort cancellation of an active response |
@@ -60,7 +62,7 @@ Using the desktop plugin manager:
 
 1. Open Claude Desktop's **Code** tab and start a **local** Code session.
 2. Use the **Plugins** option next to the composer to add the community marketplace from `https://github.com/techrote/Chlaude-GPTopus` if your app version supports that workflow.
-3. Install `openai-workers` from the marketplace, restart the Code session, and run `/openai-workers`.
+3. Install `oai` from the marketplace, restart the Code session, and run `/oai`.
 
 If local marketplace registration is unavailable in your desktop build, do the **one-time** marketplace setup using the [Windows installer](INSTALLATION.md). After that, use the Code tab for normal work; no terminal is required for each delegation.
 
@@ -68,8 +70,8 @@ If local marketplace registration is unavailable in your desktop build, do the *
 
 ## Keys, tiers, and quotas across both tabs
 
-- Both forms use **one straight key** (`sol`, `astra`, `luna`, `flex6-1`) and **one free key** (`daily-astrafree`, `daily-terrafree`). Neither profile silently borrows the other key.
-- `flex6-1` defaults to `gpt-6.1-sol` on the `flex` service tier. Free-programme agents default to the `default` tier.
+- Both forms use **one straight key** (`sol6-2`, `astra6-2`, `luna6`, `luna6fast`, `luna6flex`, `sol6-1flex`) and **one free key** (`astra6free`, `terra5-6free`). Neither profile silently borrows the other key.
+- `sol6-1flex` defaults to `gpt-6.1-sol` on the `flex` service tier. Free-programme agents default to the `default` tier.
 - The free-key daily quota defaults are 250,000 tokens for Astra's shared model group and 2,500,000 for Terra's; local soft limits permit 10% headroom by default.
 - The ledger lives outside the extension install directory. On Windows, it is `%LOCALAPPDATA%\ClaudeOpenAIWorkers\free-usage-ledger.json`. The code and Chat tools lock the same ledger file for concurrent reservations.
 - Overrun is **not guaranteed free**. A request that crosses OpenAI's complimentary limit can be charged; the local ledger only tracks calls made by this plugin and cannot inspect other clients' usage. Your `$88/month` credit reference is informational, not an account-level spending cap.

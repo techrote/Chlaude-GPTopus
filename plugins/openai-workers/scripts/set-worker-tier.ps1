@@ -1,8 +1,8 @@
 # Persist an OpenAI tier/model for all workers or one named worker.
-# Example: .\set-worker-tier.ps1 -Agent flex6-1 -Tier flex
+# Example: .\set-worker-tier.ps1 -Agent sol6-1flex -Tier flex
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('all', 'sol', 'astra', 'luna', 'flex6-1', 'daily-astrafree', 'daily-terrafree')]
+  [ValidateSet('all', 'sol6-2', 'astra6-2', 'luna6', 'luna6fast', 'luna6flex', 'sol6-1flex', 'astra6free', 'terra5-6free')]
   [string]$Agent,
 
   [Parameter(Mandatory = $true)]
@@ -19,12 +19,14 @@ if ($Model -and $Model -notmatch '^gpt-[A-Za-z0-9_.-]{1,80}$') {
   throw 'Invalid OpenAI model identifier.'
 }
 $defaults = @{
-  'sol' = 'gpt-6.2-sol'
-  'astra' = 'gpt-6.2-astra'
-  'luna' = 'gpt-6-luna'
-  'flex6-1' = 'gpt-6.1-sol'
-  'daily-astrafree' = 'gpt-6-astra'
-  'daily-terrafree' = 'gpt-5.6-terra'
+  'sol6-2' = 'gpt-6.2-sol'
+  'astra6-2' = 'gpt-6.2-astra'
+  'luna6' = 'gpt-6-luna'
+  'luna6fast' = 'gpt-6-luna'
+  'luna6flex' = 'gpt-6-luna'
+  'sol6-1flex' = 'gpt-6.1-sol'
+  'astra6free' = 'gpt-6-astra'
+  'terra5-6free' = 'gpt-5.6-terra'
 }
 $envSuffix = $Agent.ToUpperInvariant() -replace '[^A-Z0-9]', '_'
 if ($Agent -eq 'all') {
@@ -41,10 +43,10 @@ if ($Agent -ne 'all') {
   if ($Tier -eq 'flex' -and $chosenModel -match '^gpt-6\.2-(sol|astra)(-|$)') {
     throw "Flex is unavailable for $chosenModel. Specify -Model gpt-6.1-sol or use -Tier default/fast."
   }
-  if ($Agent -eq 'daily-astrafree' -and $chosenModel -ne 'gpt-6-astra') {
+  if ($Agent -eq 'astra6free' -and $chosenModel -ne 'gpt-6-astra') {
     Write-Warning 'The Astra daily worker always uses the free-programme key. Verify that your chosen model is eligible.'
   }
-  if ($Agent -eq 'daily-terrafree' -and $chosenModel -ne 'gpt-5.6-terra') {
+  if ($Agent -eq 'terra5-6free' -and $chosenModel -ne 'gpt-5.6-terra') {
     Write-Warning 'The Terra daily worker always uses the free-programme key. Verify that your chosen model is eligible.'
   }
 }
@@ -63,4 +65,4 @@ if ($Tier -eq 'inherit') {
 if ($Tier -eq 'flex' -and $Agent -eq 'all') {
   Write-Warning 'Global Flex applies to original workers unless overridden. GPT-6.2 Sol/Astra do not support Flex; new named presets retain their own default tiers.'
 }
-Write-Host 'Restart your terminal and Claude Code to apply user-level settings. Run /openai-workers to inspect them.'
+Write-Host 'Restart your terminal and Claude Code to apply user-level settings. Run /oai to inspect them.'

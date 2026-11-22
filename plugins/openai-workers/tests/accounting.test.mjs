@@ -10,8 +10,8 @@ import { reserveRequest, releaseRequest, markRequestAmbiguous, quoteRequest, acc
   accountByResponseId, usageSnapshot, usagePath, requestRecord } from '../bridge/usage.mjs';
 import { dispatch } from '../bridge/server.mjs';
 const usageUrl = new URL('../bridge/usage.mjs', import.meta.url).href;
-const free = { workerType: 'daily-astrafree', model: 'gpt-6-astra' };
-const paid = { workerType: 'sol', model: 'gpt-6.2-sol', profile: 'standard' };
+const free = { workerType: 'astra6free', model: 'gpt-6-astra' };
+const paid = { workerType: 'sol6-2', model: 'gpt-6.2-sol', profile: 'standard' };
 function fixture(t, env = {}, now = '2026-11-21T01:00:00Z') {
   const dir = mkdtempSync(join(tmpdir(), 'ultra-accounting-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -42,7 +42,7 @@ test('normalization never invents verified zero usage or zero unknown prices', (
 test('unknown named worker and mismatched key route fail before transport', async () => {
   assert.throws(() => keyProfileForWorker('daily-astra-free'), /Unknown worker/);
   let calls = 0;
-  await assert.rejects(createTurn({ worker_type: 'daily-astrafree', model: 'gpt-6-astra', instructions: 'x', input: 'x', tools: [] },
+  await assert.rejects(createTurn({ worker_type: 'astra6free', model: 'gpt-6-astra', instructions: 'x', input: 'x', tools: [] },
     { profile: 'standard', key: 'test', fetchFn: async () => { calls++; } }), /key-profile mismatch/);
   assert.equal(calls, 0);
 });
@@ -91,7 +91,7 @@ test('standard accounting shares storage without consuming free daily allowances
 test('missing terminal usage survives restart and can later reconcile exact measured usage', async t => {
   const opts = fixture(t);
   const ticket = await reserveRequest(free, opts);
-  const normalized = normalize({ id: 'resp_lost_usage', model: 'gpt-6-astra', status: 'cancelled' });
+  const normalized = normalize({ id: 'resp_lost_usage', model: 'gpt-6-astra', status: 'incomplete' });
   await accountResponse(ticket, normalized, opts);
   const child = await nodeProcess(`import { usageSnapshot } from ${JSON.stringify(usageUrl)}; console.log(JSON.stringify(await usageSnapshot({now:new Date('2026-11-21T01:00:00Z')})));`, opts.env);
   assert.equal(child.code, 0, child.stderr);
@@ -109,7 +109,7 @@ test('ambiguous reservations never expire into free budget', async t => {
   await markRequestAmbiguous(ticket, opts);
   await assert.rejects(releaseRequest(ticket, opts), /cannot be released/);
   const later = { ...opts, now: new Date('2027-06-01T00:00:00Z') };
-  await reserveRequest({ workerType: 'daily-terrafree', model: 'gpt-5.6-terra' }, later);
+  await reserveRequest({ workerType: 'terra5-6free', model: 'gpt-5.6-terra' }, later);
   const pending = await requestRecord(ticket, later);
   assert.equal(pending.status, 'ambiguous'); assert.equal(pending.reservedTokens, 10);
 });
@@ -177,7 +177,7 @@ test('model substitution and inconsistent measured counts retain reservation', a
 test('v1 migration preserves available monthly data and admits incomplete history explicitly', async t => {
   const opts = fixture(t);
   const stats = { tokens: 100, estimatedUsd: 0.01, requests: 1 };
-  writeFileSync(usagePath(opts.env), JSON.stringify({ version: 1, days: { '2026-11-01': { groups: { premium: stats }, workers: { 'daily-astrafree': stats }, totalEstimatedUsd: 0.01 } }, pending: {}, processed: { resp_migrated: '2026-11-01' } }));
+  writeFileSync(usagePath(opts.env), JSON.stringify({ version: 1, days: { '2026-11-01': { groups: { premium: stats }, workers: { 'astra6free': stats }, totalEstimatedUsd: 0.01 } }, pending: {}, processed: { resp_migrated: '2026-11-01' } }));
   const snapshot = await usageSnapshot(opts);
   assert.equal(snapshot.monthlyEstimatedUsd, 0.01); assert.equal(snapshot.historicalTotalsMayBeIncomplete, true);
   await assert.rejects(reserveRequest(paid, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '10' } }), /historical usage/);
@@ -224,7 +224,7 @@ test('corrupt numeric totals and invalid config fail closed', async t => {
   await assert.rejects(reserveRequest(free, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: 'banana' } }), /Invalid local monthly spending limit/);
 });
 
-const paidArgs = { worker_type: 'sol', model: 'gpt-6.2-sol', input: 'inspect', instructions: 'report', tools: [], max_output_tokens: 1024 };
+const paidArgs = { worker_type: 'sol6-2', model: 'gpt-6.2-sol', input: 'inspect', instructions: 'report', tools: [], max_output_tokens: 1024 };
 test('actual bridge rejects caller model/tier/worker overrides before backend invocation', async t => {
   const opts = fixture(t);
   let calls = 0;
@@ -233,7 +233,7 @@ test('actual bridge rejects caller model/tier/worker overrides before backend in
   await assert.rejects(dispatch('create', { ...paidArgs, service_tier: 'priority' }, opts), /substitution/);
   await assert.rejects(dispatch('create', { ...paidArgs, worker_type: undefined }, opts), /Unknown worker/);
   assert.equal(calls, 0);
-  const configured = { ...opts, env: { ...opts.env, OPENAI_WORKER_SOL_MODEL: 'gpt-6.1-sol', OPENAI_WORKER_SOL_SERVICE_TIER: 'flex' } };
+  const configured = { ...opts, env: { ...opts.env, OPENAI_WORKER_SOL6_2_MODEL: 'gpt-6.1-sol', OPENAI_WORKER_SOL6_2_SERVICE_TIER: 'flex' } };
   await dispatch('create', { ...paidArgs, model: 'gpt-6.1-sol' }, configured);
   assert.equal(calls, 1);
 });
@@ -247,12 +247,12 @@ test('actual bridge binds polling, cancellation and continuation to durable work
     cancel: async (id, route) => { routes.push(route.profile); return { ...final(id), model: paidArgs.model }; },
   };
   await dispatch('create', paidArgs, opts);
-  await assert.rejects(dispatch('poll', { worker_type: 'daily-astrafree', id: 'resp_bound_owner' }, opts), /identity mismatch/);
-  await assert.rejects(dispatch('cancel', { worker_type: 'astra', id: 'resp_bound_owner' }, opts), /identity mismatch/);
-  await assert.rejects(dispatch('create', { ...paidArgs, worker_type: 'astra', model: 'gpt-6.2-astra', previous_response_id: 'resp_bound_owner' }, opts), /identity mismatch/);
-  await assert.rejects(dispatch('poll', { worker_type: 'sol', id: 'resp_untracked' }, opts), /ownership is unknown/);
-  await dispatch('poll', { worker_type: 'sol', id: 'resp_bound_owner' }, opts);
-  await dispatch('cancel', { worker_type: 'sol', id: 'resp_bound_owner' }, opts);
+  await assert.rejects(dispatch('poll', { worker_type: 'astra6free', id: 'resp_bound_owner' }, opts), /identity mismatch/);
+  await assert.rejects(dispatch('cancel', { worker_type: 'astra6-2', id: 'resp_bound_owner' }, opts), /identity mismatch/);
+  await assert.rejects(dispatch('create', { ...paidArgs, worker_type: 'astra6-2', model: 'gpt-6.2-astra', previous_response_id: 'resp_bound_owner' }, opts), /identity mismatch/);
+  await assert.rejects(dispatch('poll', { worker_type: 'sol6-2', id: 'resp_untracked' }, opts), /ownership is unknown/);
+  await dispatch('poll', { worker_type: 'sol6-2', id: 'resp_bound_owner' }, opts);
+  await dispatch('cancel', { worker_type: 'sol6-2', id: 'resp_bound_owner' }, opts);
   assert.deepEqual(routes, ['standard', 'standard', 'standard']);
 });
 
@@ -290,7 +290,7 @@ test('actual bridge reconciles both fixed profiles and never substitutes a key o
   const models = new Map();
   opts.transport = { create: async args => { const id = `resp_reconcile_${args.worker_type}`; models.set(id, args.model); return { id, status: 'in_progress' }; } };
   await dispatch('create', paidArgs, opts);
-  await dispatch('create', { ...paidArgs, worker_type: 'daily-astrafree', model: 'gpt-6-astra' }, opts);
+  await dispatch('create', { ...paidArgs, worker_type: 'astra6free', model: 'gpt-6-astra' }, opts);
   const profiles = [];
   opts.transport = { poll: async (id, route) => { profiles.push(route.profile); return { ...final(id), model: models.get(id) }; } };
   const snapshot = await dispatch('usage', {}, opts);

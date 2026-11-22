@@ -1,7 +1,6 @@
-# Bundle inputs must have stable bytes across Windows/Linux checkouts.
-desktop-extension/manifest.json text eol=lf
-plugins/openai-workers/bridge/*.mjs text eol=lf
-plugins/openai-workers/scripts/read-openai-key.ps1 text eol=lf
+# Source, evaluator fingerprints and bundle inputs must have stable bytes across
+# Windows/Linux checkouts, including newly added files under core.autocrlf=true.
+* text=auto eol=lf
 
 # The distributable is an opaque ZIP/MCPB binary.
 dist/*.mcpb -text

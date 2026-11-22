@@ -25,4 +25,4 @@ foreach ($name in $settings.Keys) {
   Write-Host "$name = $($settings[$name])"
 }
 Write-Warning 'Monthly allowance is informational, not an API billing cap. Only workers on the free key are locally tracked. Tokens from other clients are not visible. Actual complimentary eligibility and charges are determined by OpenAI.'
-Write-Host 'Restart Claude Code and its terminal, then run /openai-workers to inspect current UTC usage.'
+Write-Host 'Restart Claude Code and its terminal, then run /oai to inspect current UTC usage.'

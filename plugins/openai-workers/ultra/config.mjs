@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
-import { WORKER_TYPES } from '../bridge/workers.mjs';
+import { WORKER_TYPES as ALL_WORKER_TYPES, OPENAI_WORKERS } from '../bridge/workers.mjs';
+// ULTRA orchestrates the OpenAI (Responses API) workers only; chat-completions provider workers are not part of its policy.
+const WORKER_TYPES = Object.fromEntries(OPENAI_WORKERS.map(name => [name, ALL_WORKER_TYPES[name]]));
 
 export const CONFIG_VERSION = 1;
 /** Stable identifier of one required verification; shared by owner policy, workflow plans and evidence. */
@@ -17,10 +19,10 @@ export const PROFILE_NAMES = Object.freeze(['Lite', 'Balanced', 'Research', 'Cri
 const clone = value => structuredClone(value);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const families = { astra: 4, sol: 3, luna: 2, terra: 1 };
-const workerFamilies = { sol: 'sol', astra: 'astra', luna: 'luna', 'flex6-1': 'sol', 'daily-astrafree': 'astra', 'daily-terrafree': 'terra' };
+const workerFamilies = { 'sol6-2': 'sol', 'astra6-2': 'astra', luna6: 'luna', luna6fast: 'luna', luna6flex: 'luna', 'sol6-1flex': 'sol', astra6free: 'astra', 'terra5-6free': 'terra' };
 const models = Object.fromEntries(Object.entries(WORKER_TYPES).map(([worker, spec]) => [spec.model, { family: workerFamilies[worker], rank: null }]));
 const workers = Object.fromEntries(Object.entries(WORKER_TYPES).map(([worker, spec]) => [worker, {
-  model: spec.model, family: workerFamilies[worker], keyProfile: worker.startsWith('daily-') ? 'free' : 'standard',
+  model: spec.model, family: workerFamilies[worker], keyProfile: spec.key,
   mode: null, permissions: null, serviceTier: spec.defaultTier ?? null,
 }]));
 function freezeDeep(value) {
@@ -59,7 +61,7 @@ export const DEFAULT_CONFIG = freezeDeep({
   },
   risk: { minimumConfidence: 0.75, uncertainAuthority: 'helicop-sol', highAuthority: 'helicop-astra', requireHighRecruitmentApproval: false },
   review: {
-    selection: 'B', maxRounds: 3, primary: 'astra', reworker: 'sol', rereviewer: 'astra', secondOpinion: 'sol', gapInspector: 'luna', judge: 'astra',
+    selection: 'B', maxRounds: 3, primary: 'astra6-2', reworker: 'sol6-2', rereviewer: 'astra6-2', secondOpinion: 'sol6-2', gapInspector: 'luna6', judge: 'astra6-2',
     secondOpinionImpacts: ['high', 'critical'], gapInspectionImpacts: ['high', 'critical'], freshGapInspector: true,
     requireTests: true, repeatedDefectLimit: 2, noProgressLimit: 1, blindSecondOpinion: true,
     // Owner-policy mandatory tests: [{ id, description?, impacts?, areas?, executable?, commandDigest? }]. Agents may add to, never remove, these.
@@ -74,7 +76,51 @@ export const DEFAULT_CONFIG = freezeDeep({
   freeToPaid: { policy: 'B', maxTokensWithoutApproval: 16000, maxUsdWithoutApproval: 0.25, authority: 'user' },
   execution: { defaultApproval: 'risk-based', consequentialAuthorities: ['user'], combination: 'AND', mandatoryAuthorities: [], vetoAuthorities: [], requireFreshEvidence: true },
   desktop: { profile: 'A', enableExecutionBridge: false, roots: [] },
+  // Independent capability ceilings for the two native Code surfaces. Desktop Chat
+  // keeps `desktop`. Every ceiling defaults to the lowest (think-only) level.
+  surfaces: {
+    codeCli: { profile: 'A', enableExecutionBridge: false },
+    desktopCode: { profile: 'A', enableExecutionBridge: false },
+  },
 });
+
+/** Native Code surfaces with an owner-configured ceiling. Desktop Chat is governed by `desktop`. */
+export const SURFACE_KEYS = Object.freeze(['codeCli', 'desktopCode']);
+export const PROFILE_RANK = Object.freeze({ A: 0, B: 1, C: 2 });
+// Closed vocabulary of host-reported surface names (`$.session.surfaces()` reports
+// `terminal`/`desktop`/...). Anything else, or a mixture, is an unqualified surface.
+const HOST_SURFACE_FACTS = Object.freeze({ terminal: 'codeCli', cli: 'codeCli', desktop: 'desktopCode' });
+
+/**
+ * Resolve the native Code surface from trusted host facts supplied by the mod at
+ * initialisation. Empty, unrecognised, malformed or mixed facts are 'unknown', which
+ * receives the lowest ceiling. Never accepts a caller-supplied model/tool argument.
+ */
+export function resolveHostSurface(facts) {
+  const raw = facts && typeof facts === 'object' ? [...(Array.isArray(facts.surfaces) ? facts.surfaces : []), ...(facts.surface === undefined ? [] : [facts.surface])] : [];
+  if (!raw.length || raw.length > 16) return 'unknown';
+  const found = new Set();
+  for (const fact of raw) {
+    if (typeof fact !== 'string' || !own(HOST_SURFACE_FACTS, fact)) return 'unknown';
+    found.add(HOST_SURFACE_FACTS[fact]);
+  }
+  return found.size === 1 ? [...found][0] : 'unknown';
+}
+/** Ceiling for one native Code surface; a missing/invalid entry or unknown surface is think-only. */
+export function surfaceCeiling(config, surface) {
+  const known = typeof surface === 'string' && SURFACE_KEYS.includes(surface);
+  const spec = known && config?.surfaces && own(config.surfaces, surface) ? config.surfaces[surface] : null;
+  if (!spec || typeof spec !== 'object' || typeof spec.profile !== 'string' || !own(PROFILE_RANK, spec.profile)) {
+    return { surface: known ? surface : 'unknown', configured: null, profile: 'A', enableExecutionBridge: false };
+  }
+  const bridge = spec.enableExecutionBridge === true;
+  // C without the explicit bridge flag is never honoured, even for unvalidated input.
+  return { surface, configured: spec.profile, profile: spec.profile === 'C' && !bridge ? 'B' : spec.profile, enableExecutionBridge: bridge };
+}
+/** The project-access profile governing a mission's file tools: native missions use their Code surface, others keep Desktop Chat's. */
+export function missionProfile(mission) {
+  return mission.surface === 'native' ? surfaceCeiling(mission.config, mission.native?.surface).profile : mission.config.desktop.profile;
+}
 
 export function modeFlags(mode, custom = DEFAULT_CONFIG.recruitment.custom) {
   if (mode === 'CUSTOM') return clone(custom);
@@ -130,7 +176,7 @@ export function validateConfig(config) {
     if (!own(config.models, spec.model)) throw new Error(`Worker ${worker} uses an unclassified model ${spec.model}.`);
     if (spec.family !== config.models[spec.model].family) throw new Error(`Worker ${worker} family differs from its exact model classification.`);
     en(spec.keyProfile, ['free', 'standard'], `workers.${worker}.keyProfile`);
-    const fixedProfile = ['daily-astrafree', 'daily-terrafree'].includes(worker) ? 'free' : 'standard';
+    const fixedProfile = ['astra6free', 'terra5-6free'].includes(worker) ? 'free' : 'standard';
     if (spec.keyProfile !== fixedProfile) throw new Error(`Worker ${worker} must retain the ${fixedProfile} key route.`);
     if (spec.mode !== null) modeFlags(spec.mode);
     if (spec.permissions !== null) validatePermissions(spec.permissions, `workers.${worker}.permissions`);
@@ -235,6 +281,13 @@ export function validateConfig(config) {
   if (!config.execution.requireFreshEvidence) throw new Error('Fresh execution evidence is an invariant; stale approval cannot be enabled by configuration.');
   keys(config.desktop, Object.keys(DEFAULT_CONFIG.desktop), 'desktop'); en(config.desktop.profile, ['A', 'B', 'C'], 'desktop.profile'); bool(config.desktop.enableExecutionBridge, 'desktop.enableExecutionBridge'); list(config.desktop.roots, 'desktop.roots');
   if (config.desktop.profile === 'C' && !config.desktop.enableExecutionBridge) throw new Error('Desktop C requires explicit enableExecutionBridge=true.');
+  keys(config.surfaces, SURFACE_KEYS, 'surfaces');
+  for (const surface of SURFACE_KEYS) {
+    const spec = config.surfaces[surface];
+    keys(spec, ['profile', 'enableExecutionBridge'], `surfaces.${surface}`);
+    en(spec.profile, ['A', 'B', 'C'], `surfaces.${surface}.profile`); bool(spec.enableExecutionBridge, `surfaces.${surface}.enableExecutionBridge`);
+    if (spec.profile === 'C' && !spec.enableExecutionBridge) throw new Error(`surfaces.${surface} C requires explicit enableExecutionBridge=true.`);
+  }
   return config;
 }
 
@@ -289,6 +342,10 @@ function assertAttenuation(before, after) {
   }
   const ranks = { A: 0, B: 1, C: 2 };
   if (ranks[after.desktop.profile] > ranks[before.desktop.profile] || (after.desktop.enableExecutionBridge && !before.desktop.enableExecutionBridge) || after.desktop.roots.some(p => !before.desktop.roots.includes(p))) throw new Error('Scoped Desktop access exceeds its ceiling.');
+  for (const surface of SURFACE_KEYS) {
+    const was = before.surfaces[surface], now = after.surfaces[surface];
+    if (PROFILE_RANK[now.profile] > PROFILE_RANK[was.profile] || (now.enableExecutionBridge && !was.enableExecutionBridge)) throw new Error(`Scoped ${surface} Code surface access exceeds its ceiling.`);
+  }
 }
 
 /** Raw objects are owner configuration. Wrapped scoped layers require explicit authorisation to expand. */

@@ -34,7 +34,7 @@ async function fixture(t, { review = {}, mission: missionConfig = {}, risk = HIG
   const broker = new RecruitmentBroker(store, { config: { enabled: true, review, mission: missionConfig, risk: { uncertainAuthority: 'user' }, ...(tools.length && { permissions: { tools } }) }, now: () => now });
   const mission = await broker.createMission({ id: 'required_tests', task: 'Synthetic required-test manifest', orchestrator: { model: orchestrator, trusted: true, source: 'test-host' } });
   const ctx = { store, broker, mid: mission.id, reviews: new ReviewController(broker), actions: new ActionGate(broker), risk };
-  const request = await broker.request(ctx.mid, 'root', { worker: 'luna', role: 'implementation', task: 'Author the synthetic change', risk: authorRisk, ...(tools.length && { permissions: { tools } }) }, 'author');
+  const request = await broker.request(ctx.mid, 'root', { worker: 'luna6', role: 'implementation', task: 'Author the synthetic change', risk: authorRisk, ...(tools.length && { permissions: { tools } }) }, 'author');
   ctx.author = request.nodeId; await complete(ctx, ctx.author);
   now += 1000;
   ctx.workflow = await ctx.reviews.start(ctx.mid, { authorId: ctx.author, source: source(), risk, ...(plan ? { testPlan: plan, principal: principal ?? owner } : {}) });

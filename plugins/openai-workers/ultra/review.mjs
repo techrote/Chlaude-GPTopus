@@ -145,7 +145,7 @@ export class ReviewController {
     invariant(w?.status === 'selection_required', 'Selection is not pending');
     invariant(m.config.helicop.sol, 'Required reviewer-selection supervisor is unavailable');
     const request = await this.broker.request(missionId, m.rootAgentId, {
-      worker: 'sol', role: 'supervisor', budget: { tokens: 12000, usd: 3 }, risk: w.risk,
+      worker: 'sol6-2', role: 'supervisor', budget: { tokens: 12000, usd: 3 }, risk: w.risk,
       task: JSON.stringify({ workflowId, risk: w.assessment, source: w.source, permittedWorkers: Object.keys(m.config.workers), instruction: 'Choose an independent reviewer appropriate for consequence and evidence. Return JSON {worker,rationale}.' }),
       permissions: { tools: [], roots: [], recruit: { lower: false, equal: false, higher: false }, reviewHigher: false },
     }, `selector:${workflowId}`, { originId: w.authorId, protectedAuthority: 'helicop-sol', binding: { selectsWorkflow: workflowId } });
@@ -336,7 +336,7 @@ export class ReviewController {
     } else if (cfg.requireTests && w.assessment.controls.tests) {
       if (tierMatches(cfg.testPlanRequiredImpacts, tier)) {
         mode = 'unplanned'; state = 'unplanned'; accepted = false;
-        reason = `${TEST_HOLD}: no required tests are designated for work whose risk demands tests; register a verification plan or owner-policy tests`;
+        reason = `${TEST_HOLD}: no required tests are designated for work whose risk demands tests; the local owner registers a verification plan (ultra/cli.mjs plan-add) or lists owner-policy review.requiredTests`;
       } else {
         // Weakest tier only: "some passing evidence". Designated tests are never replaced by this rule.
         mode = 'legacy'; const legacy = legacyEvaluate(current); accepted = legacy.accepted; state = accepted ? 'some-passing-evidence' : legacy.state;
@@ -429,12 +429,32 @@ export class ReviewController {
     this.enforce(m, w, event, { readjudicate: true }); this.staleActions(m, w.id);
     event('review.plan_changed', m.id, { workflowId: w.id, planId: plan.id, revision: plan.revision, planHash: w.requiredTests.planHash, change });
   }
+  /** Read-only: the current manifest state of a workflow, evaluated on a copy of the ledger snapshot (nothing is written). */
+  async inspect(missionId, workflowId) {
+    const m = await this.store.snapshot(missionId), w = m.workflows[workflowId]; invariant(w, 'Unknown workflow');
+    const gate = this.refresh(m, w), plan = this.ensurePlan(m, w), config = m.config.review;
+    return { workflowId: w.id, status: w.status, reason: w.reason ?? null, source: { id: w.source.id ?? null, hash: w.source.hash }, impact: gate.impact,
+      ownerAttestedAccepted: gate.ownerAttestedAccepted, ownerAttestedImpacts: [...config.ownerAttestedImpacts], criticalWaiversAllowed: config.allowCriticalWaivers === true,
+      plan: { id: plan.id, hash: gate.planHash, revision: plan.revision }, gate: clone(gate), evidence: w.tests.filter(t => t.sourceHash === w.source.hash).map(t => ({ id: t.id, testId: t.testId ?? t.name, passed: t.passed, provenance: t.provenance, at: t.at })) };
+  }
+  /** Read-only preview of an additive owner plan registration: exactly what would be added, and the plan hash before and after. */
+  async previewRequiredTests(missionId, workflowId, entries) {
+    const m = await this.store.snapshot(missionId), w = m.workflows[workflowId]; invariant(w, 'Unknown workflow');
+    const plan = this.ensurePlan(m, w), existing = this.effective(plan), added = this.admit(existing, entries, 'plan:local-user');
+    const after = { ...plan, entries: [...plan.entries, ...added] };
+    return { workflowId: w.id, source: { id: w.source.id ?? null, hash: w.source.hash }, impact: w.assessment.effectiveImpact, planId: plan.id,
+      planHashBefore: this.planHashOf(w, plan, existing), planHashAfter: this.planHashOf(w, after, this.effective(after)),
+      existing: existing.map(core), added: added.map(core), unchanged: added.length === 0 };
+  }
   /** Additive registration by the trusted owner (or a full trusted orchestrator). It can never shrink or alter the suite. */
-  async addRequiredTests(missionId, workflowId, entries, principal) {
+  async addRequiredTests(missionId, workflowId, entries, principal, { expectedPlanHash } = {}) {
     return this.store.transaction((state, event) => {
       const m = state.missions[missionId], w = m?.workflows[workflowId]; invariant(w, 'Unknown workflow'); superseded(w);
       assertWorkflowRisk(m, w, this.broker.now()); this.assertPlanner(m, principal);
-      const plan = this.ensurePlan(m, w), added = this.admit(this.effective(plan), entries, `plan:${principal.source}`);
+      const plan = this.ensurePlan(m, w);
+      // A confirmation binds the exact plan (and source) the owner was shown; anything that changed it since is refused.
+      invariant(expectedPlanHash === undefined || this.planHashOf(w, plan, this.effective(plan)) === expectedPlanHash, 'The verification plan or source changed after it was displayed; review it again');
+      const added = this.admit(this.effective(plan), entries, `plan:${principal.source}`);
       if (!added.length) return w;
       plan.entries.push(...added);
       this.planChanged(m, w, event, { kind: 'added', ids: added.map(e => e.id), principal: clone(principal) }); return w;

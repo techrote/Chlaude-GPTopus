@@ -6,15 +6,38 @@
  * is deterministic across supported Node versions and operating systems. CI
  * uses --check to prove the committed distributable matches reviewed source.
  */
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const args = process.argv.slice(2);
-const check = args[0] === '--check';
-const outArg = check ? args[1] : args[0];
-if (args.length > (check ? 2 : 1)) throw new Error('Usage: build-desktop.mjs [--check] [output.mcpb]');
+const USAGE = `Usage: node scripts/build-desktop.mjs [--check] [--help] [--] [output.mcpb]
+
+  (no arguments)   write dist/Chlaude-GPTopus-Desktop.mcpb from the current sources
+  output.mcpb      write (or, with --check, compare against) this path instead
+  --check          verify that the existing file equals a deterministic build; write nothing
+  --help, -h       print this text
+  --               end of options (a path that starts with "-" may follow)
+`;
+// Only the documented flags exist: anything else that looks like a flag is an error, never a file name.
+function parseArguments(argv) {
+  let check = false, outArg = null, options = true;
+  for (const arg of argv) {
+    if (options && arg === '--') { options = false; continue; }
+    if (options && (arg === '--help' || arg === '-h')) return { help: true };
+    if (options && arg === '--check') { if (check) return { error: '--check was given more than once' }; check = true; continue; }
+    if (options && arg.startsWith('-')) return { error: `Unknown option ${arg}` };
+    if (outArg !== null) return { error: 'Only one output path may be given' };
+    outArg = arg;
+  }
+  return { check, outArg };
+}
+const parsed = parseArguments(process.argv.slice(2));
+// Flush before exiting: a pipe may still hold the text when process.exit() is called.
+const finish = (stream, text, code) => new Promise(done => stream.write(text, done)).then(() => process.exit(code));
+if (parsed.help) await finish(process.stdout, USAGE, 0);
+if (parsed.error) await finish(process.stderr, `build-desktop: ${parsed.error}\n\n${USAGE}`, 2);
+const { check, outArg } = parsed;
 const out = resolve(outArg || join(root, 'dist', 'Chlaude-GPTopus-Desktop.mcpb'));
 const SOURCES = {
   'manifest.json': 'desktop-extension/manifest.json',
@@ -23,8 +46,20 @@ const SOURCES = {
   'server/openai.mjs': 'plugins/openai-workers/bridge/openai.mjs',
   'server/usage.mjs': 'plugins/openai-workers/bridge/usage.mjs',
   'server/workers.mjs': 'plugins/openai-workers/bridge/workers.mjs',
+  'server/trace.mjs': 'plugins/openai-workers/bridge/trace.mjs',
+  'server/steer.mjs': 'plugins/openai-workers/bridge/steer.mjs',
+  'server/direct-run.mjs': 'plugins/openai-workers/bridge/direct-run.mjs',
+  'server/chat.mjs': 'plugins/openai-workers/bridge/chat.mjs',
+  'server/convo.mjs': 'plugins/openai-workers/bridge/convo.mjs',
+  'server/rotation.mjs': 'plugins/openai-workers/bridge/rotation.mjs',
   'scripts/read-openai-key.ps1': 'plugins/openai-workers/scripts/read-openai-key.ps1',
 };
+// Preserve source-relative imports for the shared policy/runtime used by both
+// facades. Mirrors are deterministic copies of the same canonical bridge files.
+for (const name of ['workers.mjs', 'usage.mjs', 'openai.mjs', 'server.mjs', 'trace.mjs', 'steer.mjs', 'chat.mjs', 'convo.mjs', 'rotation.mjs', 'direct-run.mjs']) SOURCES[`bridge/${name}`] = `plugins/openai-workers/bridge/${name}`;
+for (const name of readdirSync(join(root, 'plugins/openai-workers/ultra')).filter(name => name.endsWith('.mjs')).sort()) SOURCES[`ultra/${name}`] = `plugins/openai-workers/ultra/${name}`;
+SOURCES['hooks/ultra.js'] = 'plugins/openai-workers/hooks/ultra.js';
+SOURCES['package.json'] = 'plugins/openai-workers/package.json';
 const manifest = JSON.parse(readFileSync(join(root, SOURCES['manifest.json']), 'utf8'));
 if (manifest.server.entry_point !== 'server/desktop-server.mjs' || manifest.manifest_version !== '0.3') {
   throw new Error('Unexpected MCPB manifest entry point or version.');

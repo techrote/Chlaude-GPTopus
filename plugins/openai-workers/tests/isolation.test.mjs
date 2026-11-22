@@ -52,7 +52,7 @@ test('while the suite runs, the default usage ledger path is a private temporary
 test('a test that forgets its own fixture would leak into the default path (negative control for the detector below)', async t => {
   const sandbox = join(testRoot, 'control'); mkdirSync(sandbox, { recursive: true });
   const code = `import { reserveRequest, releaseRequest } from ${JSON.stringify(new URL('../bridge/usage.mjs', import.meta.url).href)};
-    const ticket = await reserveRequest({ workerType: 'daily-astrafree', model: 'gpt-6-astra' }); await releaseRequest(ticket);`;
+    const ticket = await reserveRequest({ workerType: 'astra6free', model: 'gpt-6-astra' }); await releaseRequest(ticket);`;
   const result = await run(['--input-type=module', '-e', code], pristineEnv(sandbox));
   assert.equal(result.code, 0, result.out);
   const touched = snapshotStateDir(dirname(usagePath(pristineEnv(sandbox))));

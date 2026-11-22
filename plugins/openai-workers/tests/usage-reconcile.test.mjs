@@ -17,9 +17,9 @@ import { definitions as desktopDefinitions, invoke as desktopInvoke } from '../b
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const reconcileUrl = new URL('../bridge/usage-reconcile.mjs', import.meta.url).href;
 const usageUrl = new URL('../bridge/usage.mjs', import.meta.url).href;
-const free = { workerType: 'daily-astrafree', model: 'gpt-6-astra' };
+const free = { workerType: 'astra6free', model: 'gpt-6-astra' };
 const quote = quoteRequest({ model: 'gpt-6.2-sol', input: 'synthetic' });
-const paid = { workerType: 'sol', model: 'gpt-6.2-sol', profile: 'standard', ...quote };
+const paid = { workerType: 'sol6-2', model: 'gpt-6.2-sol', profile: 'standard', ...quote };
 const freeQuoted = { ...free, ...quoteRequest({ model: 'gpt-6-astra', input: 'synthetic' }) };
 const R = quote.reservationUsd;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -35,7 +35,7 @@ function writeV1(env, days = { '2026-11-01': 0.01, '2026-11-02': 0.02 }, pending
   const doc = { version: 1, days: {}, pending, processed: { resp_old_one: '2026-11-01' } };
   for (const [day, usd] of Object.entries(days)) {
     const stats = { tokens: 100, estimatedUsd: usd, requests: 1 };
-    doc.days[day] = { groups: { premium: stats }, workers: { 'daily-astrafree': stats }, totalEstimatedUsd: usd };
+    doc.days[day] = { groups: { premium: stats }, workers: { 'astra6free': stats }, totalEstimatedUsd: usd };
   }
   const raw = Buffer.from(JSON.stringify(doc, null, 2));
   writeFileSync(usagePath(env), raw);
@@ -122,7 +122,7 @@ test('exact UTC midnight boundary: the month containing the migration instant is
 
 test('status shows the unknown period, standard-key blind spot, totals and evidence digest', async t => {
   const f = fixture(t);
-  const raw = writeV1(f.env, { '2026-10-20': 0.5, '2026-11-02': 0.02 }, { resp_open: { workerType: 'daily-astrafree', model: 'gpt-6-astra', group: 'premium', day: '2026-11-02', createdAt: '2026-11-02T00:00:00Z', reservedTokens: 50, status: 'reserved' } });
+  const raw = writeV1(f.env, { '2026-10-20': 0.5, '2026-11-02': 0.02 }, { resp_open: { workerType: 'astra6free', model: 'gpt-6-astra', group: 'premium', day: '2026-11-02', createdAt: '2026-11-02T00:00:00Z', reservedTokens: 50, status: 'reserved' } });
   const out = await cli(plain(f, NOV) && f, NOV, ['status']);
   assert.match(out.text, /Unknown period: 2026-10-20T00:00:00.000Z\s+->\s+2026-11-21T01:00:00.000Z/);
   assert.match(out.text, /Standard-key spend in that period was NEVER tracked/);
@@ -321,7 +321,7 @@ test('MCP bridge, Desktop facade and Desktop bundle expose no reconciliation pat
   for (const file of readdirSync(join(root, 'bridge')).filter(n => n.endsWith('.mjs') && n !== 'usage-reconcile.mjs')) {
     assert.equal(/usage-reconcile|applyReconciliation|persistMigration|ledgerTransaction/.test(readFileSync(join(root, 'bridge', file), 'utf8')) && file !== 'usage.mjs', false, file);
   }
-  // Hooks may DESCRIBE the owner action in status text (/openai-workers tells the owner what is blocked), but must never reference the module, its functions or the script file.
+  // Hooks may DESCRIBE the owner action in status text (/oai tells the owner what is blocked), but must never reference the module, its functions or the script file.
   for (const dir of ['hooks']) for (const file of readdirSync(join(root, dir))) assert.equal(/usage-reconcile|applyReconciliation|reconciliationStatus|persistMigration|reconcile-usage.(mjs|ps1)/.test(readFileSync(join(root, dir, file), 'utf8')), false, file);
   assert.equal(/usage-reconcile/.test(readFileSync(join(root, '..', '..', 'scripts', 'build-desktop.mjs'), 'utf8')), false);
   assert.equal(/reconcil/i.test(readFileSync(join(root, '..', '..', 'desktop-extension', 'manifest.json'), 'utf8')), false);
@@ -345,7 +345,7 @@ test('crash between migration evidence and the first v2 write leaves v1 intact; 
   const raw = writeV1(f.env);
   const crash = await nodeProcess(`import { reserveRequest, quoteRequest } from ${JSON.stringify(usageUrl)};
     const q = quoteRequest({ model: 'gpt-6-astra', input: 'synthetic' });
-    await reserveRequest({ workerType: 'daily-astrafree', model: 'gpt-6-astra', ...q }, { now: new Date(${JSON.stringify(NOV)}),
+    await reserveRequest({ workerType: 'astra6free', model: 'gpt-6-astra', ...q }, { now: new Date(${JSON.stringify(NOV)}),
       beforeLedgerWrite: stage => { if (stage === 'v1-evidence-preserved') process.exit(9); } });`, f.env);
   assert.equal(crash.code, 9, crash.stderr);
   assert.deepEqual(readFileSync(usagePath(f.env)), raw, 'the v1 file was never overwritten');
@@ -422,7 +422,7 @@ test('concurrent processes during reconciliation neither lose reservations nor s
   const env = { ...f.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50' };
   const source = `import { reserveRequest, quoteRequest } from ${JSON.stringify(usageUrl)};
     const q = quoteRequest({ model: 'gpt-6.2-sol', input: 'synthetic' });
-    try { await reserveRequest({ workerType: 'sol', model: 'gpt-6.2-sol', profile: 'standard', ...q }, { now: new Date(${JSON.stringify(NOV)}) }); console.log('ADMITTED'); }
+    try { await reserveRequest({ workerType: 'sol6-2', model: 'gpt-6.2-sol', profile: 'standard', ...q }, { now: new Date(${JSON.stringify(NOV)}) }); console.log('ADMITTED'); }
     catch (e) { console.log('BLOCKED ' + e.message.slice(0, 40)); }`;
   const children = Array.from({ length: 6 }, () => nodeProcess(source, env));
   const applied = await apply(f, NOV, request);
@@ -437,7 +437,7 @@ test('concurrent processes during reconciliation neither lose reservations nor s
 
 test('unknown-price and ambiguous pending blocks survive reconciliation; reservations are never deleted', async t => {
   const f = fixture(t);
-  const open = { workerType: 'daily-astrafree', model: 'gpt-6-astra', group: 'premium', day: '2026-11-02', createdAt: '2026-11-02T00:00:00Z', reservedTokens: 50, status: 'reserved' };
+  const open = { workerType: 'astra6free', model: 'gpt-6-astra', group: 'premium', day: '2026-11-02', createdAt: '2026-11-02T00:00:00Z', reservedTokens: 50, status: 'reserved' };
   writeV1(f.env, { '2026-11-01': 0.01 }, { v1_open_ticket: open });
   await releaseRequest('nonexistent', plain(f, NOV)); // read-only: still v1 on disk
   await reconciliationStatus(plain(f, NOV));

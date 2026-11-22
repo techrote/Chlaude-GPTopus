@@ -6,12 +6,12 @@
 
 ```mermaid
 flowchart TD
-    C[Claude Code lead agent] --> A[Native subagent: openai-workers:*]
+    C[Claude Code lead agent] --> A[Native subagent: oai:*]
     A --> M[Mod hook: turn.step]
     M --> B[MCP bridge: Node stdio]
     B --> K{Key profile}
-    K -->|daily-astrafree or daily-terrafree| F[Free-programme key]
-    K -->|sol / astra / luna / flex6-1| S[Straight API key]
+    K -->|astra6free or terra5-6free| F[Free-programme key]
+    K -->|sol / astra / luna / sol6-1flex| S[Straight API key]
     F --> L[Persistent local free-key quota ledger]
     L --> R[OpenAI Responses API]
     S --> R
@@ -29,7 +29,7 @@ flowchart TD
 |---|---|
 | `.claude-plugin/marketplace.json` | Marketplace identifier and plugin source |
 | `plugins/openai-workers/.claude-plugin/plugin.json` | Plugin metadata |
-| `plugins/openai-workers/hooks/register.js` | Registers six agents and `/openai-workers`; redirects only matching native subagent model steps |
+| `plugins/openai-workers/hooks/register.js` | Registers eight agents and `/oai` (status panel rendered by `hooks/status-art.js`); redirects only matching native subagent model steps |
 | `plugins/openai-workers/hooks/step.js` | Converts tool-use segments and session continuation into Responses API input |
 | `plugins/openai-workers/hooks/tools.js` | Strict allowlist for model-requested Claude Code tools |
 | `plugins/openai-workers/bridge/server.mjs` | MCP stdio protocol, request dispatch, paginated responses |
@@ -45,7 +45,7 @@ Both native Code subagents and the Desktop Chat MCP server import `bridge/worker
 
 - **Claude Code → OpenAI:** delegated instructions, project-specific context, tool results and relevant repository content leave your machine for OpenAI. Only delegate appropriate repositories.
 - **OpenAI → Claude Code tools:** the model may request `Read`, `Edit`, `Write` and `Bash` but cannot invoke them directly through this bridge; Claude Code performs its normal permission checks.
-- **Keys:** stored separately with Windows DPAPI or sourced from the process environment. The bridge never returns credential values to `/openai-workers`.
+- **Keys:** stored separately with Windows DPAPI or sourced from the process environment. The bridge never returns credential values to `/oai`.
 - **Network:** HTTPS calls go to `https://api.openai.com/v1/responses` and related polling/cancel URLs. The bridge uses stored/background Responses to allow continuation.
 - **MCP:** the local bridge runs as a Node stdio child process; avoid blindly approving all actions from untrusted plugins.
 
@@ -68,7 +68,7 @@ This repository initially imports the tested **v0.5.0** two-key plugin, with no 
 
 ## Claude Desktop extension
 
-`bridge/desktop-server.mjs` adds a second MCP stdio interface that exposes a **fixed allowlist** of six text-only OpenAI worker profiles. It calls the existing `bridge/server.mjs` `dispatch` path for creation, polling, cancellations and quota ledger accounting. It never exposes the underlying arbitrary `create` bridge tool directly to desktop Chat, never grants local file/shell tools and never returns key material.
+`bridge/desktop-server.mjs` adds a second MCP stdio interface that exposes a **fixed allowlist** of eight text-only OpenAI worker profiles. It calls the existing `bridge/server.mjs` `dispatch` path for creation, polling, cancellations and quota ledger accounting. It never exposes the underlying arbitrary `create` bridge tool directly to desktop Chat, never grants local file/shell tools and never returns key material.
 
 The `.mcpb` archive packages the server, OpenAI client, usage ledger, worker profiles and DPAPI reader without external Node dependencies. Sensitive installer configuration is delivered through environment variables (`OPENAI_API_KEY` and `OPENAI_FREE_API_KEY`). An unset key can fall back to its DPAPI store on Windows.
 

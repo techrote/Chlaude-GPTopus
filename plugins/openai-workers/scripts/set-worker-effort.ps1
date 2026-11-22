@@ -1,11 +1,11 @@
 # Configure one OpenAI worker's API reasoning-effort range (not host Ultra mode).
 # Examples:
-#   .\set-worker-effort.ps1 -Agent luna -Min max -Max max
-#   .\set-worker-effort.ps1 -Agent daily-terrafree -Min high -Max max -Default xhigh -Note 'High for routine work; max for difficult debugging.'
-#   .\set-worker-effort.ps1 -Agent luna -Show
+#   .\set-worker-effort.ps1 -Agent luna6 -Min max -Max max
+#   .\set-worker-effort.ps1 -Agent terra5-6free -Min high -Max max -Default xhigh -Note 'High for routine work; max for difficult debugging.'
+#   .\set-worker-effort.ps1 -Agent luna6 -Show
 param(
   [Parameter(Mandatory=$true)]
-  [ValidateSet('sol', 'astra', 'luna', 'flex6-1', 'daily-astrafree', 'daily-terrafree')]
+  [ValidateSet('sol6-2', 'astra6-2', 'luna6', 'luna6fast', 'luna6flex', 'sol6-1flex', 'astra6free', 'terra5-6free')]
   [string]$Agent,
   [ValidateSet('none', 'low', 'medium', 'high', 'xhigh', 'max')]
   [string]$Min,
@@ -21,12 +21,14 @@ $ErrorActionPreference = 'Stop'
 $prefix = 'OPENAI_WORKER_' + ($Agent.ToUpperInvariant() -replace '[^A-Z0-9]', '_') + '_EFFORT_'
 $levels = @('none', 'low', 'medium', 'high', 'xhigh', 'max')
 $presets = @{
-  'sol' = @('medium', 'max', 'high')
-  'astra' = @('medium', 'max', 'high')
-  'luna' = @('max', 'max', 'max')
-  'flex6-1' = @('medium', 'max', 'high')
-  'daily-astrafree' = @('medium', 'max', 'high')
-  'daily-terrafree' = @('high', 'max', 'high')
+  'sol6-2' = @('medium', 'max', 'high')
+  'astra6-2' = @('medium', 'max', 'high')
+  'luna6' = @('max', 'max', 'max')
+  'luna6fast' = @('max', 'max', 'max')
+  'luna6flex' = @('max', 'max', 'max')
+  'sol6-1flex' = @('medium', 'max', 'high')
+  'astra6free' = @('medium', 'max', 'high')
+  'terra5-6free' = @('high', 'max', 'high')
 }
 if ($Reset -and ($PSBoundParameters.ContainsKey('Min') -or $PSBoundParameters.ContainsKey('Max') -or $PSBoundParameters.ContainsKey('Default') -or $PSBoundParameters.ContainsKey('Note'))) {
   throw 'Use -Reset alone (or with -Show), not with new settings.'
@@ -74,12 +76,14 @@ Write-Host "$Agent reasoning effort: $minEffort .. $maxEffort (default $defaultE
 $storedNote = if ($updates.ContainsKey('NOTE')) { $updates['NOTE'] } else { [Environment]::GetEnvironmentVariable($prefix + 'NOTE','User') }
 if (-not $storedNote) {
   $notes = @{
-    'sol' = 'Medium for bounded coding; high for multi-file work; xhigh/max for difficult debugging or verification.'
-    'astra' = 'Medium for clear reviews; high for architecture; xhigh/max for critical or ambiguous decisions.'
-    'luna' = 'Always Max. Give Luna well-scoped, economical tasks; expect slower completion than lower efforts.'
-    'flex6-1' = 'Medium for routine refactors; high for multi-step tasks; xhigh/max for hard, time-insensitive work.'
-    'daily-astrafree' = 'Medium for bounded research; high for independent reviews; xhigh/max for demanding investigations.'
-    'daily-terrafree' = 'High for everyday inspection; xhigh for multi-file reasoning; max for intricate recovery or audits.'
+    'sol6-2' = 'Medium for bounded coding; high for multi-file work; xhigh/max for difficult debugging or verification.'
+    'astra6-2' = 'Medium for clear reviews; high for architecture; xhigh/max for critical or ambiguous decisions.'
+    'luna6' = 'Always Max. Give Luna well-scoped, economical tasks; expect slower completion than lower efforts.'
+    'luna6fast' = 'Always Max. Give Luna well-scoped, economical tasks; expect slower completion than lower efforts.'
+    'luna6flex' = 'Always Max. Give Luna well-scoped, economical tasks; expect slower completion than lower efforts.'
+    'sol6-1flex' = 'Medium for routine refactors; high for multi-step tasks; xhigh/max for hard, time-insensitive work.'
+    'astra6free' = 'Medium for bounded research; high for independent reviews; xhigh/max for demanding investigations.'
+    'terra5-6free' = 'High for everyday inspection; xhigh for multi-file reasoning; max for intricate recovery or audits.'
   }
   $storedNote = $notes[$Agent]
 }

@@ -70,7 +70,7 @@ export class ActionGate {
   async appointJudge(missionId, actionId, authority) {
     const m = await this.store.snapshot(missionId), a = m.actions[actionId];
     invariant(a?.status === 'pending' && a.authorities.includes(authority) && ['helicop-sol', 'helicop-astra'].includes(authority), 'Action does not authorise this judge');
-    const worker = authority.slice('helicop-'.length);
+    const worker = authority === 'helicop-astra' ? 'astra6-2' : 'sol6-2'; // HELICOP judges run on the current Sol/Astra workers
     const request = await this.broker.request(missionId, m.rootAgentId, {
       worker, role: 'judge', budget: { tokens: 16000, usd: 4 },
       risk: { complexity: 'low', impact: 'high', verifiability: 'high', confidence: 1, rationale: 'Independent decision on explicitly proposed consequential action' },

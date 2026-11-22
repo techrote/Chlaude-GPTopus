@@ -1,0 +1,1320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OAI CONFIG</title>
+<style nonce="__NONCE__">
+:root{
+  /* semantic tokens (set live by the COLOURWAY panel; defaults = WINAMP LIME) */
+  --c-shadow:#020302;--c-bg:#070907;--c-panel:#121712;--c-line:#243024;--c-panel-hi:#33432f;--c-text-dim:#8aa184;--c-text:#d6e8cc;
+  --c-lcd-bg:#041204;--c-accent-2:#8fdc1e;--c-accent:#b8ff3c;--c-ok:#b8ff3c;--c-lcd:#7dff4f;--c-info:#6fd6ff;--c-warn:#ffb627;--c-hot:#ff6b2c;--c-err:#ff4545;--c-pending:#ff4545;
+  /* fixed hazard/launch-button colours (not part of the colourway) */
+  --hz-1:#f2f2f2;--hz-2:#f2c200;--hz-3:#121212;--hz-4:#0b0b0b;--hz-5:#2a2a2a;--hz-6:#000;--hz-7:rgba(0,0,0,.55);--hz-8:#ffd0c8;--hz-9:#ff2a1a;--hz-10:#8a0a00;--hz-11:#3a0000;--hz-12:#ff7a6b;--hz-13:#d81300;--hz-14:#6e0700;--hz-15:#fff;--hz-16:#1b1b1b;--hz-17:rgba(220,240,255,.55);--hz-18:rgba(255,255,255,.38);--hz-19:rgba(190,220,255,.12);--hz-20:rgba(255,255,255,.05);--hz-21:rgba(255,255,255,.22);--hz-22:rgba(255,255,255,.6);--hz-23:rgba(0,0,0,.6);--hz-24:rgba(255,255,255,.8);--hz-25:#d8d8d8;--hz-26:#151515;--hz-27:#cfcfcf;--hz-28:#c81200;--hz-29:#ff9c90;--hz-30:#5a0500;
+  /* everything below derives from the tokens */
+  --bg:var(--c-bg);--panel:var(--c-panel);--hi:var(--c-panel-hi);--lo:var(--c-shadow);--line:var(--c-line);
+  --bg2:color-mix(in oklab,var(--c-bg) 60%,var(--c-panel));--panel2:color-mix(in oklab,var(--c-panel) 80%,var(--c-panel-hi));--inset:color-mix(in oklab,var(--c-bg) 50%,var(--c-shadow));
+  --lime:var(--c-accent);--lime2:var(--c-accent-2);--limedim:color-mix(in oklab,var(--c-accent-2) 45%,var(--c-panel));--lcd:var(--c-lcd);--lcdbg:var(--c-lcd-bg);
+  --text:var(--c-text);--mute:var(--c-text-dim);--faint:color-mix(in oklab,var(--c-text-dim) 55%,var(--c-bg));
+  --amber:var(--c-warn);--orange:var(--c-hot);--red:var(--c-err);--cyan:var(--c-info);--ok:var(--c-ok);--pend:var(--c-pending);
+  --bev-hi:color-mix(in oklab,var(--c-panel-hi) 80%,var(--c-text));--btn1:color-mix(in oklab,var(--c-panel-hi) 45%,var(--c-panel));--btn2:color-mix(in oklab,var(--c-panel) 80%,var(--c-shadow));
+  --hdr1:color-mix(in oklab,var(--c-panel) 85%,var(--c-panel-hi));--hdr2:color-mix(in oklab,var(--c-panel) 55%,var(--c-bg));
+  --on1:color-mix(in oklab,var(--c-accent) 85%,var(--c-text));--on2:var(--c-accent-2);--on-hi:color-mix(in oklab,var(--c-accent) 50%,var(--c-text));--on-lo:color-mix(in oklab,var(--c-accent-2) 40%,var(--c-shadow));--on-text:color-mix(in oklab,var(--c-shadow) 88%,var(--c-accent));
+  --wn1:color-mix(in oklab,var(--c-warn) 75%,var(--c-text));--wn-hi:color-mix(in oklab,var(--c-warn) 45%,var(--c-text));--wn-lo:color-mix(in oklab,var(--c-warn) 40%,var(--c-shadow));--wn-text:color-mix(in oklab,var(--c-shadow) 90%,var(--c-warn));
+  --lcd-edge:color-mix(in oklab,var(--c-line) 85%,var(--c-lcd));--led-off:color-mix(in oklab,var(--c-panel-hi) 40%,var(--c-panel));--err-bg:color-mix(in oklab,var(--c-err) 22%,var(--c-shadow));
+  --mono:ui-monospace,"Cascadia Mono","Cascadia Code",Consolas,"SF Mono",Menlo,"DejaVu Sans Mono",monospace;
+  --row:24px;--g1:2px;--g2:4px;--g3:8px;--pad:6px;
+
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:12px/1.3 var(--mono);font-variant-numeric:tabular-nums}
+body{background:radial-gradient(1200px 600px at 80% -10%,color-mix(in oklab,var(--lime) 8%,var(--bg)) 0,transparent 60%),repeating-linear-gradient(0deg,transparent 0 3px,color-mix(in srgb,var(--text) 1.5%,transparent) 3px 4px),var(--bg);min-height:100vh}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--lime);outline-offset:1px}
+.bevel{background:var(--panel);border:1px solid;border-color:var(--hi) var(--lo) var(--lo) var(--hi);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--panel) 40%,var(--lo))}
+.inset{background:var(--inset);border:1px solid;border-color:var(--lo) var(--hi) var(--hi) var(--lo)}
+.lab{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{height:20px;padding:0 7px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;background:linear-gradient(var(--btn1),var(--btn2));border:1px solid;border-color:var(--bev-hi) var(--lo) var(--lo) var(--bev-hi);color:var(--text);cursor:pointer;white-space:nowrap}
+.btn:hover{color:var(--lime);border-color:var(--limedim) var(--lo) var(--lo) var(--limedim)}
+.btn:active{border-color:var(--lo) var(--bev-hi) var(--bev-hi) var(--lo);background:var(--bg2)}
+.btn.on{background:linear-gradient(var(--on1),var(--on2));color:var(--on-text);border-color:var(--on-hi) var(--on-lo) var(--on-lo) var(--on-hi);font-weight:700}
+.btn.warn{color:var(--wn-text);background:linear-gradient(var(--wn1),var(--amber));border-color:var(--wn-hi) var(--wn-lo) var(--wn-lo) var(--wn-hi);font-weight:700}
+.btn.ico{width:20px;padding:0;display:inline-grid;place-items:center}
+.btn:disabled{opacity:.4;cursor:default}
+.lcd{background:var(--lcdbg);color:var(--lcd);text-shadow:0 0 4px color-mix(in srgb,var(--lcd) 55%,transparent);border:1px solid;border-color:var(--lo) var(--lcd-edge) var(--lcd-edge) var(--lo);box-shadow:inset 0 0 12px color-mix(in srgb,var(--lo) 80%,transparent)}
+.led{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--led-off);box-shadow:inset 0 0 0 1px var(--lo);vertical-align:middle}
+.led.ok{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.led.bad{background:var(--red);box-shadow:0 0 6px var(--red)}
+.led.amb{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+/* header */
+header{position:sticky;top:0;z-index:20;background:linear-gradient(var(--hdr1),var(--hdr2));border-bottom:1px solid var(--lo);box-shadow:0 1px 0 var(--line),0 6px 18px color-mix(in srgb,var(--lo) 60%,transparent)}
+.titlebar{display:flex;align-items:center;gap:var(--g3);padding:2px var(--pad);height:16px;background:repeating-linear-gradient(0deg,var(--hdr1) 0 1px,var(--hdr2) 1px 3px);border-bottom:1px solid var(--lo)}
+.titlebar b{color:var(--lime);letter-spacing:.3em;font-size:11px}
+.titlebar .grip{flex:1;height:6px;background:repeating-linear-gradient(0deg,color-mix(in oklab,var(--hi) 85%,var(--panel)) 0 1px,transparent 1px 3px);border-top:1px solid var(--lo)}
+.titlebar .sub{color:var(--faint);font-size:10px;letter-spacing:.12em}
+.bar{display:flex;flex-wrap:wrap;align-items:stretch;gap:var(--g2);padding:2px var(--pad)}
+.readout{display:flex;align-items:center;gap:6px;padding:0 5px;min-height:0}
+.readout .big{font-size:17px;letter-spacing:.06em;line-height:20px}
+.tt{position:relative;display:inline-grid;place-items:center;height:18px;padding:0 4px;font-size:10px;letter-spacing:.08em;border:1px solid var(--line);color:var(--faint);cursor:pointer;user-select:none}
+.tt:has(input:checked){color:var(--lcd);border-color:var(--lcd-edge);text-shadow:0 0 4px var(--lcd)}
+.tt input{position:absolute;opacity:0;width:0;height:0}
+.readout .small{font-size:10px;line-height:1.35;letter-spacing:.06em}
+.presets{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g1);padding:3px 4px;max-width:100%;min-width:0}
+.presets select{height:20px;background:var(--inset);border:1px solid var(--line);color:var(--lime);padding:0 4px;min-width:100px;max-width:190px}
+.presets input[type=text]{height:20px;width:110px;background:var(--inset);border:1px solid var(--line);padding:0 4px;color:var(--text)}
+.chk{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--mute);letter-spacing:.05em;text-transform:uppercase;cursor:pointer;padding:0 3px}
+.chk input{accent-color:var(--lime);margin:0}
+/* live strip */
+.live{display:grid;grid-template-columns:minmax(170px,.8fr) minmax(250px,1.6fr) minmax(200px,1.1fr) minmax(210px,1.2fr);gap:var(--g2);padding:0 var(--pad) var(--g2)}
+.cell{padding:3px 6px;min-width:0}
+.cell h4{margin:0 0 2px;font-size:9.5px;letter-spacing:.16em;color:var(--lime2);font-weight:700}
+.kv{display:flex;gap:6px;align-items:center;font-size:11px;min-width:0;white-space:nowrap}
+.kv .lab{flex:0 0 auto}
+.kv .v{color:var(--text);overflow:hidden;text-overflow:ellipsis}
+.qbar{position:relative;height:9px;flex:1;min-width:60px;background:var(--inset);border:1px solid var(--line);overflow:hidden}
+.qbar i{position:absolute;top:0;bottom:0;left:0}
+.qbar .u{background:repeating-linear-gradient(90deg,var(--lime) 0 3px,color-mix(in oklab,var(--lime) 65%,var(--lo)) 3px 4px)}
+.qbar .r{background:repeating-linear-gradient(90deg,var(--amber) 0 3px,color-mix(in oklab,var(--amber) 62%,var(--lo)) 3px 4px)}
+.qbar .t{width:1px;background:var(--text);opacity:.7}
+.mini{font-size:10px;color:var(--mute)}
+/* pending */
+#pending{display:none;align-items:center;gap:var(--g3);padding:9px calc(var(--pad) + 4px);margin:3px 0;color:var(--hz-1);
+  background:repeating-linear-gradient(-45deg,var(--hz-2) 0 13px,var(--hz-3) 13px 26px);
+  clip-path:polygon(0 3px,2% 0,5% 4px,9% 1px,13% 5px,18% 0,24% 3px,31% 0,37% 4px,44% 1px,52% 5px,58% 0,65% 3px,71% 1px,78% 5px,84% 0,90% 4px,95% 1px,100% 3px,100% calc(100% - 4px),97% 100%,92% calc(100% - 3px),86% 100%,80% calc(100% - 5px),73% 100%,67% calc(100% - 2px),60% 100%,54% calc(100% - 4px),47% 100%,40% calc(100% - 3px),33% 100%,27% calc(100% - 5px),21% 100%,15% calc(100% - 2px),10% 100%,4% calc(100% - 4px),0 100%)}
+#pending .plate{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g3);flex:1;min-width:0;padding:3px 8px;background:var(--hz-4);border:1px solid var(--hz-5);box-shadow:inset 0 0 0 1px var(--hz-6),0 0 0 2px var(--hz-7)}
+#pending.show{display:flex;flex-wrap:wrap}
+#pending .msg{font-weight:800;letter-spacing:.14em;font-size:12.5px;color:var(--hz-2)}
+#pending .led{width:13px;height:13px;background:radial-gradient(circle at 35% 30%,var(--hz-8),var(--hz-9) 45%,var(--hz-10));box-shadow:0 0 10px var(--hz-9),0 0 2px var(--hz-6) inset}
+.launch{position:relative;width:120px;height:34px;flex:0 0 auto;perspective:220px}
+.launch .fire{position:absolute;inset:4px 6px;border-radius:3px;border:1px solid var(--hz-11);background:radial-gradient(ellipse at 50% 30%,var(--hz-12),var(--hz-13) 55%,var(--hz-14));color:var(--hz-15);font-weight:800;font-size:10px;letter-spacing:.08em;white-space:nowrap;padding:0;text-shadow:0 1px 0 var(--hz-6);box-shadow:0 3px 0 var(--hz-11),0 0 0 3px var(--hz-16),0 0 0 4px var(--hz-2);cursor:pointer}
+.launch .fire:active{transform:translateY(2px);box-shadow:0 1px 0 var(--hz-11),0 0 0 3px var(--hz-16),0 0 0 4px var(--hz-2)}
+.launch .fire:disabled{cursor:not-allowed}
+.launch .cover{position:absolute;inset:0;border-radius:4px;border:1px solid var(--hz-17);background:linear-gradient(160deg,var(--hz-18),var(--hz-19) 40%,var(--hz-20) 60%,var(--hz-21));box-shadow:inset 0 1px 0 var(--hz-22),0 2px 4px var(--hz-23);transform-origin:50% 0;cursor:pointer;color:transparent;font-size:0;padding:0;z-index:2}
+.launch .cover::after{content:"LIFT";position:absolute;bottom:2px;right:4px;font-size:8px;letter-spacing:.1em;color:var(--hz-24)}
+.launch.open .cover{transform:rotateX(-112deg);pointer-events:none}
+.launch.open .cover::after{content:""}
+@media (prefers-reduced-motion:no-preference){.launch .cover{transition:transform .18s ease-out}}
+#pending .names{flex:1;min-width:120px;font-size:10px;color:var(--hz-25);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pending select{height:20px;background:var(--hz-26);border:1px solid var(--hz-2);color:var(--hz-2)}
+#pending .chk{color:var(--hz-27)}
+
+/* steering console */
+#steer{display:grid;gap:3px;padding:3px 5px;margin:2px var(--pad)}
+#steer .srow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g2);min-width:0}
+#steer .runs{flex:1;display:flex;gap:2px;overflow-x:auto;min-width:0;scrollbar-width:thin}
+#steer .run{flex:0 0 auto;height:20px;padding:0 6px;font-size:10px;letter-spacing:.04em;background:var(--bg2);color:var(--mute);border:1px solid var(--line);cursor:pointer;white-space:nowrap}
+#steer .run b{color:var(--lime);margin-right:4px}
+#steer .run.paused{border-color:var(--amber)}
+#steer .run.paused::after{content:" ‖";color:var(--amber)}
+#steer .run.sel{background:linear-gradient(var(--on1),var(--on2));color:var(--on-text);border-color:var(--on-hi)}
+#steer .run.sel b{color:var(--on-text)}
+#steer .run.ended{opacity:.5}
+#steer .macros{display:flex;gap:1px}
+#steer .macros button{width:24px;height:18px;padding:0;font-size:10px;background:var(--bg2);color:var(--mute);border:1px solid var(--line);cursor:pointer}
+#steer .macros button.has{color:var(--lcd);border-color:var(--lcd-edge)}
+#steer .macros button:hover{color:var(--lime)}
+#steer .in{flex:1;min-width:160px;height:22px;padding:0 6px;background:var(--lcdbg);color:var(--lcd);border:1px solid;border-color:var(--lo) var(--lcd-edge) var(--lcd-edge) var(--lo);font-size:12px}
+#steer .flag{height:20px;padding:0 5px;font-size:9.5px;letter-spacing:.06em}
+#steer .flag.on.hard{background:linear-gradient(var(--hz-12),var(--hz-28));color:var(--hz-15);border-color:var(--hz-29) var(--hz-30) var(--hz-30) var(--hz-29)}
+#steer .log{max-height:62px;overflow-y:auto;font-size:10px;line-height:1.35;color:var(--mute);background:var(--inset);border:1px solid var(--line);padding:1px 4px;white-space:nowrap}
+#steer .log div{overflow:hidden;text-overflow:ellipsis}
+#steer .log .sent{color:var(--text)}#steer .log .delivered{color:var(--lime2)}#steer .log .reply{color:var(--cyan)}#steer .log .err{color:var(--red)}
+#steer .conn{font-size:9.5px;letter-spacing:.08em}
+#steer .conn.off{color:var(--red)}
+#steer.collapsed .log,#steer.collapsed .mrow{display:none}
+body.steer-bottom #steer{position:fixed;left:0;right:0;bottom:24px;z-index:16;margin:0;box-shadow:0 -6px 18px color-mix(in srgb,var(--lo) 70%,transparent)}
+body.steer-bottom main{padding-bottom:150px}
+/* conversations (provider workers: editable history, live reasoning, thought-steer) */
+#convos{margin:0 var(--pad) 40px}
+body.steer-bottom #convos{margin-bottom:170px}
+main:has(+ #convos){padding-bottom:var(--g3)}
+#convos .cvb{display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:var(--g3);padding:var(--g2)}
+#convos.min .cvb{display:none}
+#convos .cvlist{display:flex;flex-direction:column;gap:1px;max-height:70vh;overflow-y:auto;background:var(--inset);border:1px solid var(--line);padding:2px;scrollbar-width:thin}
+#convos .cvi{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:2px 5px;align-items:center;text-align:left;padding:3px 5px;background:var(--bg2);border:1px solid var(--line);color:var(--mute);cursor:pointer;font-size:10.5px}
+#convos .cvi:hover{color:var(--text);border-color:var(--limedim)}
+#convos .cvi.sel{background:linear-gradient(var(--on1),var(--on2));color:var(--on-text);border-color:var(--on-hi)}
+#convos .cvi.sel b,#convos .cvi.sel .mini{color:var(--on-text)}
+#convos .cvi b{color:var(--lime);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#convos .cvi .mini{grid-column:2/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#convos .cvi .tm{font-size:10px;color:var(--mute)}
+#convos .cvi.sel .tm{color:var(--on-text)}
+#convos .cvhead .spacer{flex:1}
+#convos .more{align-self:flex-start}
+#convos .cvview{min-width:0;display:flex;flex-direction:column;gap:var(--g2)}
+#convos .cvhead{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g2);padding:2px 5px;font-size:11px}
+#convos .cvhead .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#convos .stale{color:var(--amber)}
+#convos .tx{display:flex;flex-direction:column;gap:2px;max-height:70vh;overflow-y:auto;background:var(--inset);border:1px solid var(--line);padding:3px;scrollbar-width:thin}
+#convos .m{display:grid;grid-template-columns:46px minmax(0,1fr);gap:2px 6px;padding:3px 4px;background:var(--bg2);border:1px solid var(--line);border-left-width:3px}
+#convos .m.r-system{border-left-color:var(--cyan)}
+#convos .m.r-user{border-left-color:var(--lime)}
+#convos .m.r-assistant{border-left-color:var(--lcd)}
+#convos .m.r-tool{border-left-color:var(--amber)}
+#convos .m.trim{opacity:.6}
+#convos .m .role{font-size:9.5px;letter-spacing:.08em;color:var(--mute);display:flex;flex-direction:column;gap:2px}
+#convos .m .role b{color:var(--text)}
+#convos .m .body{min-width:0;display:flex;flex-direction:column;gap:2px}
+#convos .m .content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11.5px;line-height:1.4;color:var(--text)}
+#convos .m .content.empty{color:var(--faint);font-style:italic}
+#convos details.rsn>summary{cursor:pointer;font-size:9.5px;letter-spacing:.1em;color:var(--mute);list-style:none}
+#convos details.rsn>summary::-webkit-details-marker{display:none}
+#convos details.rsn>summary::before{content:"▸ "}
+#convos details.rsn[open]>summary::before{content:"▾ "}
+#convos .rtext{white-space:pre-wrap;overflow-wrap:anywhere;font-size:10.5px;line-height:1.4;color:var(--mute);background:var(--inset);border:1px dashed var(--line);padding:2px 5px;max-height:320px;overflow-y:auto}
+#convos .call{font-size:10.5px;color:var(--cyan);overflow-wrap:anywhere}
+#convos .call b{color:var(--lime2)}
+#convos .acts{display:flex;flex-wrap:wrap;gap:var(--g1);justify-content:flex-end}
+#convos .acts .btn{height:18px;font-size:9.5px;padding:0 5px}
+#convos .ed{display:flex;flex-direction:column;gap:3px;padding:3px;border:1px solid var(--amber);background:var(--bg2)}
+#convos .ed textarea{width:100%;min-height:60px;resize:vertical;background:var(--lcdbg);color:var(--lcd);border:1px solid;border-color:var(--lo) var(--lcd-edge) var(--lcd-edge) var(--lo);font:11px/1.4 var(--mono);padding:3px 5px}
+#convos .ed textarea.rs{color:var(--mute)}
+#convos .ed select{height:20px;background:var(--inset);border:1px solid var(--line);color:var(--lime)}
+#convos .lv{border:1px solid var(--lcd-edge);background:var(--lcdbg);padding:3px 5px;display:flex;flex-direction:column;gap:3px}
+#convos .lv .lt{display:flex;align-items:center;gap:var(--g2);font-size:10px;letter-spacing:.1em;color:var(--lcd)}
+#convos .lv .rtext{max-height:240px;border-style:solid;border-color:var(--lcd-edge)}
+#convos .lv .caret{color:var(--lcd)}
+#convos .ts{display:flex;gap:var(--g2);align-items:center}
+#convos .ts input{flex:1;min-width:120px;height:22px;padding:0 6px;background:var(--lcdbg);color:var(--lcd);border:1px solid;border-color:var(--lo) var(--lcd-edge) var(--lcd-edge) var(--lo);font-size:12px}
+@media (max-width:820px){#convos .cvb{grid-template-columns:1fr}#convos .cvlist{max-height:30vh}}
+/* layout */
+main{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:var(--g3);padding:var(--g3) var(--pad) 40px;align-items:start}
+.col{display:grid;gap:var(--g3);align-content:start}
+.workers{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:var(--g3)}
+.panel{min-width:0}
+.ph{display:flex;align-items:center;gap:var(--g2);padding:2px 3px 2px 6px;height:24px;background:linear-gradient(var(--hdr1),var(--hdr2));border-bottom:1px solid var(--lo)}
+.ph .name{font-weight:700;letter-spacing:.14em;color:var(--lime);font-size:11.5px;white-space:nowrap}
+.ph .name::before{content:"";display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--lime);box-shadow:0 0 5px var(--lime);vertical-align:0}
+.ph .spacer{flex:1}
+.ph .name{cursor:grab}
+.ph .msum{font-size:10px;color:var(--lcd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;display:none}
+.panel.min .ph .msum{display:block}
+.panel.min .pb,.panel.min .summary{display:none}
+.panel.dragging{opacity:.45}
+.panel.drop-before{box-shadow:0 -3px 0 var(--lime)}
+.panel.drop-after{box-shadow:0 3px 0 var(--lime)}
+.workers .panel.drop-before{box-shadow:-3px 0 0 var(--lime)}
+.workers .panel.drop-after{box-shadow:3px 0 0 var(--lime)}
+.chip{font-size:9.5px;letter-spacing:.08em;padding:1px 4px;border:1px solid var(--line);color:var(--mute);white-space:nowrap}
+.chip.free{color:var(--cyan);border-color:color-mix(in oklab,var(--cyan) 35%,var(--lo))}
+.chip.paid{color:var(--amber);border-color:color-mix(in oklab,var(--amber) 35%,var(--lo))}
+.chip.info{color:var(--cyan);border-color:color-mix(in oklab,var(--cyan) 35%,var(--lo))}
+.ph .btn.lock.on{background:linear-gradient(var(--wn1),var(--amber));border-color:var(--wn-hi) var(--wn-lo) var(--wn-lo) var(--wn-hi);color:var(--wn-text)}
+.summary{padding:2px 6px;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:var(--g2) var(--g2) 0}
+.pb{padding:var(--g2) var(--g2) var(--g2)}
+.panel.locked .pb{box-shadow:inset 3px 0 0 var(--amber)}
+/* rows */
+.row{display:grid;grid-template-columns:96px minmax(60px,1fr) 74px 20px 20px;align-items:center;gap:var(--g2);min-height:var(--row);padding:1px 2px;border-bottom:1px solid var(--bg2)}
+.row:hover{background:color-mix(in srgb,var(--lime) 3%,transparent)}
+.row .lab{cursor:help}
+.row.set .lab{color:var(--text)}
+.row.set .lab::after{content:" •";color:var(--lime)}
+.row.err{background:color-mix(in srgb,var(--red) 7%,transparent)}
+.row .msg{grid-column:1/-1;font-size:10px;color:var(--red);padding:0 0 2px 98px;display:none}
+.row .msg.warn{color:var(--orange)}
+.row .msg.show{display:block}
+.row .msg::before{content:"✖ "}
+.row .msg.warn::before{content:"▲ "}
+.num{height:20px;width:100%;text-align:right;padding:0 4px;background:var(--lcdbg);color:var(--lcd);border:1px solid;border-color:var(--lo) var(--lcd-edge) var(--lcd-edge) var(--lo);font-size:12px}
+.num::placeholder{color:color-mix(in oklab,var(--lcd) 40%,var(--lcdbg))}
+.num.dirty{color:var(--amber);border-color:var(--amber)}
+.num.bad{color:var(--text);background:var(--err-bg);border-color:var(--red)}
+.track{position:relative;height:20px;display:flex;align-items:center}
+.track .flag{position:absolute;top:2px;font-size:9px;color:var(--faint);pointer-events:none}
+.track .flag.l{left:-1px}.track .flag.r{right:-1px}
+.track .flag.lit{color:var(--amber);text-shadow:0 0 4px var(--amber)}
+.ticks{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none}
+.ticks i{position:absolute;top:3px;width:1px;height:4px;background:var(--limedim)}
+.ticks i.def{background:var(--cyan);height:5px}
+.ticks i.hot{background:var(--lime);box-shadow:0 0 3px var(--lime)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;margin:0;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:6px;background:linear-gradient(90deg,var(--limedim),color-mix(in oklab,var(--hi) 70%,var(--panel)));border:1px solid;border-color:var(--lo) var(--line) var(--line) var(--lo)}
+input[type=range]::-moz-range-track{height:6px;background:linear-gradient(90deg,var(--limedim),color-mix(in oklab,var(--hi) 70%,var(--panel)));border:1px solid;border-color:var(--lo) var(--line) var(--line) var(--lo)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:16px;margin-top:-6px;background:linear-gradient(var(--on-hi),var(--lime) 45%,color-mix(in oklab,var(--lime2) 65%,var(--lo)));border:1px solid;border-color:var(--on-hi) var(--on-lo) var(--on-lo) var(--on-hi)}
+input[type=range]::-moz-range-thumb{width:12px;height:16px;border-radius:0;background:linear-gradient(var(--on-hi),var(--lime) 45%,color-mix(in oklab,var(--lime2) 65%,var(--lo)));border:1px solid;border-color:var(--on-hi) var(--on-lo) var(--on-lo) var(--on-hi)}
+.row.inherit input[type=range]::-webkit-slider-thumb{background:var(--led-off);border-color:color-mix(in oklab,var(--lime2) 50%,var(--panel))}
+.row.inherit input[type=range]::-moz-range-thumb{background:var(--led-off);border-color:color-mix(in oklab,var(--lime2) 50%,var(--panel))}
+.row.dragging input[type=range]::-webkit-slider-thumb{background:linear-gradient(var(--wn-hi),var(--amber));border-color:var(--wn-hi) var(--wn-lo) var(--wn-lo) var(--wn-hi)}
+.unit{font-size:9px;color:var(--faint);text-align:left}
+.eff{font-size:9.5px;color:var(--cyan);white-space:nowrap}
+/* segments */
+.seg{display:flex;gap:1px;min-width:0}
+.seg button{flex:1;min-width:0;height:20px;padding:0 2px;font-size:10px;letter-spacing:.03em;text-transform:uppercase;background:var(--bg2);color:var(--mute);border:1px solid;border-color:var(--line) var(--lo) var(--lo) var(--line);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg button:hover{color:var(--lime)}
+.seg button.inh{color:var(--lime2);border-color:var(--limedim);box-shadow:inset 0 -2px 0 var(--limedim)}
+.seg button.on{background:linear-gradient(var(--on1),var(--on2));color:var(--on-text);font-weight:700;border-color:var(--on-hi) var(--on-lo) var(--on-lo) var(--on-hi)}
+.seg button.out{background:repeating-linear-gradient(-45deg,var(--bg2) 0 3px,var(--panel) 3px 6px);color:var(--faint)}
+.seg button.inrange{color:var(--text)}
+.row.wide{grid-template-columns:96px minmax(0,1fr) 20px 20px}
+.row.wide .msg{padding-left:98px}
+.txt{height:20px;width:100%;padding:0 4px;background:var(--inset);border:1px solid;border-color:var(--lo) var(--hi) var(--hi) var(--lo);color:var(--text)}
+.txt.model{color:var(--lcd);background:var(--lcdbg)}
+.txt.dirty{border-color:var(--amber);color:var(--amber)}
+.txt.bad{border-color:var(--red);background:var(--err-bg)}
+.modelwrap{display:flex;gap:var(--g1);align-items:center;min-width:0}
+.modelwrap .chip{flex:0 0 auto}
+.chip.ok{color:var(--ok);border-color:var(--limedim)}
+.chip.deg{color:var(--orange);border-color:color-mix(in oklab,var(--orange) 40%,var(--lo))}
+.effort-ruler{display:grid;align-items:center;min-height:14px;grid-template-columns:96px minmax(0,1fr) 20px 20px;gap:var(--g2);padding:1px 2px}
+.effort-ruler .scale{display:flex;gap:1px}
+.effort-ruler .scale span{flex:1;height:3px;background:var(--led-off)}
+.effort-ruler .scale span.in{background:var(--lime2);box-shadow:0 0 3px var(--limedim)}
+.effort-ruler .scale span.def{background:var(--cyan)}
+/* info pop */
+.info{grid-column:1/-1;margin:2px 0 4px;padding:6px;background:var(--bg2);border:1px solid var(--limedim);box-shadow:inset 0 0 0 1px var(--lo);display:none}
+.info.show{display:block}
+.info p{margin:0 0 5px;color:var(--text);font-size:11px;line-height:1.4}
+.info .grid{display:grid;grid-template-columns:auto 1fr 1fr auto;gap:3px 6px;align-items:center;font-size:10.5px}
+.info .grid .k{color:var(--mute);text-transform:uppercase;letter-spacing:.05em;font-size:10px}
+.info .grid input{height:18px;width:100%;background:var(--lcdbg);color:var(--lcd);border:1px solid var(--lcd-edge);text-align:right;padding:0 3px}
+.info .grid .ro{color:var(--faint)}
+.info .acts{display:flex;flex-wrap:wrap;gap:var(--g1);margin-top:5px}
+.info .err{color:var(--red);font-size:10px;margin-top:3px}
+details.adv>summary{list-style:none;cursor:pointer}
+details.adv>summary::-webkit-details-marker{display:none}
+details.adv>summary .name::after{content:" ▸";color:var(--mute)}
+details.adv[open]>summary .name::after{content:" ▾"}
+.grpnote{font-size:10px;color:var(--faint);padding:2px 4px 3px;line-height:1.35}
+footer{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;gap:var(--g3);align-items:center;padding:3px var(--pad);background:var(--bg2);border-top:1px solid var(--line)}
+footer .lcd{flex:1;padding:1px 6px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:18px}
+footer .lcd.err{color:color-mix(in oklab,var(--red) 60%,var(--text));text-shadow:0 0 4px color-mix(in srgb,var(--red) 60%,transparent)}
+.notips .row .lab{cursor:default}
+/* colourway panel */
+.cw .body{padding:4px;display:flex;flex-direction:column;gap:4px}
+.cw .line{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g2);min-width:0}
+.cw select,.cw .hex,.cw textarea,.cw .sm{height:20px;background:var(--lcdbg);color:var(--lcd);border:1px solid;border-color:var(--lo) var(--lcd-edge) var(--lcd-edge) var(--lo);font-size:11px;padding:0 3px}
+.cw .hex{width:64px}.cw .sm{width:42px;text-align:right}
+.cw select{max-width:132px}
+.cw input[type=color]{width:22px;height:20px;padding:0;border:1px solid var(--bev-hi);background:var(--panel);cursor:pointer}
+.cw .grad{height:10px;border:1px solid;border-color:var(--lo) var(--hi) var(--hi) var(--lo)}
+.cw .lut{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:1px;background:var(--lo);border:1px solid var(--lo)}
+.cw .sw{position:relative;height:24px;border:0;padding:0 0 1px;font-size:9px;letter-spacing:0;display:flex;align-items:flex-end;justify-content:center;cursor:pointer;outline-offset:-2px}
+.cw .sw .ix{position:absolute;top:1px;left:2px;font-size:8px;opacity:.75}
+.cw .sw.sel{box-shadow:inset 0 0 0 2px var(--text),inset 0 0 0 3px var(--lo)}
+.cw .sw.rng::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--text)}
+.cw .sw input{position:absolute;inset:0;width:100%;height:100%;font-size:10px;text-align:center;background:var(--lcdbg);color:var(--lcd);border:1px solid var(--lime)}
+.cw .tok{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px 6px}
+.cw .tok>div{display:grid;grid-template-columns:10px minmax(0,1fr) 40px 62px;gap:3px;align-items:center;min-height:21px}
+.cw .tok .dot{width:10px;height:10px;border:1px solid var(--lo)}
+.cw .tok .lab{font-size:9.5px}
+.cw .tok select{max-width:none;width:100%;padding:0 1px}
+.cw .tok .hex{width:100%;font-size:10px}
+.cw .tok .hex:not(:placeholder-shown){color:var(--amber)}
+.cw .hex.bad{border-color:var(--red);background:var(--err-bg)}
+.cw textarea{width:100%;height:58px;resize:vertical;font-size:10px;padding:2px 3px;white-space:pre}
+.cw input[type=range]{flex:1;min-width:70px}
+.cw .grow{flex:1}
+.chip.lo{color:var(--wn-text);background:var(--amber);border-color:var(--wn-hi);font-weight:700}
+.cw summary .chip{margin-left:auto}
+@media (prefers-reduced-motion:no-preference){.cw .sw{transition:box-shadow .12s}}
+@media (max-width:560px){.cw .tok{grid-template-columns:1fr}}
+@media (max-width:1100px){.live{grid-template-columns:1fr 1fr}}
+@media (max-width:820px){header{position:static}#pending.show{position:fixed;top:0;left:0;right:0;z-index:30}main{grid-template-columns:1fr}.workers{grid-template-columns:1fr}}
+@media (max-width:560px){
+  .live{grid-template-columns:1fr}
+  .row{grid-template-columns:76px minmax(40px,1fr) 64px 20px 20px}
+  .row.wide,.effort-ruler{grid-template-columns:76px minmax(0,1fr) 20px 20px}
+  .row .msg,.row.wide .msg{padding-left:4px}
+  .readout .big{font-size:17px}
+  .titlebar .sub{display:none}
+  .workers{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<section id="steer" class="bevel" aria-label="Steering console">
+  <div class="srow">
+    <span class="lab" title="Operator steering: your text reaches the selected worker verbatim before its next model step. Needs STEERING on (restart Claude Code after enabling).">STEER</span>
+    <div class="runs" id="steerRuns" role="radiogroup" aria-label="Target worker"></div>
+    <span class="conn" id="steerConn">…</span>
+    <button class="btn ico" id="steerPlace" title="Move console to the bottom/top">▼</button>
+    <button class="btn ico" id="steerFold" title="Fold macros and log">▁</button>
+  </div>
+  <div class="srow mrow"><span class="lab" id="macroLab">MACROS</span><div class="macros" id="macros"></div></div>
+  <div class="srow">
+    <input class="in" id="steerIn" placeholder="tip for the selected worker…  (! = hard interrupt, + = pin)  Enter sends" maxlength="8000" spellcheck="true" autocomplete="off" aria-label="Steering message">
+    <button class="btn flag hard" data-f="hard" title="HARD: cancel the in-flight OpenAI request and resend with this tip (tokens already spent on it are lost)">HARD</button>
+    <button class="btn flag" data-f="pin" title="PIN: repeat this tip at every step for the rest of the task">PIN</button>
+    <button class="btn flag" data-f="ack" title="ACK: worker starts its next reply with a one-line acknowledgement">ACK</button>
+    <button class="btn flag" data-f="assess" title="ASSESS: worker states how it understood the tip">ASSESS</button>
+    <button class="btn flag" data-f="conseq" title="CONSEQ: worker states how the tip changes its approach">CONSEQ</button>
+    <button class="btn on" id="steerSend">SEND</button>
+  </div>
+  <div class="log" id="steerLog" aria-live="polite"></div>
+</section>
+<header>
+  <div class="titlebar"><b>OAI</b><span class="grip"></span><span class="sub">OPENAI WORKERS · CONFIGURATION DECK</span><span class="grip"></span><span class="sub" id="ver">v—</span></div>
+  <div class="bar">
+    <div class="readout lcd" id="lcd">
+      <div class="big" id="clock">--:--</div>
+      <label class="tt" title="Tooltips on/off"><input type="checkbox" id="tips" checked>TT</label>
+    </div>
+    <div class="presets bevel" role="group" aria-label="Presets">
+      <span class="lab">PRESET</span>
+      <select id="presetSel" aria-label="Preset"></select>
+      <button class="btn" id="presetLoad" title="Load the selected preset into all unlocked groups">LOAD</button>
+      <input type="text" id="presetName" placeholder="name…" aria-label="New preset name" maxlength="48">
+      <button class="btn" id="presetSave" title="Save the whole current configuration as a named preset">SAVE</button>
+      <button class="btn ico" id="presetDel" title="Delete the selected user preset" aria-label="Delete preset">−</button>
+      <label class="chk" title="Load ignores group locks this one time; the locks themselves are not changed"><input type="checkbox" id="overrideLocks">G:UNLOCK</label>
+    </div>
+    <div class="presets bevel"><button class="btn" id="refresh" title="Re-read the stored values">RELOAD</button><span class="mini" id="lcdState"></span></div>
+  </div>
+  <div id="pending" role="alert">
+    <div class="plate">
+      <span class="led" aria-hidden="true"></span>
+      <span class="msg">CHANGES PENDING — RESTART CLAUDE CODE</span>
+      <span class="names" id="pendingNames"></span>
+      <label class="chk">AUTO-CLEAR <select id="autoClear" aria-label="Auto-clear pending marker"><option value="0">NEVER</option><option value="10">10 MIN</option><option value="30">30 MIN</option><option value="60">1 H</option><option value="240">4 H</option></select></label>
+    </div>
+    <div class="launch" id="launch">
+      <button class="fire" id="restarted" disabled title="Lift the cover first">I RESTARTED</button>
+      <button class="cover" id="launchCover" aria-label="Lift the safety cover over I RESTARTED" aria-expanded="false" title="Lift cover">cover</button>
+    </div>
+  </div>
+  <div class="live">
+    <div class="cell bevel"><h4>KEYS</h4><div id="keys"></div></div>
+    <div class="cell bevel"><h4>FREE QUOTA · TODAY (UTC)</h4><div id="quota"></div></div>
+    <div class="cell bevel"><h4>MONTH · LOCAL ESTIMATE</h4><div id="month"></div></div>
+    <div class="cell bevel"><h4>TRACE</h4><div id="trace"></div></div>
+  </div>
+</header>
+<main>
+  <div class="col" id="leftCol"></div>
+  <div class="col"><div class="workers" id="workers"></div><div id="advHost"></div></div>
+</main>
+<section id="convos" class="panel bevel" aria-label="Conversations">
+  <div class="ph">
+    <span class="name" title="Provider workers (NVIDIA Build, LM Studio) keep their whole history here. Edits take effect on the worker's next model step.">CONVERSATIONS</span>
+    <span class="chip" id="cvCount">0</span>
+    <span class="msum" id="cvSum"></span>
+    <span class="spacer"></span>
+    <span class="mini" id="cvDir"></span>
+    <button class="btn" id="cvReload" title="Re-read the conversation list and the open conversation">RELOAD</button>
+    <button class="btn ico" id="cvFold" title="Minimise / restore" aria-label="Minimise conversations" aria-pressed="false">▁</button>
+  </div>
+  <div class="cvb">
+    <div class="cvlist" id="cvList" role="listbox" aria-label="Conversations"></div>
+    <div class="cvview" id="cvView"><div class="mini">Select a conversation. Only provider workers (NVIDIA Build, LM Studio) have one.</div></div>
+  </div>
+</section>
+<footer><span class="lab">STATUS</span><div class="lcd" id="status">READY</div></footer>
+<script nonce="__NONCE__">
+'use strict';
+/*__OAI_COLOUR__*/
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
+const $ = (sel, root = document) => root.querySelector(sel);
+const h = (tag, attrs = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'class') el.className = v; else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined) el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return el;
+};
+let S = null, STATE = null; const ROWS = {}; const PANELS = {};
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+async function api(path, body) {
+  const res = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'x-oai-token': TOKEN, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+  let data = {}; try { data = await res.json(); } catch {}
+  if (!res.ok && res.status !== 422) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+function status(text, err = false) { const el = $('#status'); el.textContent = text; el.classList.toggle('err', err); }
+const fmtTok = n => n == null ? '—' : n >= 1e6 ? `${+(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}K` : String(n);
+const fmtUsd = n => n == null ? '—' : `$${Number(n).toFixed(Number(n) < 10 ? 3 : 2)}`;
+const fmtBytes = n => n == null ? 'no file today' : n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`;
+
+/* ── value transforms (shared by drawing, notch attraction and keyboard) ── */
+const POS = 1000;
+function win(p) { const u = STATE?.ui?.params?.[p.name] || {}; return u.window || p.window; }
+function caps(p) { const u = STATE?.ui?.params?.[p.name] || {}; return u.caps || p.bounds; }
+function align(p) { return (STATE?.ui?.params?.[p.name] || {}).align || (p.notches ? 'notched' : 'free'); }
+function T(p, v) { const [a, b] = win(p); if (p.log) { const la = Math.log(a), lb = Math.log(b); return (Math.log(Math.max(v, a * 1e-9)) - la) / (lb - la); } return (v - a) / (b - a); }
+function Tinv(p, t) { const [a, b] = win(p); return p.log ? Math.exp(Math.log(a) + t * (Math.log(b) - Math.log(a))) : a + t * (b - a); }
+function tidy(p, v) {
+  if (p.log) { const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(v) || 1)) - 2); v = Math.round(v / mag) * mag; }
+  if (p.kind === 'int') return Math.round(v);
+  return Math.round(v / (p.step || 0.01)) * (p.step || 0.01);
+}
+const fmtVal = (p, v) => v === null || v === undefined || v === '' ? '' : p.kind === 'int' ? String(Math.round(v)) : String(+Number(v).toFixed(4));
+
+/* ── shared row chrome ── */
+function labelEl(p) { const el = h('span', { class: 'lab', id: `l-${p.name}` }, p.label); el.dataset.help = p.help || ''; return el; }
+function infoBtn(row) { return h('button', { class: 'btn ico', 'aria-label': `Info and limits for ${row.p.label}`, 'aria-expanded': 'false', title: 'Info / range', onclick: e => toggleInfo(row, e.currentTarget) }, '↔'); }
+function resetBtn(row) { return h('button', { class: 'btn ico', 'aria-label': `Reset ${row.p.label} to default`, title: 'Reset value to default (unset)', onclick: () => commit(row, '') }, '↺'); }
+function msgEl() { return h('div', { class: 'msg', role: 'status' }); }
+function setMsg(row, text, warn = false) { row.msg.textContent = text || ''; row.msg.classList.toggle('show', !!text); row.msg.classList.toggle('warn', !!warn && !!text); row.el.classList.toggle('err', !!text && !warn); }
+
+function inheritedValue(p) {
+  const eff = STATE.effective;
+  if (p.kind === 'int' || p.kind === 'num') {
+    if (p.inherit) { const iv = STATE.values[p.inherit]; return iv !== '' ? Number(iv) : PARAM[p.inherit].def; }
+    if (p.worker && p.name.endsWith('MAX_USD')) return null; // free worker: no cap
+    return p.def;
+  }
+  return null;
+}
+
+/* ── numeric row: slider + LCD entry + info + reset ── */
+function numericRow(p) {
+  const row = { p, captured: null, editing: false };
+  row.range = h('input', { type: 'range', min: 0, max: POS, step: 1, 'aria-labelledby': `l-${p.name}` });
+  row.ticks = h('div', { class: 'ticks', 'aria-hidden': 'true' });
+  row.fl = h('span', { class: 'flag l', title: 'Value is below the slider window' }, '◂'); row.fr = h('span', { class: 'flag r', title: 'Value is above the slider window' }, '▸');
+  row.num = h('input', { class: 'num', inputmode: 'decimal', 'aria-labelledby': `l-${p.name}`, spellcheck: 'false', autocomplete: 'off' });
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.eff = h('span', { class: 'eff' });
+  const lab = labelEl(p);
+  row.el = h('div', { class: 'row' }, lab, h('div', { class: 'track' }, row.ticks, row.range, row.fl, row.fr), row.num, infoBtn(row), resetBtn(row), row.msg, row.info);
+  row.unitLabel = p.unit;
+  // slider: live display while dragging, commit on release (each write touches the Windows registry)
+  row.range.addEventListener('input', () => { row.el.classList.add('dragging'); const v = sliderValue(row); row.pendingVal = v; row.num.value = fmtVal(p, v); row.num.classList.add('dirty'); markHot(row, v); });
+  row.range.addEventListener('change', () => { row.el.classList.remove('dragging'); row.captured = null; if (row.pendingVal !== undefined) commit(row, fmtVal(p, row.pendingVal)); row.pendingVal = undefined; });
+  row.range.addEventListener('keydown', e => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].includes(e.key)) return;
+    e.preventDefault();
+    const dir = ['ArrowRight', 'ArrowUp', 'PageUp'].includes(e.key) ? 1 : -1;
+    const cur = currentNumber(row);
+    let v;
+    if (align(p) === 'forced' && p.notches) { const ns = notchesIn(p); const i = ns.findIndex(n => n >= cur - 1e-9); v = dir > 0 ? ns.find(n => n > cur + 1e-9) ?? ns.at(-1) : [...ns].reverse().find(n => n < cur - 1e-9) ?? ns[0]; void i; }
+    else {
+      const stepPos = e.shiftKey ? 1 : e.key.startsWith('Page') ? 100 : 10; // Shift = fine (sensitivity only)
+      const t = Math.min(1, Math.max(0, T(p, cur))) + dir * stepPos / POS;
+      v = tidy(p, Tinv(p, Math.min(1, Math.max(0, t))));
+      if (v === cur) v = tidy(p, cur + dir * (p.kind === 'int' ? 1 : (p.step || 0.01)));
+    }
+    v = Math.min(caps(p)[1], Math.max(caps(p)[0], v));
+    row.num.value = fmtVal(p, v); commit(row, fmtVal(p, v));
+  });
+  // numeric entry: Enter/blur commits, Escape restores the authoritative value
+  row.num.addEventListener('focus', () => { row.editing = true; });
+  row.num.addEventListener('input', () => { row.num.classList.add('dirty'); row.num.classList.remove('bad'); });
+  row.num.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(row, row.num.value); }
+    else if (e.key === 'Escape') { e.preventDefault(); row.localErr = null; row.num.classList.remove('dirty', 'bad'); setMsg(row, ''); row.editing = false; syncNumeric(row, true); row.num.blur(); }
+  });
+  row.num.addEventListener('blur', () => { row.editing = false; if (row.num.classList.contains('dirty')) commit(row, row.num.value); });
+  return row;
+}
+function notchesIn(p) { const [a, b] = win(p); return (p.notches || []).filter(n => n >= a && n <= b); }
+function trackPx(row) { return Math.max(1, row.range.getBoundingClientRect().width - 12); }
+/* Display-space notch attraction (Compute Alignment ref): capture within 2.5 CSS px, release beyond 5 px;
+   radii shrink when notches are dense so neighbouring capture zones never overlap. */
+function sliderValue(row) {
+  const p = row.p, pos = Number(row.range.value), width = trackPx(row), px = pos / POS * width, mode = align(p);
+  const ns = notchesIn(p).map(n => ({ n, px: T(p, n) * width }));
+  if (mode === 'forced' && ns.length) { const best = ns.reduce((a, b) => Math.abs(b.px - px) < Math.abs(a.px - px) ? b : a); row.range.value = Math.round(T(p, best.n) * POS); return best.n; }
+  if (mode === 'notched' && ns.length) {
+    const gap = ns.length > 1 ? Math.min(...ns.slice(1).map((x, i) => x.px - ns[i].px)) : Infinity;
+    const capture = Math.min(2.5, gap * 0.45), release = Math.min(5, gap * 0.49);
+    if (row.captured !== null) { const c = ns.find(x => x.n === row.captured); if (c && Math.abs(c.px - px) <= release) { row.range.value = Math.round(T(p, c.n) * POS); return c.n; } row.captured = null; }
+    const near = ns.filter(x => Math.abs(x.px - px) <= capture).sort((a, b) => Math.abs(a.px - px) - Math.abs(b.px - px))[0];
+    if (near) { row.captured = near.n; row.range.value = Math.round(T(p, near.n) * POS); return near.n; }
+  }
+  return tidy(p, Tinv(p, pos / POS));
+}
+function markHot(row, v) { for (const t of row.ticks.children) t.classList.toggle('hot', Number(t.dataset.v) === v); }
+function drawTicks(row) {
+  const p = row.p; row.ticks.textContent = '';
+  if (align(p) === 'free') return;
+  const def = inheritedValue(p);
+  for (const n of notchesIn(p)) { const i = h('i', { 'data-v': n, title: String(n) }); i.style.left = `calc(6px + ${T(p, n)} * (100% - 12px))`; if (n === def) i.className = 'def'; row.ticks.append(i); }
+}
+function currentNumber(row) { const p = row.p, raw = STATE.values[p.name]; return raw !== '' ? Number(raw) : inheritedValue(p) ?? Tinv(p, 0); }
+function syncNumeric(row, force = false) {
+  const p = row.p, raw = STATE.values[p.name], set = raw !== '';
+  row.el.classList.toggle('set', set); row.el.classList.toggle('inherit', !set);
+  const inh = inheritedValue(p);
+  row.num.placeholder = inh === null ? (p.worker ? '∞ none' : 'unset') : p.inherit ? `↳${fmtVal(p, inh)}` : `${fmtVal(p, inh) || 'unset'}`;
+  if (!row.editing || force) { row.num.value = set ? raw : ''; row.num.classList.remove('dirty'); }
+  const v = set ? Number(raw) : inh;
+  const [a, b] = win(p);
+  drawTicks(row);
+  if (v === null || v === undefined || Number.isNaN(v)) { row.range.value = 0; row.fl.classList.remove('lit'); row.fr.classList.remove('lit'); }
+  else { row.range.value = Math.round(Math.min(1, Math.max(0, T(p, v))) * POS); row.fl.classList.toggle('lit', v < a); row.fr.classList.toggle('lit', v > b); markHot(row, v); }
+  row.range.setAttribute('aria-valuetext', v === null ? 'none' : `${fmtVal(p, v)} ${p.unit || ''}${set ? '' : ' (default)'}`);
+  const unit = p.unit ? ` ${p.unit}` : '';
+  row.num.title = `${set ? 'Set' : 'Default'}${unit}. Window ${a}..${b}${unit}; caps ${caps(p).join('..')}${unit}`;
+}
+
+/* ── effort ladder rows (forced notches: the domain is six ordered levels) ── */
+function effortRow(p) {
+  const row = { p, seg: h('div', { class: 'seg', role: 'radiogroup', 'aria-labelledby': `l-${p.name}` }) };
+  row.btns = S.efforts.map(level => h('button', { role: 'radio', 'aria-checked': 'false', title: level, onclick: () => commit(row, level), onkeydown: e => effortKey(row, e, level) }, level === 'medium' ? 'med' : level));
+  row.seg.append(...row.btns);
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), row.seg, infoBtn(row), resetBtn(row), row.msg, row.info);
+  return row;
+}
+function effortKey(row, e, level) {
+  const i = S.efforts.indexOf(level), d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+  if (!d) return; e.preventDefault(); const j = Math.min(S.efforts.length - 1, Math.max(0, i + d)); row.btns[j].focus(); commit(row, S.efforts[j]);
+}
+function syncEffort(row) {
+  const p = row.p, raw = STATE.values[p.name], eff = STATE.effective.workers[p.worker].effort;
+  const field = p.name.endsWith('_MIN') ? 'min' : p.name.endsWith('_MAX') ? 'max' : 'default';
+  const active = raw || (eff ? eff[field] : p.builtin);
+  row.el.classList.toggle('set', !!raw);
+  row.btns.forEach((b, i) => {
+    const lvl = S.efforts[i];
+    const out = eff && field === 'default' && (S.efforts.indexOf(lvl) < S.efforts.indexOf(eff.min) || S.efforts.indexOf(lvl) > S.efforts.indexOf(eff.max));
+    b.className = (raw && lvl === raw ? 'on' : !raw && lvl === active ? 'inh' : '') + (out ? ' out' : '');
+    b.setAttribute('aria-checked', String(lvl === active)); b.tabIndex = lvl === active ? 0 : -1;
+    b.title = `${lvl}${lvl === p.builtin ? ' · built-in' : ''}${!raw && lvl === active ? ' · in effect (not set)' : ''}${out ? ' · outside MIN..MAX' : ''}`;
+  });
+}
+function effortRuler(w) {
+  const el = h('div', { class: 'effort-ruler', 'aria-hidden': 'true' }, h('span', { class: 'lab' }, 'RANGE'), h('div', { class: 'scale' }, S.efforts.map(() => h('span'))), h('span'), h('span'));
+  el.sync = () => { const e = STATE.effective.workers[w].effort; [...el.children[1].children].forEach((s, i) => { s.className = !e ? '' : i === S.efforts.indexOf(e.default) ? 'def' : i >= S.efforts.indexOf(e.min) && i <= S.efforts.indexOf(e.max) ? 'in' : ''; }); };
+  return el;
+}
+
+/* ── enum / tier row ── */
+function enumRow(p) {
+  const row = { p, seg: h('div', { class: 'seg', role: 'radiogroup', 'aria-labelledby': `l-${p.name}` }) };
+  row.btns = p.options.map(o => h('button', { role: 'radio', 'aria-checked': 'false', onclick: () => commit(row, o) }, o === '' ? 'INH' : o === 'priority' ? 'prio' : o === 'default' ? 'dflt' : o));
+  row.seg.append(...row.btns);
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), row.seg, infoBtn(row), resetBtn(row), row.msg, row.info);
+  return row;
+}
+function syncEnum(row) {
+  const p = row.p, raw = STATE.values[p.name];
+  let inh = '';
+  if (p.worker) inh = p.builtin || STATE.values.OPENAI_WORKER_SERVICE_TIER || 'project default';
+  else inh = 'project default';
+  row.el.classList.toggle('set', raw !== '');
+  row.btns.forEach((b, i) => {
+    const o = p.options[i];
+    b.className = raw === o && raw !== '' ? 'on' : raw === '' && o === '' ? 'inh' : '';
+    b.setAttribute('aria-checked', String(raw === o));
+    if (o === '') { b.textContent = `↳${inh === 'project default' ? 'proj' : inh === 'priority' ? 'prio' : inh}`; b.title = `Inherit: ${inh}${p.worker && p.builtin ? ' (built-in worker tier)' : ''}`; }
+    else b.title = o;
+  });
+}
+
+/* ── model row ── */
+function modelRow(p) {
+  const row = { p };
+  row.input = h('input', { class: 'txt model', list: 'models', spellcheck: 'false', autocomplete: 'off', 'aria-labelledby': `l-${p.name}`, placeholder: `↳${p.builtin}` });
+  row.chip = h('span', { class: 'chip' });
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), h('div', { class: 'modelwrap' }, row.input, row.chip), infoBtn(row), resetBtn(row), row.msg, row.info);
+  textBehaviour(row, row.input);
+  return row;
+}
+function textBehaviour(row, input) {
+  input.addEventListener('focus', () => { row.editing = true; });
+  input.addEventListener('input', () => input.classList.add('dirty'));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(row, input.value); }
+    else if (e.key === 'Escape') { e.preventDefault(); row.localErr = null; input.classList.remove('dirty', 'bad'); setMsg(row, ''); input.value = STATE.values[row.p.name]; input.blur(); }
+  });
+  input.addEventListener('blur', () => { row.editing = false; if (input.classList.contains('dirty')) commit(row, input.value); });
+  input.addEventListener('change', () => { if (input.classList.contains('dirty') && document.activeElement !== input) commit(row, input.value); });
+}
+function syncModel(row) {
+  const p = row.p, raw = STATE.values[p.name];
+  row.el.classList.toggle('set', raw !== '');
+  if (!row.editing) { row.input.value = raw; row.input.classList.remove('dirty'); }
+  const w = STATE.effective.workers[p.worker], warn = STATE.check.warnings[p.name];
+  row.chip.textContent = warn ? (/quota group/.test(warn) ? 'NO QUOTA' : 'UNPRICED') : 'PRICED';
+  row.chip.className = `chip ${warn ? 'deg' : 'ok'}`;
+  row.chip.title = warn || `${w.model}: local price estimate known`;
+}
+
+/* ── toggle / text rows ── */
+function toggleRow(p) {
+  const row = { p };
+  row.btn = h('button', { class: 'btn', role: 'switch', 'aria-labelledby': `l-${p.name}`, onclick: () => commit(row, STATE.values[p.name] === '1' ? '' : '1') });
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), h('div', {}, row.btn), infoBtn(row), resetBtn(row), row.msg, row.info);
+  return row;
+}
+function syncToggle(row) { const on = STATE.values[row.p.name] === '1'; row.el.classList.toggle('set', on); row.btn.className = `btn${on ? ' on' : ''}`; row.btn.setAttribute('aria-checked', String(on)); row.btn.textContent = on ? '● ON' : '○ OFF'; }
+function textRow(p) {
+  const row = { p };
+  row.input = h('input', { class: 'txt', spellcheck: 'false', autocomplete: 'off', maxlength: p.max || 260, 'aria-labelledby': `l-${p.name}`, placeholder: p.builtin ? `↳ ${p.builtin}` : p.kind === 'path' ? '↳ default per-user state dir' : '' });
+  row.msg = msgEl(); row.info = h('div', { class: 'info' });
+  row.el = h('div', { class: 'row wide' }, labelEl(p), row.input, infoBtn(row), resetBtn(row), row.msg, row.info);
+  textBehaviour(row, row.input);
+  return row;
+}
+function syncText(row) { const raw = STATE.values[row.p.name]; row.el.classList.toggle('set', raw !== ''); if (!row.editing) { row.input.value = raw; row.input.classList.remove('dirty'); } }
+
+function buildRow(p) {
+  const row = p.kind === 'int' || p.kind === 'num' ? numericRow(p) : p.kind === 'effort' ? effortRow(p) : p.kind === 'enum' ? enumRow(p) : p.kind === 'model' ? modelRow(p) : p.kind === 'toggle' ? toggleRow(p) : textRow(p);
+  row.sync = { int: syncNumeric, num: syncNumeric, effort: syncEffort, enum: syncEnum, model: syncModel, toggle: syncToggle, text: syncText, path: syncText }[p.kind];
+  ROWS[p.name] = row; return row;
+}
+
+/* ── info / range inspector (spec §1, §2, §3, §5) ── */
+function toggleInfo(row, btn) {
+  const open = !row.info.classList.contains('show');
+  for (const r of Object.values(ROWS)) if (r !== row && r.info.classList.contains('show')) { r.info.classList.remove('show'); }
+  row.info.classList.toggle('show', open); btn.setAttribute('aria-expanded', String(open));
+  if (open) renderInfo(row);
+}
+function renderInfo(row) {
+  const p = row.p, info = row.info; info.textContent = '';
+  info.append(h('p', {}, p.help || ''), h('p', { class: 'mini' }, `ENV ${p.name}${p.informational ? ' · INFORMATIONAL ONLY' : ''}`));
+  if (p.kind === 'effort') info.append(h('p', { class: 'mini' }, `Levels ${S.efforts.join(' < ')}. Built-in: ${p.builtin}. Rule: MIN ≤ DEFAULT ≤ MAX; gpt-6.x Sol/Astra refuse "none".`));
+  if (p.builtin && p.kind !== 'effort') info.append(h('p', { class: 'mini' }, `Built-in: ${p.builtin}`));
+  if (p.kind !== 'int' && p.kind !== 'num') return;
+  const u = { ...(STATE.ui.params[p.name] || {}) };
+  const inp = v => h('input', { value: v, inputmode: 'decimal' });
+  const capLo = inp(caps(p)[0]), capHi = inp(caps(p)[1]), wLo = inp(win(p)[0]), wHi = inp(win(p)[1]);
+  const mode = h('select', { 'aria-label': 'Notch alignment mode' }, ['free', 'indicate', 'notched', 'forced'].map(m => h('option', { value: m, selected: align(p) === m }, m.toUpperCase())));
+  const err = h('div', { class: 'err', role: 'alert' });
+  const inh = inheritedValue(p);
+  info.append(h('div', { class: 'grid' },
+    h('span', { class: 'k' }, 'Engineering'), h('span', { class: 'ro' }, p.bounds[0]), h('span', { class: 'ro' }, p.bounds[1]), h('span', { class: 'ro mini' }, 'immutable'),
+    h('span', { class: 'k' }, 'Safety caps'), capLo, capHi, h('span', { class: 'mini' }, 'entry limit'),
+    h('span', { class: 'k' }, 'Slider window'), wLo, wHi, h('span', { class: 'mini' }, p.log ? 'log' : 'linear'),
+    h('span', { class: 'k' }, 'Default'), h('span', { class: 'ro' }, inh === null ? 'none (∞)' : `${fmtVal(p, inh)} ${p.unit || ''}`), h('span', { class: 'k' }, 'Notches'), h('span', {}, mode),
+    h('span', { class: 'k' }, 'Preferred'), h('span', { class: 'ro' }, (p.notches || []).join(' · ') || '—'), h('span'), h('span')));
+  const save = async next => {
+    const doc = structuredClone(STATE.ui); if (Object.keys(next).length) doc.params[p.name] = next; else delete doc.params[p.name];
+    const r = await api('/api/ui', { ui: doc });
+    if (!r.ok) { err.textContent = Object.values(r.errors || {}).join(' ') || 'Refused.'; return; }
+    STATE.ui = r.ui; row.sync(row); renderInfo(row); status(`${p.label}: range settings saved (value unchanged)`);
+  };
+  const nums = (a, b) => [Number(a.value), Number(b.value)];
+  info.append(h('div', { class: 'acts' },
+    h('button', { class: 'btn on', onclick: () => save({ ...u, caps: nums(capLo, capHi), window: nums(wLo, wHi), align: mode.value }) }, 'APPLY'),
+    h('button', { class: 'btn', onclick: () => { const n = { ...u }; delete n.window; save(n); } }, '↺ WINDOW'),
+    h('button', { class: 'btn', onclick: () => { const n = { ...u }; delete n.caps; save(n); } }, '↺ CAPS'),
+    h('button', { class: 'btn', onclick: () => { const n = { ...u }; delete n.align; save(n); } }, '↺ MODE'),
+    h('button', { class: 'btn', onclick: () => commit(row, '') }, '↺ VALUE')), err);
+}
+
+/* ── commit (one authoritative value; server validates with the plugin's parsers) ── */
+async function commit(row, value) {
+  const p = row.p, v = String(value ?? '').trim();
+  if (v === (STATE.values[p.name] || '')) { row.num?.classList.remove('dirty'); row.input?.classList.remove('dirty'); setMsg(row, ''); row.sync(row); return; }
+  status(`WRITING ${p.name}…`);
+  try {
+    const r = await api('/api/set', { changes: { [p.name]: v } });
+    if (!r.ok) {
+      const own = r.errors[p.name] || Object.entries(r.errors).map(([n, m]) => `${n}: ${m}`).join(' ');
+      row.localErr = own; setMsg(row, own); (row.num || row.input)?.classList.add('bad');
+      for (const [n, m] of Object.entries(r.errors)) if (n !== p.name && ROWS[n]) { ROWS[n].localErr = m; setMsg(ROWS[n], m); }
+      status(`REFUSED ${p.name}: ${own}`, true); return;
+    }
+    for (const r2 of Object.values(ROWS)) r2.localErr = null;
+    setMsg(row, ''); (row.num || row.input)?.classList.remove('bad', 'dirty'); row.editing = false;
+    status(r.changed.length ? `SET ${p.name} = ${v || '(unset → default)'} · restart Claude Code to apply` : `${p.name} unchanged`);
+    await refresh();
+  } catch (e) { setMsg(row, e.message); status(e.message, true); }
+}
+
+/* ── panels ── */
+function panel(group, { chips = [], summary = false, note } = {}) {
+  const lock = h('button', { class: 'btn lock', title: 'LOCK protects this group from preset loads (G:UNLOCK overrides once)', 'aria-pressed': 'false', onclick: () => toggleLock(group.id) }, 'OFF');
+  const msum = h('span', { class: 'msum' });
+  const minBtn = h('button', { class: 'btn ico', title: 'Minimise / restore', 'aria-label': `Minimise ${group.label}`, 'aria-pressed': 'false', onclick: () => toggleMin(group.id) }, '▁');
+  const name = h('span', { class: 'name', title: [note, 'Drag to reorder'].filter(Boolean).join('\n') }, group.label);
+  const head = h('div', { class: 'ph' }, name, ...chips, msum, h('span', { class: 'spacer' }), h('span', { class: 'lab' }, 'LOCK'), lock, minBtn);
+  const body = h('div', { class: 'pb' });
+  const el = h('section', { class: 'panel bevel', 'aria-label': group.label, 'data-gid': group.id }, head);
+  name.draggable = true;
+  name.addEventListener('dragstart', e => { DRAG.id = group.id; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', group.id); });
+  name.addEventListener('dragend', () => { el.classList.remove('dragging'); clearDrop(); DRAG.id = null; });
+  el.addEventListener('dragover', e => { const src = PANELS[DRAG.id]?.el; if (!src || src === el || src.parentNode !== el.parentNode) return; e.preventDefault(); clearDrop(); el.classList.add(dropAfter(e, el) ? 'drop-after' : 'drop-before'); });
+  el.addEventListener('drop', e => { const src = PANELS[DRAG.id]?.el; if (!src || src === el || src.parentNode !== el.parentNode) return; e.preventDefault(); el.parentNode.insertBefore(src, dropAfter(e, el) ? el.nextSibling : el); clearDrop(); saveOrder(el.parentNode); });
+  const sum = summary ? h('div', { class: 'summary lcd' }) : null;
+  if (sum) el.append(sum);
+  el.append(body);
+  PANELS[group.id] = { el, body, lock, sum, msum, minBtn };
+  return PANELS[group.id];
+}
+const DRAG = { id: null };
+const local = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+function dropAfter(e, el) { const r = el.getBoundingClientRect(), multi = getComputedStyle(el.parentNode).gridTemplateColumns.split(' ').length > 1; return multi ? e.clientX > r.left + r.width / 2 : e.clientY > r.top + r.height / 2; }
+function clearDrop() { for (const x of document.querySelectorAll('.drop-before,.drop-after')) x.classList.remove('drop-before', 'drop-after'); }
+function saveOrder(container) { local.set(`oai.order.${container.id}`, [...container.children].map(c => c.dataset.gid).filter(Boolean)); }
+function applyOrder(container) {
+  const order = local.get(`oai.order.${container.id}`, []);
+  for (const id of order) { const el = PANELS[id]?.el; if (el && el.parentNode === container) container.append(el); }
+}
+function toggleMin(id, force) {
+  const P = PANELS[id]; if (!P || !P.minBtn) return;
+  const mins = local.get('oai.min', {}), on = force ?? !mins[id];
+  if (on) mins[id] = true; else delete mins[id];
+  if (force === undefined) local.set('oai.min', mins);
+  P.el.classList.toggle('min', on); P.minBtn.setAttribute('aria-pressed', String(on)); P.minBtn.textContent = on ? '▣' : '▁';
+}
+async function toggleLock(id) {
+  const doc = structuredClone(STATE.ui); if (doc.locks[id]) delete doc.locks[id]; else doc.locks[id] = true;
+  const r = await api('/api/ui', { ui: doc }); if (r.ok) { STATE.ui = r.ui; syncLocks(); status(`${id.replace('w:', '').toUpperCase()} ${r.ui.locks[id] ? 'LOCKED against preset loads' : 'unlocked'}`); }
+}
+function syncLocks() { for (const [id, P] of Object.entries(PANELS)) { const on = !!STATE.ui.locks[id]; P.lock.classList.toggle('on', on); P.lock.textContent = on ? 'LOCK' : 'OFF'; P.lock.setAttribute('aria-pressed', String(on)); P.el.classList.toggle('locked', on); } }
+
+function build() {
+  const byGroup = {}; for (const p of S.params) (byGroup[p.group] ||= []).push(p);
+  const left = $('#leftCol');
+  const notes = { providers: 'NVIDIA Build and LM Studio: endpoints, NVIDIA concurrency, daily hours and rotation. No token caps.', global: 'Defaults for every worker; per-worker values override.', quota: 'Local guardrails for the free-programme key (UTC day). Not an OpenAI entitlement.',
+    spend: 'LIMIT is enforced. ALLOWANCE is a reference figure only and never blocks.', diag: 'Diagnostics read by the bridge and the /oai panel.',
+    steer: 'Operator steering: tips to running workers via /oai:s or the console. Pause gives you a window to steer after file edits or commands.' };
+  for (const id of ['global', 'quota', 'spend', 'steer', 'providers', 'diag']) {
+    if (!byGroup[id] || !S.groups.find(x => x.id === id)) continue;
+    const g = S.groups.find(x => x.id === id), P = panel(g, { note: notes[id], chips: id === 'spend' ? [h('span', { class: 'chip info' }, 'ALLOWANCE = INFO')] : [] });
+    for (const p of byGroup[id]) P.body.append(buildRow(p).el);
+    left.append(P.el);
+  }
+  const wrap = $('#workers');
+  for (const w of S.workers) {
+    const g = S.groups.find(x => x.id === `w:${w.name}`);
+    const chip = w.provider === 'nvidia' ? h('span', { class: 'chip free', title: 'NVIDIA_API_KEY · free NVIDIA Build model' }, 'NVIDIA') : w.provider === 'lmstudio' ? h('span', { class: 'chip info', title: 'Local LM Studio model on this PC' }, 'LOCAL') : h('span', { class: `chip ${w.key === 'free' ? 'free' : 'paid'}`, title: w.key === 'free' ? 'OPENAI_FREE_API_KEY' : 'OPENAI_API_KEY' }, w.key === 'free' ? 'FREE KEY' : 'PAID KEY');
+    const P = panel(g, { summary: true, chips: [chip] });
+    P.el.title = ''; P.el.querySelector('.ph .name').title = `${w.description}\nDrag to reorder`;
+    for (const p of byGroup[`w:${w.name}`]) { if (p.name.endsWith('EFFORT_MIN')) { P.ruler = effortRuler(w.name); P.body.append(P.ruler); } P.body.append(buildRow(p).el); }
+    wrap.append(P.el);
+  }
+  const adv = S.groups.find(x => x.id === 'advanced'), P = panel(adv, { note: 'Rarely needed. Ledger/trace directories, free-ledger concurrency, and the per-worker notes Claude sees when choosing a worker.' });
+  const det = h('details', { class: 'adv panel bevel' }, h('summary', {}, P.el.firstChild), ...[...P.el.childNodes]);
+  PANELS.advanced.el = det;
+  for (const p of byGroup.advanced) P.body.append(buildRow(p).el);
+  $('#advHost').append(det);
+  applyOrder($('#leftCol')); applyOrder($('#workers'));
+  for (const id of Object.keys(local.get('oai.min', {}))) toggleMin(id, true);
+  document.body.append(h('datalist', { id: 'models' }, S.pricedModels.map(m => h('option', { value: m }))));
+}
+
+/* ── live panels ── */
+function renderLive() {
+  const st = STATE;
+  $('#ver').textContent = `v${st.version}`;
+  $('#lcd').title = `Store: ${st.storage.kind} · ${st.storage.location}`;
+  const nset = Object.values(st.values).filter(v => v !== '').length, nerr = Object.keys(st.check.errors).length;
+  $('#lcdState').textContent = `${String(nset).padStart(2, '0')} SET · ${nerr ? `${nerr} INVALID` : 'VALID'} · ${Object.keys(st.check.warnings).length} WARN`;
+  $('#keys').replaceChildren(...st.keys.map(k => h('div', { class: 'kv', title: `${k.name}: value never displayed` }, h('span', { class: `led ${k.configured ? 'ok' : 'bad'}` }), h('span', { class: 'lab' }, k.label || (k.profile === 'free' ? 'FREE' : 'PAID')), h('span', { class: 'v' }, k.configured ? k.source : 'not configured'))));
+  const q = $('#quota');
+  if (st.usage) {
+    q.replaceChildren(...['premium', 'terra'].map(g => {
+      const x = st.usage.groups[g], lim = Math.max(1, x.softLimitTokens), bar = h('div', { class: 'qbar', role: 'img', 'aria-label': `${g} ${x.usedTokens} used of ${x.softLimitTokens}` });
+      const u = h('i', { class: 'u' }), r = h('i', { class: 'r' }), t = h('i', { class: 't' });
+      u.style.width = `${Math.min(100, x.usedTokens / lim * 100)}%`; r.style.left = u.style.width; r.style.width = `${Math.min(100, x.reservedTokens / lim * 100)}%`; t.style.left = `${Math.min(100, x.dailyTargetTokens / lim * 100)}%`;
+      bar.append(u, r, t);
+      return h('div', { class: 'kv' }, h('span', { class: 'lab' }, g === 'premium' ? 'PREM' : 'TERRA'), bar, h('span', { class: 'v' }, `${fmtTok(x.usedTokens)}/${fmtTok(x.softLimitTokens)}`));
+    }), h('div', { class: 'mini' }, `reset ${st.usage.resetAtUtc.slice(11, 16)}Z · +${st.usage.overrunPercent}% overrun · amber = reserved`));
+    $('#month').replaceChildren(
+      h('div', { class: 'kv' }, h('span', { class: 'lab' }, 'ALL KEYS'), h('span', { class: 'v' }, fmtUsd(st.usage.allKeysMonthlyEstimatedUsd)), h('span', { class: 'lab' }, 'FREE'), h('span', { class: 'v' }, fmtUsd(st.usage.monthlyEstimatedUsd))),
+      h('div', { class: 'kv' }, h('span', { class: 'lab' }, 'LIMIT'), h('span', { class: 'v' }, st.usage.monthlyLimitUsd == null ? 'none (no cost blocking)' : `${fmtUsd(st.usage.monthlyLimitUsd)} enforced`)),
+      h('div', { class: 'kv' }, h('span', { class: 'lab' }, 'ALLOWANCE'), h('span', { class: 'v' }, st.usage.monthlyAllowanceUsd == null ? '—' : fmtUsd(st.usage.monthlyAllowanceUsd)), h('span', { class: 'chip info' }, 'INFO ONLY')));
+  } else { q.replaceChildren(h('div', { class: 'mini' }, `ledger unavailable: ${st.usageError || 'unknown'}`)); $('#month').replaceChildren(h('div', { class: 'mini' }, '—')); }
+  $('#trace').replaceChildren(
+    h('div', { class: 'kv' }, h('span', { class: `led ${st.trace.enabled ? 'ok' : ''}` }), h('span', { class: 'lab' }, st.trace.enabled ? 'ON (after restart)' : 'OFF'), h('span', { class: 'v' }, fmtBytes(st.trace.bytes))),
+    h('div', { class: 'kv', title: st.trace.file }, h('span', { class: 'lab' }, 'FILE'), h('span', { class: 'v mini' }, st.trace.file)));
+  // pending marker
+  const pend = st.pending, box = $('#pending');
+  box.classList.toggle('show', !!pend);
+  if (pend) { const names = Object.keys(pend.changes); $('#pendingNames').textContent = `${names.length} changed since ${pend.since.slice(0, 16).replace('T', ' ')}Z: ${names.map(n => n.replace(/^OPENAI_WORKER_/, '')).join(', ')}`; $('#pendingNames').title = names.join('\n'); }
+  $('#autoClear').value = String(st.ui.autoClearMinutes || 0);
+  titleState(!!pend);
+  // presets
+  const sel = $('#presetSel'), keep = sel.value;
+  sel.replaceChildren(...st.presets.map(p => h('option', { value: p.name, title: p.description || p.savedAt || '' }, p.builtin ? `★ ${p.name}` : p.name)));
+  if (keep && st.presets.some(p => p.name === keep)) sel.value = keep;
+  $('#presetDel').disabled = !!st.presets.find(p => p.name === sel.value)?.builtin;
+  $('#tips').checked = st.ui.tooltips !== false; applyTips();
+}
+let blinkTimer = null;
+function titleState(on) {
+  clearInterval(blinkTimer); blinkTimer = null;
+  if (!on) { document.title = 'OAI CONFIG'; return; }
+  document.title = '⚠ RESTART CLAUDE CODE · OAI CONFIG';
+
+}
+function applyTips() {
+  const on = $('#tips').checked; document.body.classList.toggle('notips', !on);
+  for (const el of document.querySelectorAll('.row .lab')) { if (on) el.title = el.dataset.help || ''; else el.removeAttribute('title'); }
+}
+function renderValues() {
+  for (const row of Object.values(ROWS)) {
+    row.sync(row);
+    const err = STATE.check.errors[row.p.name], warn = STATE.check.warnings[row.p.name];
+    if (row.localErr) setMsg(row, `refused: ${row.localErr}`);
+    else if (!row.editing) setMsg(row, err ? `stored value invalid: ${err}` : warn || '', !err && !!warn);
+  }
+  for (const w of S.workers) {
+    const P = PANELS[`w:${w.name}`], e = STATE.effective.workers[w.name];
+    P.ruler?.sync();
+    P.sum.textContent = e.error ? `⚠ ${e.error}` : `${e.model} · ${e.tier} · ${e.effort.min}..${e.effort.max} ▸${e.effort.default} · ${e.maxSteps} st · ${e.maxUsd == null ? '∞' : `$${e.maxUsd}`}`;
+    P.sum.title = 'Effective runtime values the plugin will use after a restart';
+    const today = STATE.usage?.workersToday?.[w.name], tok = today?.tokens ?? 0, usd = w.key === 'free' ? null : today?.estimatedUsd ?? 0;
+    P.msum.textContent = e.error ? '⚠ config error' : `${e.effort.default} · ${e.tier} · ${(tok / 1000).toFixed(1)}k tok${usd == null ? ' · free' : ` · $${usd.toFixed(3)}`}`;
+    P.msum.title = 'Default effort · tier · tokens today (UTC) · estimated spend outside the free quota today';
+  }
+  const g = STATE.effective.global, flex = ROWS.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES;
+  if (flex && Number(STATE.values.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES) > 120) setMsg(flex, `effective ${g.flexMinutes} min (plugin caps at 120)`, true);
+  syncLocks();
+}
+async function refresh() {
+  try { STATE = await api('/api/state'); if (CW.cur) STATE.ui.colourway = cwClone(CW.cur); renderLive(); renderValues(); const t = new Date(); $('#clock').textContent = t.toTimeString().slice(0, 5); }
+  catch (e) { status(`OFFLINE: ${e.message} — relaunch /oai:config`, true); }
+}
+
+/* ── wiring ── */
+function setCover(open) { $('#launch').classList.toggle('open', open); $('#launchCover').setAttribute('aria-expanded', String(open)); $('#restarted').disabled = !open; $('#restarted').title = open ? 'Confirm Claude Code was restarted' : 'Lift the cover first'; }
+$('#launchCover').addEventListener('click', () => { setCover(true); $('#restarted').focus(); });
+$('#restarted').addEventListener('click', async () => { setCover(false); await api('/api/restarted', {}); status('Pending marker cleared'); refresh(); });
+$('#autoClear').addEventListener('change', async e => { const doc = structuredClone(STATE.ui); doc.autoClearMinutes = Number(e.target.value); const r = await api('/api/ui', { ui: doc }); if (r.ok) { STATE.ui = r.ui; status(`Auto-clear: ${e.target.value === '0' ? 'never' : e.target.value + ' min after the last change'}`); refresh(); } });
+$('#tips').addEventListener('change', async e => { applyTips(); const doc = structuredClone(STATE.ui); doc.tooltips = e.target.checked; const r = await api('/api/ui', { ui: doc }); if (r.ok) STATE.ui = r.ui; });
+$('#refresh').addEventListener('click', () => { for (const r of Object.values(ROWS)) r.editing = false; refresh().then(() => status('Reloaded stored values')); });
+$('#presetSel').addEventListener('change', () => { $('#presetDel').disabled = !!STATE.presets.find(p => p.name === $('#presetSel').value)?.builtin; });
+$('#presetLoad').addEventListener('click', async () => {
+  const name = $('#presetSel').value; if (!name) return;
+  const r = await api('/api/preset/load', { name, overrideLocks: $('#overrideLocks').checked });
+  $('#overrideLocks').checked = false;
+  if (r.ok === false) { status(`Preset ${name} refused: ${Object.entries(r.errors || {}).map(([n, m]) => `${n}: ${m}`).join(' ')}`, true); return; }
+  status(`Loaded ${name}: ${r.changed.length} changed${r.skipped.length ? `, ${r.skipped.length} kept by locks` : ''}`); refresh();
+});
+$('#presetSave').addEventListener('click', async () => {
+  const name = $('#presetName').value.trim(); if (!name) { status('Type a preset name first', true); $('#presetName').focus(); return; }
+  try { const r = await api('/api/preset/save', { name }); if (r.error) throw new Error(r.error); status(`Saved preset ${name} (${r.count} values)`); $('#presetName').value = ''; await refresh(); $('#presetSel').value = name; }
+  catch (e) { status(e.message, true); }
+});
+$('#presetDel').addEventListener('click', async () => {
+  const name = $('#presetSel').value; if (!name || !confirm(`Delete preset ${name}?`)) return;
+  try { await api('/api/preset/delete', { name }); status(`Deleted preset ${name}`); refresh(); } catch (e) { status(e.message, true); }
+});
+/* ── COLOURWAY: UI-only theming (saved in config-ui.json via /api/ui; never marks restart pending) ── */
+const CW = { cur: null, sel: 0, end: 0, saveT: 0, el: {} };
+const TOKEN_HELP = { bg: 'page background', panel: 'panel face', 'panel-hi': 'bevel highlight, slider track', shadow: 'bevel shadow, outlines', line: 'separators, borders',
+  text: 'main text', 'text-dim': 'labels', accent: 'titles, buttons ON, slider thumb', 'accent-2': 'gradients, effort ruler', lcd: 'LCD/number text', 'lcd-bg': 'LCD/input background',
+  ok: 'OK LEDs and chips', warn: 'warnings, reserved quota, locks', hot: 'degraded chips', err: 'errors', info: 'info chips, free key', pending: 'restart-pending banner' };
+const cwClone = c => JSON.parse(JSON.stringify(c));
+const inkFor = hex => OC.contrast(hex, '#000000') >= OC.contrast(hex, '#ffffff') ? '#000000' : '#ffffff';
+const pad2 = i => String(i).padStart(2, '0');
+function cwApply() {
+  const c = CW.cur, res = OC.resolveColourway(c), root = document.documentElement.style;
+  for (const [t, v] of Object.entries(res)) root.setProperty(`--c-${t}`, v);
+  const E = CW.el; if (!E.lut) return;
+  const shown = OC.vary(c.stops, c.variation, c.seed);
+  E.grad.style.background = `linear-gradient(90deg,${shown.join(',')})`;
+  const lo = Math.min(CW.sel, CW.end), hi = Math.max(CW.sel, CW.end), focused = document.activeElement?.closest?.('.sw')?.dataset.i;
+  E.lut.replaceChildren(...shown.map((hex, i) => {
+    const b = h('button', { type: 'button', class: `sw${i === CW.sel ? ' sel' : ''}${i >= lo && i <= hi && lo !== hi ? ' rng' : ''}`, 'data-i': i, tabindex: i === CW.sel ? '0' : '-1',
+      'aria-label': `Stop ${i} ${c.stops[i]}${i >= lo && i <= hi ? ', selected' : ''}`,
+      title: `Stop ${i} ${c.stops[i]} · click: pick colour · shift+click / shift+arrows: range · double-click or F2: type hex` }, h('span', { class: 'ix' }, pad2(i)), c.stops[i].slice(1));
+    b.style.background = hex; b.style.color = inkFor(hex);
+    return b;
+  }));
+  if (focused !== undefined) E.lut.querySelector(`[data-i="${CW.end}"]`)?.focus();
+  E.range.textContent = lo === hi ? `STOP ${pad2(lo)}` : `STOPS ${pad2(lo)}–${pad2(hi)}`;
+  for (const t of OC.COLOUR_TOKENS) {
+    const r = E.tok[t]; r.dot.style.background = res[t]; r.sel.value = String(c.map[t]);
+    for (const o of r.sel.options) o.hidden = Number(o.value) >= c.stops.length;
+    if (document.activeElement !== r.hex) { r.hex.value = c.overrides[t] || ''; r.hex.classList.remove('bad'); }
+  }
+  E.interp.value = c.interp; E.harmony.value = c.harmony; E.vr.value = c.variation; if (document.activeElement !== E.vn) E.vn.value = c.variation; if (document.activeElement !== E.seed) E.seed.value = c.seed;
+  const tb = OC.contrast(res.text, res.bg), tp = OC.contrast(res.text, res.panel), worst = Math.min(tb, tp);
+  E.ct.textContent = `${worst < 4.5 ? '▲ ' : ''}TXT ${tb.toFixed(1)}/${tp.toFixed(1)}`;
+  E.ct.className = `chip ${worst < 4.5 ? 'lo' : 'ok'}`;
+  E.ct.title = `WCAG contrast: text vs bg ${tb.toFixed(2)}:1, text vs panel ${tp.toFixed(2)}:1${worst < 4.5 ? ' — below 4.5:1 (AA), hard to read' : ' (AA ≥ 4.5)'}`;
+}
+/** Edit the active colourway: apply live, persist (debounced) to UI state only. */
+function cwEdit(fn, msg) {
+  fn(CW.cur); cwApply();
+  if (STATE?.ui) STATE.ui.colourway = cwClone(CW.cur);
+  clearTimeout(CW.saveT); CW.saveT = setTimeout(() => { CW.saveT = 0; cwPersist(); }, 500);
+  if (msg) status(msg);
+}
+async function cwPersist(extra) {
+  const doc = structuredClone(STATE.ui); doc.colourway = cwClone(CW.cur); Object.assign(doc, extra || {});
+  try { const r = await api('/api/ui', { ui: doc }); if (r.ok) { STATE.ui = r.ui; return true; } status(`Colourway refused: ${Object.values(r.errors || {}).join(' ')}`, true); }
+  catch (e) { status(e.message, true); }
+  return false;
+}
+function cwList() {
+  const sel = CW.el.pick, keep = sel.value;
+  sel.replaceChildren(h('optgroup', { label: 'BUILT-IN' }, Object.keys(OC.BUILTIN_COLOURWAYS).map(n => h('option', { value: `b:${n}` }, n))),
+    h('optgroup', { label: 'SAVED' }, Object.keys(STATE.ui.colourways || {}).sort().map(n => h('option', { value: `u:${n}` }, n))));
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  CW.el.del.disabled = !sel.value.startsWith('u:');
+}
+function cwHexEdit(btn) {
+  const i = Number(btn.dataset.i), inp = h('input', { type: 'text', value: CW.cur.stops[i], maxlength: '7', 'aria-label': `Hex for stop ${i}`, spellcheck: 'false' });
+  let done = false;
+  const finish = ok => {
+    if (done) return; done = true; const v = OC.normHex(inp.value);
+    if (ok && v) cwEdit(c => { c.stops[i] = v; }, `Stop ${i} = ${v}`); else { if (ok) status(`Not a #RRGGBB value: ${inp.value}`, true); cwApply(); }
+    CW.el.lut.querySelector(`[data-i="${i}"]`)?.focus();
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } else if (e.key === 'Escape') { e.preventDefault(); finish(false); } e.stopPropagation(); });
+  inp.addEventListener('blur', () => finish(true));
+  inp.addEventListener('click', e => e.stopPropagation());
+  btn.append(inp); inp.focus(); inp.select();
+}
+function cwPick(i) { const p = CW.el.native; p.value = CW.cur.stops[i]; p.dataset.i = i; try { p.showPicker ? p.showPicker() : p.click(); } catch { p.click(); } }
+function buildColourway(host) {
+  const E = CW.el; let clickT = 0;
+  const btn = (label, title, onclick, extra = {}) => h('button', { class: 'btn', type: 'button', title, onclick, ...extra }, label);
+  const lohi = () => [Math.min(CW.sel, CW.end), Math.max(CW.sel, CW.end)];
+  E.ct = h('span', { class: 'chip ok' }, 'TXT');
+  E.pick = h('select', { 'aria-label': 'Colourway', title: 'Built-in and saved colourways' });
+  E.del = h('button', { class: 'btn ico', type: 'button', title: 'Delete the selected saved colourway', 'aria-label': 'Delete colourway' }, '−');
+  E.name = h('input', { type: 'text', class: 'hex', placeholder: 'name…', maxlength: '48', 'aria-label': 'Colourway name' }); E.name.style.width = '84px';
+  E.grad = h('div', { class: 'grad', role: 'img', 'aria-label': 'LUT gradient preview' });
+  E.lut = h('div', { class: 'lut', role: 'group', 'aria-label': 'LUT stops (arrows move, shift+arrows select a range, Enter picks, F2 types hex)' });
+  E.native = h('input', { type: 'color', tabindex: '-1', 'aria-hidden': 'true' }); E.native.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
+  E.native.addEventListener('input', () => cwEdit(c => { c.stops[Number(E.native.dataset.i)] = E.native.value; }));
+  const ab = (k, init) => {
+    const col = h('input', { type: 'color', value: init, 'aria-label': `Colour ${k}` }), hex = h('input', { type: 'text', class: 'hex', value: init, maxlength: '7', 'aria-label': `Colour ${k} hex`, spellcheck: 'false' });
+    col.addEventListener('input', () => { hex.value = col.value; hex.classList.remove('bad'); });
+    hex.addEventListener('input', () => { const v = OC.normHex(hex.value); hex.classList.toggle('bad', !v); if (v) col.value = v; });
+    return { col, hex, set(v) { col.value = hex.value = v; hex.classList.remove('bad'); }, wrap: h('span', { class: 'line' }, h('span', { class: 'lab' }, k), col, hex) };
+  };
+  E.A = ab('A', CW.cur.stops[0]); E.B = ab('B', CW.cur.stops[Math.min(7, CW.cur.stops.length - 1)]);
+  E.range = h('span', { class: 'lab grow' }, '');
+  E.interp = h('select', { 'aria-label': 'Gradient interpolation', title: 'Gradient interpolation space' }, OC.COLOUR_INTERPS.map(v => h('option', { value: v }, v.toUpperCase())));
+  E.harmony = h('select', { 'aria-label': 'Harmony', title: 'Harmony rule for RANDOMISE' }, OC.COLOUR_HARMONIES.map(v => h('option', { value: v }, v.toUpperCase())));
+  E.vr = h('input', { type: 'range', min: '0', max: '100', step: '1', 'aria-label': 'Variation percent', title: 'Jitter hue/lightness of every stop, reproducibly from SEED' });
+  E.vn = h('input', { type: 'number', class: 'sm', min: '0', max: '100', step: '1', 'aria-label': 'Variation percent value' });
+  E.seed = h('input', { type: 'number', class: 'sm', min: '0', max: '2147483647', step: '1', 'aria-label': 'Variation seed', title: 'Seed for VARIATION jitter (RANDOMISE sets a new one)' }); E.seed.style.width = '92px';
+  E.tok = {};
+  const tokGrid = h('div', { class: 'tok', role: 'group', 'aria-label': 'Token mapping' }, OC.COLOUR_TOKENS.map(t => {
+    const r = E.tok[t] = {
+      dot: h('span', { class: 'dot' }),
+      sel: h('select', { 'aria-label': `${t} LUT stop`, title: `${t}: ${TOKEN_HELP[t]} — LUT stop` }, Array.from({ length: 32 }, (_, i) => h('option', { value: String(i) }, pad2(i)))),
+      hex: h('input', { type: 'text', class: 'hex', placeholder: 'override', maxlength: '7', spellcheck: 'false', 'aria-label': `${t} override hex`, title: 'Direct override #RRGGBB (empty = follow the LUT stop)' }) };
+    r.sel.addEventListener('change', () => cwEdit(c => { c.map[t] = Number(r.sel.value); }, `${t} → stop ${r.sel.value}`));
+    r.hex.addEventListener('change', () => {
+      const raw = r.hex.value.trim(), v = OC.normHex(raw);
+      if (raw && !v) { r.hex.classList.add('bad'); status(`Not a #RRGGBB value: ${raw}`, true); return; }
+      r.hex.classList.remove('bad'); cwEdit(c => { if (v) c.overrides[t] = v; else delete c.overrides[t]; }, v ? `${t} overridden to ${v}` : `${t} follows its stop again`);
+    });
+    return h('div', { title: TOKEN_HELP[t] }, r.dot, h('span', { class: 'lab' }, t.toUpperCase()), r.sel, r.hex);
+  }));
+  E.io = h('textarea', { 'aria-label': 'Colourway JSON for export or import', spellcheck: 'false', placeholder: 'EXPORT fills this with JSON · paste JSON here and press IMPORT' });
+  const body = h('div', { class: 'body' },
+    h('div', { class: 'line' }, E.pick,
+      btn('LOAD', 'Load the selected colourway', () => {
+        const v = E.pick.value, src = v.startsWith('b:') ? OC.BUILTIN_COLOURWAYS[v.slice(2)] : STATE.ui.colourways?.[v.slice(2)]; if (!src) return;
+        CW.sel = CW.end = Math.min(CW.sel, src.stops.length - 1);
+        cwEdit(c => Object.assign(c, cwClone(src)), `Colourway ${v.slice(2)} loaded`);
+      }), E.name,
+      btn('SAVE', 'Save the current colourway under this name', async () => {
+        const name = E.name.value.trim();
+        if (!OC.colourwayNameOk(name) || OC.BUILTIN_COLOURWAYS[name]) { status('Colourway names: 1-48 letters, digits, space, _ . - (built-in names reserved)', true); E.name.focus(); return; }
+        const all = { ...(STATE.ui.colourways || {}), [name]: cwClone(CW.cur) };
+        if (await cwPersist({ colourways: all })) { cwList(); E.pick.value = `u:${name}`; E.del.disabled = false; E.name.value = ''; status(`Colourway ${name} saved`); }
+      }), E.del),
+    E.grad, E.lut,
+    h('div', { class: 'line' }, E.A.wrap,
+      h('button', { class: 'btn ico', type: 'button', title: 'Swap A and B', 'aria-label': 'Swap colours A and B', onclick: () => { const a = E.A.col.value; E.A.set(E.B.col.value); E.B.set(a); } }, '⇄'), E.B.wrap,
+      btn('A←', 'Colour A ← first selected stop', () => E.A.set(CW.cur.stops[lohi()[0]]), { 'aria-label': 'Set colour A from the selected stop' }),
+      btn('B←', 'Colour B ← last selected stop', () => E.B.set(CW.cur.stops[lohi()[1]]), { 'aria-label': 'Set colour B from the selected stop' })),
+    h('div', { class: 'line' }, E.range, E.interp,
+      btn('GRADIENT', 'Fill the selected stop range from A to B (no range selected = all stops)', () => {
+        let [lo, hi] = lohi(); if (lo === hi) { lo = 0; hi = CW.cur.stops.length - 1; }
+        cwEdit(c => { c.interp = E.interp.value; c.stops = OC.gradientFill(c.stops, lo, hi, E.A.col.value, E.B.col.value, c.interp); }, `Gradient A→B over stops ${lo}–${hi} (${E.interp.value.toUpperCase()})`);
+      }),
+      btn('FILL A', 'Paint the selected stop(s) with colour A', () => { const [lo, hi] = lohi(); cwEdit(c => { for (let i = lo; i <= hi; i++) c.stops[i] = E.A.col.value; }, `Filled stops ${lo}–${hi} with ${E.A.col.value}`); })),
+    h('div', { class: 'line' }, E.harmony,
+      btn('RANDOMISE', 'New harmony-based LUT (keeps the token mapping)', () => {
+        const seed = Math.floor(Math.random() * 2147483647);
+        cwEdit(c => { c.harmony = E.harmony.value; c.seed = seed; const lut = OC.randomLut(c.harmony, seed); c.stops = c.stops.map((_, i) => lut[Math.min(i, lut.length - 1)]); }, `Randomised (${E.harmony.value}, seed ${seed})`);
+      }),
+      h('span', { class: 'lab' }, 'SEED'), E.seed),
+    h('div', { class: 'line' }, h('span', { class: 'lab' }, 'VARIATION %'), E.vr, E.vn,
+      h('button', { class: 'btn ico', type: 'button', title: 'Reset variation to 0', 'aria-label': 'Reset variation', onclick: () => cwEdit(c => { c.variation = 0; }, 'Variation reset') }, '↺')),
+    h('div', { class: 'lab' }, 'TOKEN → STOP · OVERRIDE'), tokGrid,
+    h('div', { class: 'line' },
+      btn('EXPORT', 'Show the current colourway as JSON', () => { E.io.value = JSON.stringify(CW.cur); E.io.focus(); E.io.select(); status('Colourway JSON ready to copy'); }),
+      btn('IMPORT', 'Validate and apply the pasted JSON', () => {
+        let doc; try { doc = JSON.parse(E.io.value); } catch { status('IMPORT: not valid JSON', true); return; }
+        const r = OC.sanitizeColourway(doc); if (!r.cw) { status(`IMPORT refused: ${r.error}`, true); return; }
+        CW.sel = CW.end = 0; cwEdit(c => Object.assign(c, r.cw), 'Colourway imported');
+      }),
+      btn('RESET', 'Back to the default WINAMP LIME colourway', () => { CW.sel = CW.end = 0; cwEdit(c => Object.assign(c, cwClone(OC.BUILTIN_COLOURWAYS['WINAMP LIME'])), 'Colourway reset to WINAMP LIME'); })),
+    E.io, E.native);
+  E.pick.addEventListener('change', () => { E.del.disabled = !E.pick.value.startsWith('u:'); });
+  E.del.addEventListener('click', async () => {
+    const v = E.pick.value; if (!v.startsWith('u:') || !confirm(`Delete colourway ${v.slice(2)}?`)) return;
+    const all = { ...(STATE.ui.colourways || {}) }; delete all[v.slice(2)];
+    if (await cwPersist({ colourways: all })) { cwList(); status(`Colourway ${v.slice(2)} deleted`); }
+  });
+  E.vr.addEventListener('input', () => { E.vn.value = E.vr.value; cwEdit(c => { c.variation = Number(E.vr.value); }); });
+  E.vn.addEventListener('change', () => { const v = Math.round(Number(E.vn.value)); if (!(v >= 0 && v <= 100)) { E.vn.value = CW.cur.variation; return; } cwEdit(c => { c.variation = v; }); });
+  E.seed.addEventListener('change', () => { const v = Math.round(Number(E.seed.value)); if (!(v >= 0 && v <= 2147483647)) { E.seed.value = CW.cur.seed; return; } cwEdit(c => { c.seed = v; }); });
+  E.interp.addEventListener('change', () => cwEdit(c => { c.interp = E.interp.value; }));
+  E.harmony.addEventListener('change', () => cwEdit(c => { c.harmony = E.harmony.value; }));
+  E.lut.addEventListener('click', e => {
+    const b = e.target.closest('.sw'); if (!b || e.target.tagName === 'INPUT') return; const i = Number(b.dataset.i);
+    if (e.shiftKey) { CW.end = i; cwApply(); return; }
+    CW.sel = CW.end = i; cwApply();
+    clearTimeout(clickT); clickT = setTimeout(() => cwPick(i), 280);
+  });
+  E.lut.addEventListener('dblclick', e => { const b = e.target.closest('.sw'); if (!b || e.target.tagName === 'INPUT') return; clearTimeout(clickT); cwHexEdit(E.lut.querySelector(`[data-i="${b.dataset.i}"]`)); });
+  E.lut.addEventListener('keydown', e => {
+    const b = e.target.closest('.sw'); if (!b || e.target.tagName === 'INPUT') return; const i = Number(b.dataset.i), n = CW.cur.stops.length;
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -8, ArrowDown: 8, Home: -n, End: n }[e.key];
+    if (step) { e.preventDefault(); const to = Math.max(0, Math.min(n - 1, (e.shiftKey ? CW.end : i) + step)); if (e.shiftKey) CW.end = to; else CW.sel = CW.end = to; cwApply(); E.lut.querySelector(`[data-i="${to}"]`)?.focus(); }
+    else if (e.key === 'F2') { e.preventDefault(); cwHexEdit(b); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); CW.sel = CW.end = i; cwApply(); cwPick(i); }
+  });
+  const det = h('details', { class: 'adv panel bevel cw', id: 'cwPanel' },
+    h('summary', {}, h('div', { class: 'ph' }, h('span', { class: 'name' }, 'COLOURWAY'), h('span', { class: 'chip info', title: 'Only changes how this page looks; never needs a restart' }, 'UI ONLY'), E.ct)), body);
+  if (location.hash === '#colourway') det.open = true;
+  host.append(det);
+  cwList();
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && CW.saveT) { clearTimeout(CW.saveT); CW.saveT = 0; cwPersist(); } });
+function initColourway(host) {
+  const saved = STATE.ui.colourway ? OC.sanitizeColourway(STATE.ui.colourway).cw : null;
+  CW.cur = saved || cwClone(OC.BUILTIN_COLOURWAYS['WINAMP LIME']);
+  buildColourway(host); cwApply();
+}
+/* ── steering console (WebSocket) ── */
+const SC = { ws: null, runs: [], log: [], macros: [], target: local.get('oai.steer.target', null), flags: {}, retry: 0 };
+function steerPlace(where) { document.body.classList.toggle('steer-bottom', where === 'bottom'); $('#steerPlace').textContent = where === 'bottom' ? '▲' : '▼'; $('#steerPlace').title = where === 'bottom' ? 'Move console to the top' : 'Move console to the bottom'; local.set('oai.steer.place', where); }
+function steerFold(on) { $('#steer').classList.toggle('collapsed', on); $('#steerFold').textContent = on ? '▣' : '▁'; local.set('oai.steer.fold', on); }
+function steerRender() {
+  const live = SC.runs.filter(r => r.status !== 'ended');
+  if (SC.target !== '*' && !live.some(r => r.agentId === SC.target)) SC.target = live[0]?.agentId ?? null;
+  const chip = (id, label, cls, title, run) => h('button', { class: `run ${cls} ${SC.target === id ? 'sel' : ''}`, role: 'radio', 'aria-checked': String(SC.target === id), title, onclick: () => { SC.target = id; local.set('oai.steer.target', id); steerRender(); $('#steerIn').focus(); } }, run ? h('b', {}, run.callsign) : null, label);
+  const chips = live.length ? [chip('*', 'ALL', '', 'Every running worker'), ...SC.runs.slice(0, 24).map(r => chip(r.agentId, `${r.worker} · s${r.step ?? 0}`, `${r.status === 'paused' ? 'paused' : ''} ${r.status === 'ended' ? 'ended' : ''}`, `${r.callsign} · ${r.worker}\n${r.description ?? ''}\nstatus ${r.status} · step ${r.step ?? 0} · started ${(r.startedAt ?? '').slice(11, 19)}Z`, r))]
+    : [h('span', { class: 'mini' }, 'no worker running')];
+  $('#steerRuns').replaceChildren(...chips);
+  const icon = { sent: '→', delivered: '✓', reply: '◂', 'thought-steer': '✦', rotation: '⟳' };
+  $('#steerLog').replaceChildren(...SC.log.slice(-40).map(e => h('div', { class: e.kind, title: e.text ?? '' }, `${(e.at ?? '').slice(11, 19)} ${icon[e.kind] ?? '·'} ${e.callsign ?? '?'} ${e.kind === 'delivered' ? `delivered @ step ${e.step ?? '?'}` : e.text ?? ''}${e.flags?.length ? ` [${e.flags.join(' ')}]` : ''}`)));
+  $('#steerLog').scrollTop = 1e9;
+  $('#steerSend').disabled = !SC.target;
+}
+function steerMacros(m) {
+  SC.macros = m.items || [];
+  $('#macroLab').title = `Macro files: ${m.dir}\\1.txt … 8.txt (edit them in any text editor; the buttons update live)`;
+  $('#macros').replaceChildren(...SC.macros.map(x => h('button', { class: x.text.trim() ? 'has' : '', title: x.text.trim() ? x.label : `${x.n}.txt is empty`, onclick: () => steerPaste(x.text) }, String(x.n))));
+}
+function steerPaste(text) {
+  const el = $('#steerIn'); if (!text) return;
+  const a = el.selectionStart ?? el.value.length, b = el.selectionEnd ?? el.value.length, t = text.replace(/\r?\n/g, ' ').trim();
+  el.value = el.value.slice(0, a) + t + el.value.slice(b); el.focus(); el.selectionStart = el.selectionEnd = a + t.length;
+}
+function steerConnect() {
+  const ws = new WebSocket(`ws://${location.host}/ws?t=${encodeURIComponent(TOKEN)}`); SC.ws = ws;
+  ws.onopen = () => { SC.retry = 0; $('#steerConn').textContent = 'LINK'; $('#steerConn').className = 'conn'; if (CV.sel) ws.send(JSON.stringify({ type: 'convo', id: CV.sel })); };
+  ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.type === 'steer') { SC.runs = m.runs || []; SC.log = m.log || []; steerRender(); }
+    else if (m.type === 'macros') steerMacros(m);
+    else if (m.type === 'sent') status(`Tip queued for ${m.sent.map(x => x.callsign).join(', ')}: delivered before the next model step`);
+    else if (cvHandle(m)) { /* conversations */ }
+    else if (m.type === 'error') status(`Steer: ${m.error}`, true); };
+  ws.onclose = () => { $('#steerConn').textContent = 'NO LINK'; $('#steerConn').className = 'conn off'; SC.ws = null; setTimeout(steerConnect, Math.min(10000, 1000 * 2 ** SC.retry++)); };
+}
+function steerSend() {
+  const el = $('#steerIn'); let text = el.value.trim(); if (!text || !SC.target) return;
+  const flags = { ...SC.flags };
+  for (;;) { if (text.startsWith('!')) { flags.hard = true; text = text.slice(1).trim(); } else if (text.startsWith('+')) { flags.pin = true; text = text.slice(1).trim(); } else break; }
+  if (!text) return;
+  if (!SC.ws || SC.ws.readyState !== 1) { status('Steer link down; reconnecting…', true); return; }
+  SC.ws.send(JSON.stringify({ type: 'tip', target: SC.target, text, ...flags }));
+  el.value = ''; SC.flags.hard = false; for (const b of document.querySelectorAll('#steer .flag.hard')) b.classList.remove('on');
+}
+function initSteer() {
+  steerPlace(local.get('oai.steer.place', 'top')); steerFold(local.get('oai.steer.fold', false));
+  $('#steerPlace').addEventListener('click', () => steerPlace(document.body.classList.contains('steer-bottom') ? 'top' : 'bottom'));
+  $('#steerFold').addEventListener('click', () => steerFold(!$('#steer').classList.contains('collapsed')));
+  for (const b of document.querySelectorAll('#steer .flag')) b.addEventListener('click', () => { const k = b.dataset.f; SC.flags[k] = !SC.flags[k]; b.classList.toggle('on', SC.flags[k]); b.setAttribute('aria-pressed', String(SC.flags[k])); });
+  $('#steerIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); steerSend(); } });
+  $('#steerSend').addEventListener('click', steerSend);
+  document.addEventListener('keydown', e => { if (e.altKey && /^Digit[1-8]$/.test(e.code)) { e.preventDefault(); steerPaste(SC.macros[Number(e.code.slice(5)) - 1]?.text); } });
+  steerRender(); steerConnect();
+}
+/* ── CONVERSATIONS: provider workers' editable history, live reasoning, thought-steer (same WebSocket) ── */
+const CV = { items: [], dir: '', sel: local.get('oai.convo.sel', null), convo: null, next: null, edit: null, stale: false, open: {}, el: null, lv: null };
+const ROLE_TAG = { system: 'SYS', user: 'USER', assistant: 'ASST', tool: 'TOOL' };
+const CLAMP = 4000;
+const hms = iso => { const d = new Date(iso || 0); return Number.isNaN(d.getTime()) || !iso ? '—' : d.toTimeString().slice(0, 8); };
+const ledFor = c => `led ${c.pending || c.live ? 'ok' : c.status === 'failed' ? 'bad' : c.status === 'running' ? 'amb' : ''}`;
+function cvSend(m) { if (!SC.ws || SC.ws.readyState !== 1) { status('Link down; reconnecting…', true); return false; } SC.ws.send(JSON.stringify(m)); return true; }
+function cvHandle(m) {
+  if (m.type === 'convos') { CV.items = m.items || []; CV.dir = m.dir || ''; cvList(); return true; }
+  if (m.type === 'convo') {
+    if (m.convo && m.convo.id !== CV.sel) return true; // reply for a conversation the operator has left
+    if (!m.convo) { if (m.gone) status('That conversation was removed', true); CV.convo = null; CV.edit = null; cvRender(); return true; }
+    if (m.op) { CV.edit = null; CV.stale = false; CV.next = null; status(`Conversation ${m.op.toUpperCase()} saved · rev ${m.convo.rev} · takes effect on the worker's next model step`); }
+    else if (CV.edit && CV.convo && CV.convo.rev !== m.convo.rev) { CV.next = m.convo; CV.stale = true; cvHead(); return true; }
+    const switched = CV.convo?.id !== m.convo.id;
+    CV.convo = m.convo; cvRender(switched); return true;
+  }
+  if (m.type === 'convo-live') {
+    if (CV.convo?.id === m.id) { CV.convo.status = m.status; CV.convo.updatedAt = m.updatedAt; if (m.pending) CV.convo.pending = m.pending; else delete CV.convo.pending; cvHead(); cvLive(); }
+    return true;
+  }
+  if (m.type === 'thought-sent') { status(`Thought-steer queued${m.callsign ? ` for ${m.callsign}` : ''}: ${m.midReasoning ? 'injected into the running reasoning within ~0.3 s' : 'used at the next reasoning phase, else delivered before the next step'}`); return true; }
+  if (m.type === 'error' && m.scope === 'convo') { status(`Conversation: ${m.error}`, true); return true; }
+  return false;
+}
+function cvList() {
+  $('#cvCount').textContent = String(CV.items.length);
+  $('#cvDir').title = CV.dir ? `Conversation files: ${CV.dir}` : '';
+  $('#cvSum').textContent = `${CV.items.length} conv · ${CV.items.filter(c => c.live).length} live`;
+  $('#cvList').replaceChildren(...(CV.items.length ? CV.items.map(c => h('button', { class: `cvi${c.id === CV.sel ? ' sel' : ''}`, role: 'option', 'aria-selected': String(c.id === CV.sel),
+    title: `${c.id}\n${c.provider} · ${c.model}\ncreated ${c.createdAt}\nrev ${c.rev}${c.agentId ? `\nrun ${c.agentId}` : ''}`, onclick: () => cvSelect(c.id) },
+    h('span', { class: ledFor(c) }), h('b', {}, `${c.callsign ? `${c.callsign} · ` : ''}${c.worker}`), h('span', { class: 'tm' }, hms(c.updatedAt)),
+    h('span', { class: 'mini' }, `${c.messages} msg · ${c.live ? 'LIVE' : c.status || 'idle'} · ${c.provider}`)))
+    : [h('div', { class: 'mini' }, 'No conversations yet. One appears when an NVIDIA or LM Studio worker runs.')]));
+}
+function cvSelect(id) {
+  if (CV.edit && !confirm('Discard the unsaved edit?')) return;
+  CV.sel = id; local.set('oai.convo.sel', id); CV.edit = null; CV.stale = false; CV.next = null;
+  if (CV.convo?.id !== id) { CV.convo = null; cvRender(); $('#cvView').replaceChildren(h('div', { class: 'mini' }, 'Loading…')); }
+  cvSend({ type: 'convo', id }); cvList();
+}
+function cvRender(scrollEnd = false) {
+  const view = $('#cvView'), c = CV.convo;
+  if (!c) { CV.lv = null; view.replaceChildren(h('div', { class: 'mini' }, 'Select a conversation. Only provider workers (NVIDIA Build, LM Studio) have one.')); return; }
+  if (!CV.el || !view.contains(CV.el.tx)) {
+    CV.el = { head: h('div', { class: 'cvhead lcd' }), tx: h('div', { class: 'tx', role: 'log', 'aria-label': 'Transcript' }), live: h('div') };
+    view.replaceChildren(CV.el.head, CV.el.tx, CV.el.live); scrollEnd = true;
+  }
+  cvHead(); cvMessages(scrollEnd); cvLive();
+}
+function cvHead() {
+  const c = CV.convo, el = CV.el?.head; if (!c || !el) return;
+  el.replaceChildren(...[h('span', { class: ledFor(c) }), h('b', {}, `${c.callsign ? `${c.callsign} · ` : ''}${c.worker}`),
+    h('span', { class: 'v', title: c.model }, `${c.provider} · ${c.model}`),
+    h('span', { class: 'v' }, `rev ${c.rev} · ${c.messages.length} msg · ${c.pending ? 'LIVE' : c.status || 'idle'} · ${hms(c.updatedAt)}`),
+    CV.stale ? h('span', { class: 'stale', title: 'The conversation changed after you opened the editor. SAVE will be refused; CANCEL shows the new version.' }, '▲ CHANGED WHILE EDITING') : null,
+    h('span', { class: 'spacer' }),
+    h('button', { class: 'btn', title: 'Insert a message at the very start', onclick: () => cvStartInsert(-1) }, '+ TOP')].filter(Boolean));
+}
+function cvMessages(scrollEnd) {
+  const c = CV.convo, tx = CV.el.tx, msgs = c.messages || [];
+  const atEnd = scrollEnd || tx.scrollHeight - tx.scrollTop - tx.clientHeight < 40, top = tx.scrollTop;
+  const rows = [];
+  if (CV.edit?.mode === 'insert' && CV.edit.i === -1) rows.push(cvInsertEditor());
+  for (const m of msgs) {
+    rows.push(cvMsg(m, msgs));
+    if (CV.edit?.mode === 'insert' && CV.edit.i === m.i) rows.push(cvInsertEditor());
+  }
+  if (!msgs.length) rows.push(h('div', { class: 'mini' }, 'No messages.'));
+  tx.replaceChildren(...rows);
+  tx.scrollTop = atEnd && !CV.edit ? tx.scrollHeight : top;
+}
+function cvMsg(m, msgs) {
+  const key = `${c4(m)}`, editing = CV.edit?.mode === 'edit' && CV.edit.i === m.i;
+  const body = h('div', { class: 'body' });
+  if (editing) body.append(cvEditor(m));
+  else {
+    if (m.reasoning) {
+      const d = h('details', { class: 'rsn', open: !!CV.open[key] }, h('summary', {}, `REASONING · ${m.reasoning.length} chars${m.steer ? ' · THOUGHT-STEERED' : ''}`), h('div', { class: 'rtext' }, m.reasoning));
+      d.addEventListener('toggle', () => { CV.open[key] = d.open; }); body.append(d);
+    }
+    const text = m.content || '', full = CV.open[`${key}:all`] || text.length <= CLAMP;
+    body.append(h('div', { class: `content${text ? '' : ' empty'}` }, text ? (full ? text : `${text.slice(0, CLAMP)}…`) : m.tool_calls?.length ? '(tool calls only)' : '(empty)'));
+    if (!full) body.append(h('button', { class: 'btn more', onclick: () => { CV.open[`${key}:all`] = true; cvMessages(); } }, `SHOW ALL (${text.length - CLAMP} more chars)`));
+    for (const t of m.tool_calls || []) { const a = String(t.function?.arguments ?? ''); body.append(h('div', { class: 'call', title: `${t.id}\n${a.slice(0, 2000)}` }, '⚙ ', h('b', {}, t.function?.name ?? '?'), ` ${a.length > 400 ? `${a.slice(0, 400)}…` : a}`)); }
+    const nextTool = msgs[m.i + 1]?.role === 'tool', grouped = m.role === 'tool' || (m.role === 'assistant' && m.tool_calls?.length);
+    body.append(h('div', { class: 'acts' },
+      h('button', { class: 'btn', title: 'Edit this message (content, and reasoning for assistant messages)', onclick: () => cvStartEdit(m) }, 'EDIT'),
+      h('button', { class: 'btn', title: grouped ? 'Delete — removes the whole tool call group (call + results) together' : 'Delete this message', onclick: () => cvDelete(m, grouped) }, 'DEL'),
+      h('button', { class: 'btn', disabled: nextTool, title: nextTool ? 'Cannot insert between a tool call and its results' : 'Insert a new message after this one', onclick: () => cvStartInsert(m.i) }, '+ AFTER'),
+      h('button', { class: 'btn', disabled: m.i === msgs.length - 1, title: 'Keep messages up to here and drop everything after', onclick: () => cvTruncate(m) }, 'CUT AFTER')));
+  }
+  const role = h('div', { class: 'role' }, h('b', {}, ROLE_TAG[m.role] || m.role), `#${m.i}`, hms(m.at), m.edited ? 'EDITED' : null, m.steer ? 'STEER' : null, m.role === 'tool' && m.name ? m.name : null);
+  if (m.role === 'tool') role.title = `tool_call_id ${m.tool_call_id || '?'}`;
+  return h('div', { class: `m r-${m.role}${m.trimMarker ? ' trim' : ''}` }, role, body);
+}
+const c4 = m => `${m.at}|${m.role}|${(m.content || '').length}`;
+function cvStartEdit(m) {
+  if (CV.edit && !confirm('Discard the unsaved edit?')) return;
+  CV.edit = { mode: 'edit', i: m.i, rev: CV.convo.rev }; cvMessages();
+  CV.el.tx.querySelector('.ed textarea')?.focus();
+}
+function cvStartInsert(i) {
+  if (CV.edit && !confirm('Discard the unsaved edit?')) return;
+  CV.edit = { mode: 'insert', i, rev: CV.convo.rev, role: 'user', content: '' }; cvMessages();
+  CV.el.tx.querySelector('.ed textarea')?.focus();
+}
+function cvCancel() { CV.edit = null; if (CV.next) { CV.convo = CV.next; CV.next = null; } CV.stale = false; cvRender(); }
+function cvOp(op, i, extra = {}) { if (!CV.convo) return; cvSend({ type: 'convo-edit', id: CV.convo.id, op, i, expectRev: CV.edit?.rev ?? CV.convo.rev, ...extra }); }
+function edKeys(el, save) { el.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); } else if (e.key === 'Escape') { e.preventDefault(); cvCancel(); } }); }
+function cvEditor(m) {
+  const ct = h('textarea', { 'aria-label': 'Message content', spellcheck: 'false' }); ct.value = CV.edit.content ?? m.content ?? '';
+  ct.addEventListener('input', () => { CV.edit.content = ct.value; });
+  const withR = m.role === 'assistant' || !!m.reasoning;
+  const rs = withR ? h('textarea', { class: 'rs', 'aria-label': 'Message reasoning', spellcheck: 'false' }) : null;
+  if (rs) { rs.value = CV.edit.reasoning ?? m.reasoning ?? ''; rs.addEventListener('input', () => { CV.edit.reasoning = rs.value; }); }
+  const save = () => cvOp('edit', m.i, { content: ct.value, ...(rs && { reasoning: rs.value }) });
+  edKeys(ct, save); if (rs) edKeys(rs, save);
+  return h('div', { class: 'ed' }, h('span', { class: 'lab' }, `EDIT #${m.i} · CONTENT${m.tool_calls?.length ? ' (tool calls stay as they are)' : ''}`), ct,
+    rs ? [h('span', { class: 'lab', title: 'Kept for the record and shown here; the bridge does not replay a model\'s own reasoning to it. Use THOUGHT-STEER to change reasoning that is still running.' }, 'REASONING · stored only, not replayed to the model'), rs] : null,
+    h('div', { class: 'acts' }, h('span', { class: 'mini' }, 'Ctrl+Enter saves · Esc cancels'), h('button', { class: 'btn on', onclick: save }, 'SAVE'), h('button', { class: 'btn', onclick: cvCancel }, 'CANCEL')));
+}
+function cvInsertEditor() {
+  const E = CV.edit;
+  const role = h('select', { 'aria-label': 'Role of the inserted message' }, ['user', 'assistant', 'system'].map(r => h('option', { value: r, selected: E.role === r }, r.toUpperCase())));
+  role.addEventListener('change', () => { E.role = role.value; });
+  const ct = h('textarea', { 'aria-label': 'Inserted message content', spellcheck: 'false', placeholder: 'message text…' }); ct.value = E.content || '';
+  ct.addEventListener('input', () => { E.content = ct.value; });
+  const save = () => { if (!ct.value.trim()) { status('Type the message first', true); ct.focus(); return; } cvOp('insert', E.i, { role: role.value, content: ct.value }); };
+  edKeys(ct, save);
+  return h('div', { class: 'ed' }, h('div', { class: 'acts' }, h('span', { class: 'lab' }, E.i < 0 ? 'INSERT AT START AS' : `INSERT AFTER #${E.i} AS`), role, h('span', { class: 'spacer' })), ct,
+    h('div', { class: 'acts' }, h('span', { class: 'mini' }, 'Ctrl+Enter inserts · Esc cancels'), h('button', { class: 'btn on', onclick: save }, 'INSERT'), h('button', { class: 'btn', onclick: cvCancel }, 'CANCEL')));
+}
+function cvDelete(m, grouped) {
+  if (CV.edit) { status('Finish or cancel the open edit first', true); return; }
+  if (!confirm(grouped ? `Delete #${m.i}? This removes the whole tool call group (the assistant call and all its results).` : `Delete message #${m.i} (${m.role})?`)) return;
+  cvOp('delete', m.i);
+}
+function cvTruncate(m) {
+  if (CV.edit) { status('Finish or cancel the open edit first', true); return; }
+  const n = CV.convo.messages.length - m.i - 1;
+  if (!confirm(`Drop the ${n} message${n === 1 ? '' : 's'} after #${m.i}? This cannot be undone.`)) return;
+  cvOp('truncate', m.i);
+}
+function cvLive() {
+  const c = CV.convo, box = CV.el?.live; if (!box) return;
+  const p = c?.pending, steerable = !!(c && c.agentId && (p || c.status === 'running'));
+  if (!c || (!p && !steerable)) { box.replaceChildren(); return; }
+  if (!CV.lv || !box.contains(CV.lv.root)) {
+    const L = CV.lv = {};
+    L.title = h('div', { class: 'lt' }); L.rtext = h('div', { class: 'rtext', 'aria-live': 'off', 'aria-label': 'Live reasoning' }); L.ctext = h('div', { class: 'content' });
+    L.input = h('input', { maxlength: '8000', spellcheck: 'true', autocomplete: 'off', 'aria-label': 'Thought-steer note' });
+    const send = () => { const text = L.input.value.trim(); if (!text || !CV.convo) return; if (cvSend({ type: 'thought-steer', id: CV.convo.id, text })) L.input.value = ''; };
+    L.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+    L.send = h('button', { class: 'btn on', onclick: send, title: 'Send as a thought-steer tip (thought: true) to this run' }, 'THOUGHT-STEER');
+    L.root = h('div', { class: 'lv' }, L.title, L.rtext, L.ctext, h('div', { class: 'ts' }, L.input, L.send));
+    box.replaceChildren(L.root);
+  }
+  const L = CV.lv, phase = p?.phase || 'waiting';
+  L.title.replaceChildren(h('span', { class: `led ${p ? 'ok' : 'amb'}` }), `LIVE · ${phase.toUpperCase()}${p?.model ? ` · ${p.model}` : ''}${p?.at ? ` · ${hms(p.at)}` : ''}`);
+  const nearEnd = L.rtext.scrollHeight - L.rtext.scrollTop - L.rtext.clientHeight < 30;
+  L.rtext.replaceChildren(p?.reasoning || (p ? '' : 'Waiting for the next model step…'), p && phase === 'reasoning' ? h('span', { class: 'caret', 'aria-hidden': 'true' }, '▍') : '');
+  if (nearEnd) L.rtext.scrollTop = L.rtext.scrollHeight;
+  L.ctext.textContent = p?.content || '';
+  L.ctext.hidden = !p?.content;
+  L.input.placeholder = phase === 'reasoning' ? 'thought-steer: injected into the reasoning before the answer starts · Enter sends'
+    : 'thought-steer: used at the next reasoning phase, else delivered before the next step · Enter sends';
+  L.input.disabled = L.send.disabled = !c.agentId;
+}
+function initConvos() {
+  const fold = on => { $('#convos').classList.toggle('min', on); $('#cvFold').textContent = on ? '▣' : '▁'; $('#cvFold').setAttribute('aria-pressed', String(on)); local.set('oai.convo.fold', on); };
+  fold(local.get('oai.convo.fold', false));
+  $('#cvFold').addEventListener('click', () => fold(!$('#convos').classList.contains('min')));
+  $('#cvReload').addEventListener('click', () => { if (CV.edit && !confirm('Discard the unsaved edit?')) return; CV.edit = null; CV.stale = false; CV.next = null; cvSend({ type: 'convos' }); if (CV.sel) cvSend({ type: 'convo', id: CV.sel }); });
+  cvList();
+}
+(async () => {
+  initConvos();
+  initSteer();
+  try { S = await api('/api/schema'); } catch (e) { status(`Cannot reach the config server: ${e.message}`, true); return; }
+  window.PARAM = Object.fromEntries(S.params.map(p => [p.name, p]));
+  STATE = await api('/api/state');
+  build(); initColourway($("#leftCol")); renderLive(); renderValues();
+  status(`READY · ${S.params.length} parameters · values are ${STATE.storage.kind === 'windows-user-env' ? 'Windows user environment variables' : STATE.storage.location}`);
+  setInterval(() => api('/api/heartbeat', {}).catch(() => {}), 20000);
+  setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+  setInterval(() => { $('#clock').textContent = new Date().toTimeString().slice(0, 5); }, 15000);
+  $('#clock').textContent = new Date().toTimeString().slice(0, 5);
+})();
+</script>
+</body>
+</html>
