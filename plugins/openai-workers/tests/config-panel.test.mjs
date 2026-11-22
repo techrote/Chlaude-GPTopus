@@ -19,8 +19,18 @@ test('allowlist covers every env name the mod and bridge read, and never key nam
   const register = readFileSync(new URL('../hooks/register.js', import.meta.url), 'utf8');
   const sources = register + ['usage.mjs', 'workers.mjs', 'trace.mjs', 'steer.mjs'].map(f => readFileSync(new URL(`../bridge/${f}`, import.meta.url), 'utf8')).join('\n');
   const literal = new Set(sources.match(/\b(?:OPENAI_WORKER|OAI)_[A-Z0-9_]+\b/g));
-  for (const w of Object.keys(WORKER_TYPES)) for (const f of ['MODEL', 'SERVICE_TIER', 'EFFORT_MIN', 'EFFORT_MAX', 'EFFORT_DEFAULT', 'EFFORT_NOTE', 'MAX_STEPS', 'MAX_USD'])
+  // Provider workers (NVIDIA Build, LM Studio) have no service tier and no USD cap, so those names are not configurable.
+  for (const w of Object.keys(WORKER_TYPES)) for (const f of WORKER_TYPES[w].provider ? ['MODEL', 'EFFORT_MIN', 'EFFORT_MAX', 'EFFORT_DEFAULT', 'EFFORT_NOTE', 'MAX_STEPS']
+    : ['MODEL', 'SERVICE_TIER', 'EFFORT_MIN', 'EFFORT_MAX', 'EFFORT_DEFAULT', 'EFFORT_NOTE', 'MAX_STEPS', 'MAX_USD'])
     literal.add(`OPENAI_WORKER_${w.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_${f}`);
+  // The provider bridge modules' literal names (chat transport, rotation, conversation store) must be configurable too.
+  const providerSources = ['chat.mjs', 'rotation.mjs', 'convo.mjs'].map(f => readFileSync(new URL(`../bridge/${f}`, import.meta.url), 'utf8')).join('\n');
+  for (const name of providerSources.match(/\b(?:OAI_NVIDIA|OAI_LMSTUDIO|OAI_CONVO)_[A-Z0-9_]+\b/g) ?? []) if (!name.endsWith('_')) assert.ok(isAllowed(name), `missing ${name}`);
+  for (const w of Object.keys(WORKER_TYPES)) if (WORKER_TYPES[w].provider) {
+    const p = `OPENAI_WORKER_${w.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_`;
+    assert.equal(isAllowed(`${p}SERVICE_TIER`), false); assert.equal(isAllowed(`${p}MAX_USD`), false);
+  }
+  for (const forbidden of ['NVIDIA_API_KEY']) assert.equal(isAllowed(forbidden), false);
   literal.delete('OPENAI_WORKER_TEST_WINDOWS'); // test-only switch
   for (const name of literal) if (!name.endsWith('_')) assert.ok(isAllowed(name), `missing ${name}`);
   for (const forbidden of ['OPENAI_API_KEY', 'OPENAI_FREE_API_KEY', 'PATH', 'OPENAI_ULTRA_ENABLED', '__proto__', 'constructor']) assert.equal(isAllowed(forbidden), false);

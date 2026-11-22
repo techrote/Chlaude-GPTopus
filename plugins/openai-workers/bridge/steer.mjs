@@ -111,7 +111,9 @@ export function enqueueTip(agentId, tip, env = process.env) {
   const text = String(tip.text ?? '').slice(0, MAX_TIP);
   if (!text.trim()) throw new Error('Empty tip');
   const rec = { id: `${Date.now().toString(36)}${randomBytes(3).toString('hex')}`, text, from: tip.from ?? 'operator',
-    hard: !!tip.hard, pin: !!tip.pin, ack: !!tip.ack, assess: !!tip.assess, conseq: !!tip.conseq, at: new Date().toISOString() };
+    hard: !!tip.hard, pin: !!tip.pin, ack: !!tip.ack, assess: !!tip.assess, conseq: !!tip.conseq, at: new Date().toISOString(),
+    // thought: sent from the panel's live-reasoning view; provider workers inject it mid-reasoning (bridge/chat.mjs).
+    ...(tip.thought && { thought: true }) };
   writeJson(join(paths(env).inbox, id, `${rec.id}.json`), rec);
   const run = getRun(id, env);
   appendLog({ kind: 'sent', tipId: rec.id, agentId: id, callsign: run?.callsign, worker: run?.worker, text, flags: flagList(rec) }, env);

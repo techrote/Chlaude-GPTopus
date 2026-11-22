@@ -137,6 +137,14 @@ export function parseServiceTier(value, source = 'service tier') {
   return tier;
 }
 
+/** Chat-completions provider workers (NVIDIA Build, LM Studio): display name and agent-description lead. */
+export function providerName(spec) { return spec?.provider === 'nvidia' ? 'NVIDIA Build' : spec?.provider === 'lmstudio' ? 'LM Studio' : 'OpenAI'; }
+export function providerBlurb(spec) {
+  return spec.provider === 'nvidia'
+    ? 'Proactively delegate bounded tasks here when a free NVIDIA Build model is requested. Native Claude Code subagent, reasoning via the external NVIDIA Build API (free, no USD cost; local concurrency and active-hours budget apply).'
+    : 'Proactively delegate bounded tasks here when a local model is requested. Native Claude Code subagent, reasoning via a local LM Studio model on this PC (free, nothing leaves the machine).';
+}
+
 async function agentTier(env, type) {
   const specific = `OPENAI_WORKER_${envSuffix(type)}_SERVICE_TIER`;
   const override = parseServiceTier(envValue(env, specific), specific);
@@ -161,8 +169,9 @@ async function agentEffort(snapshot, type, requested) {
   const env = await agentEffortEnv(snapshot, type);
   const model = (env[TYPES[type].env] || '').trim() || TYPES[type].model;
   // "ultra" / "ultracode" are host orchestration levels, not API values.
+  // 'none' (thinking off) is meaningful only for provider workers; OpenAI workers ignore it as before.
   const actualRequested = requested === 'ultra' || requested === 'ultracode' ? 'max' :
-    EFFORTS.has(requested) ? requested : null;
+    EFFORTS.has(requested) ? requested : requested === 'none' && TYPES[type].provider ? 'none' : null;
   return selectWorkerEffort(type, actualRequested, env, model);
 }
 
@@ -180,7 +189,7 @@ function ultraSummary(diagnostics) {
   return Object.entries(diagnostics).slice(0, 10).map(([k, v]) => v === null || typeof v !== 'object' ? `${k}: ${String(v).slice(0, 60)}`
     : Array.isArray(v) ? `${k}: ${v.length}` : `${k}: {${Object.keys(v).length}}`).join(' · ');
 }
-export const EFFORT_MARKER = /^\s*\[oai-effort:(low|medium|high|xhigh|max)\][ \t]*\r?\n?/;
+export const EFFORT_MARKER = /^\s*\[oai-effort:(none|low|medium|high|xhigh|max)\][ \t]*\r?\n?/;
 /** Find the /oai:a effort marker in the first user prompt and strip it from every message. */
 export function parseEffortMarker(messages) {
   let effort;
@@ -364,6 +373,72 @@ export function register(on) {
       OPENAI_WORKER_TERRA5_6FREE_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_TERRA5_6FREE_EFFORT_NOTE'),
       OPENAI_WORKER_TERRA5_6FREE_MAX_STEPS: await $.env.get('OPENAI_WORKER_TERRA5_6FREE_MAX_STEPS'),
       OPENAI_WORKER_TERRA5_6FREE_MAX_USD: await $.env.get('OPENAI_WORKER_TERRA5_6FREE_MAX_USD'),
+      OPENAI_WORKER_KIMIK3_1PRO_MODEL: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_MODEL'),
+      OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MIN: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MIN'),
+      OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MAX: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MAX'),
+      OPENAI_WORKER_KIMIK3_1PRO_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_DEFAULT'),
+      OPENAI_WORKER_KIMIK3_1PRO_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_NOTE'),
+      OPENAI_WORKER_KIMIK3_1PRO_MAX_STEPS: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_MAX_STEPS'),
+      OPENAI_WORKER_MISTRAL4LARGE_MODEL: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_MODEL'),
+      OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MIN: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MIN'),
+      OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MAX: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MAX'),
+      OPENAI_WORKER_MISTRAL4LARGE_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_DEFAULT'),
+      OPENAI_WORKER_MISTRAL4LARGE_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_NOTE'),
+      OPENAI_WORKER_MISTRAL4LARGE_MAX_STEPS: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_MAX_STEPS'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_MODEL: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_MODEL'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MIN: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MIN'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MAX: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MAX'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_DEFAULT'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_NOTE'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_MAX_STEPS: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_MAX_STEPS'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_MODEL: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_MODEL'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MIN: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MIN'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MAX: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MAX'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_DEFAULT'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_NOTE'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_MAX_STEPS: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_MAX_STEPS'),
+      OPENAI_WORKER_SPROCKET0_5_MODEL: await $.env.get('OPENAI_WORKER_SPROCKET0_5_MODEL'),
+      OPENAI_WORKER_SPROCKET0_5_EFFORT_MIN: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_MIN'),
+      OPENAI_WORKER_SPROCKET0_5_EFFORT_MAX: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_MAX'),
+      OPENAI_WORKER_SPROCKET0_5_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_DEFAULT'),
+      OPENAI_WORKER_SPROCKET0_5_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_NOTE'),
+      OPENAI_WORKER_SPROCKET0_5_MAX_STEPS: await $.env.get('OPENAI_WORKER_SPROCKET0_5_MAX_STEPS'),
+      OPENAI_WORKER_LFM2_5MINI_MODEL: await $.env.get('OPENAI_WORKER_LFM2_5MINI_MODEL'),
+      OPENAI_WORKER_LFM2_5MINI_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_MIN'),
+      OPENAI_WORKER_LFM2_5MINI_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_MAX'),
+      OPENAI_WORKER_LFM2_5MINI_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM2_5MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM2_5MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM2_5MINI_MAX_STEPS'),
+      OPENAI_WORKER_LFM3HERETIC_MODEL: await $.env.get('OPENAI_WORKER_LFM3HERETIC_MODEL'),
+      OPENAI_WORKER_LFM3HERETIC_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_MIN'),
+      OPENAI_WORKER_LFM3HERETIC_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_MAX'),
+      OPENAI_WORKER_LFM3HERETIC_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM3HERETIC_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM3HERETIC_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM3HERETIC_MAX_STEPS'),
+      OPENAI_WORKER_LFM3VL_MODEL: await $.env.get('OPENAI_WORKER_LFM3VL_MODEL'),
+      OPENAI_WORKER_LFM3VL_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_MIN'),
+      OPENAI_WORKER_LFM3VL_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_MAX'),
+      OPENAI_WORKER_LFM3VL_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM3VL_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM3VL_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM3VL_MAX_STEPS'),
+      OPENAI_WORKER_LFM2_5TURBO8B_MODEL: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_MODEL'),
+      OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MIN'),
+      OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MAX'),
+      OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM2_5TURBO8B_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_MAX_STEPS'),
+      OPENAI_WORKER_LFM2_5TURBO24B_MODEL: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_MODEL'),
+      OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MIN'),
+      OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MAX'),
+      OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM2_5TURBO24B_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_MAX_STEPS'),
+      OPENAI_WORKER_INKLING2MINI_MODEL: await $.env.get('OPENAI_WORKER_INKLING2MINI_MODEL'),
+      OPENAI_WORKER_INKLING2MINI_EFFORT_MIN: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_MIN'),
+      OPENAI_WORKER_INKLING2MINI_EFFORT_MAX: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_MAX'),
+      OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT'),
+      OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
+      OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
     };
     const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     if (ultraEnabled) {
@@ -381,9 +456,17 @@ export function register(on) {
       await $.command.register({ name: 'ultra', description: 'ULTRA native diagnostics and workflows: /ultra [supervise|review <author-id>|cancel]' });
     }
     for (const [name, spec] of Object.entries(TYPES)) {
+      // Protected ULTRA missions govern OpenAI workers only; provider workers are not offered there.
+      if (spec.provider && ultraEnabled) continue;
       let guidance;
       try { guidance = effortGuidance(name, effortPolicy(name, await agentEffortEnv(envSnapshot, name))); }
       catch (err) { guidance = `Effort configuration invalid: ${errorText(err)}. Fix before delegating.`; }
+      if (spec.provider) {
+        await $.agent.register({ name, description: `${providerBlurb(spec)} ${spec.description} ${guidance}`,
+          prompt: `You are an external ${providerName(spec)}-backed agent. Your model steps are supplied by ${PLUGIN}. ${guidance}`,
+          tools: ['Read', 'Edit', 'Write', 'Bash'] });
+        continue;
+      }
       await $.agent.register({ name, description: `Proactively delegate bounded tasks here when OpenAI is requested. ${spec.description} ${guidance} Native Claude Code subagent, reasoning via external OpenAI API.${ultraEnabled ? ` ULTRA is enabled: ${ULTRA_NATIVE_SPECS.Agent.description}` : ''}`,
         prompt: `You are an external OpenAI-backed agent. Your model steps are supplied by ${PLUGIN}. ${guidance}`,
         tools: ultraEnabled ? Object.keys(ULTRA_NATIVE_SPECS) : ['Read', 'Edit', 'Write', 'Bash'] });
@@ -582,14 +665,82 @@ export function register(on) {
       OPENAI_WORKER_TERRA5_6FREE_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_TERRA5_6FREE_EFFORT_NOTE'),
       OPENAI_WORKER_TERRA5_6FREE_MAX_STEPS: await $.env.get('OPENAI_WORKER_TERRA5_6FREE_MAX_STEPS'),
       OPENAI_WORKER_TERRA5_6FREE_MAX_USD: await $.env.get('OPENAI_WORKER_TERRA5_6FREE_MAX_USD'),
+      OPENAI_WORKER_KIMIK3_1PRO_MODEL: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_MODEL'),
+      OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MIN: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MIN'),
+      OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MAX: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MAX'),
+      OPENAI_WORKER_KIMIK3_1PRO_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_DEFAULT'),
+      OPENAI_WORKER_KIMIK3_1PRO_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_NOTE'),
+      OPENAI_WORKER_KIMIK3_1PRO_MAX_STEPS: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_MAX_STEPS'),
+      OPENAI_WORKER_MISTRAL4LARGE_MODEL: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_MODEL'),
+      OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MIN: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MIN'),
+      OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MAX: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MAX'),
+      OPENAI_WORKER_MISTRAL4LARGE_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_DEFAULT'),
+      OPENAI_WORKER_MISTRAL4LARGE_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_NOTE'),
+      OPENAI_WORKER_MISTRAL4LARGE_MAX_STEPS: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_MAX_STEPS'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_MODEL: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_MODEL'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MIN: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MIN'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MAX: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MAX'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_DEFAULT'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_NOTE'),
+      OPENAI_WORKER_NEMO3_5SUPERVL_MAX_STEPS: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_MAX_STEPS'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_MODEL: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_MODEL'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MIN: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MIN'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MAX: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MAX'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_DEFAULT'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_NOTE'),
+      OPENAI_WORKER_NEMO3_5LIGHTNING_MAX_STEPS: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_MAX_STEPS'),
+      OPENAI_WORKER_SPROCKET0_5_MODEL: await $.env.get('OPENAI_WORKER_SPROCKET0_5_MODEL'),
+      OPENAI_WORKER_SPROCKET0_5_EFFORT_MIN: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_MIN'),
+      OPENAI_WORKER_SPROCKET0_5_EFFORT_MAX: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_MAX'),
+      OPENAI_WORKER_SPROCKET0_5_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_DEFAULT'),
+      OPENAI_WORKER_SPROCKET0_5_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_NOTE'),
+      OPENAI_WORKER_SPROCKET0_5_MAX_STEPS: await $.env.get('OPENAI_WORKER_SPROCKET0_5_MAX_STEPS'),
+      OPENAI_WORKER_LFM2_5MINI_MODEL: await $.env.get('OPENAI_WORKER_LFM2_5MINI_MODEL'),
+      OPENAI_WORKER_LFM2_5MINI_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_MIN'),
+      OPENAI_WORKER_LFM2_5MINI_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_MAX'),
+      OPENAI_WORKER_LFM2_5MINI_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM2_5MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM2_5MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM2_5MINI_MAX_STEPS'),
+      OPENAI_WORKER_LFM3HERETIC_MODEL: await $.env.get('OPENAI_WORKER_LFM3HERETIC_MODEL'),
+      OPENAI_WORKER_LFM3HERETIC_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_MIN'),
+      OPENAI_WORKER_LFM3HERETIC_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_MAX'),
+      OPENAI_WORKER_LFM3HERETIC_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM3HERETIC_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM3HERETIC_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM3HERETIC_MAX_STEPS'),
+      OPENAI_WORKER_LFM3VL_MODEL: await $.env.get('OPENAI_WORKER_LFM3VL_MODEL'),
+      OPENAI_WORKER_LFM3VL_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_MIN'),
+      OPENAI_WORKER_LFM3VL_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_MAX'),
+      OPENAI_WORKER_LFM3VL_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM3VL_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM3VL_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM3VL_MAX_STEPS'),
+      OPENAI_WORKER_LFM2_5TURBO8B_MODEL: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_MODEL'),
+      OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MIN'),
+      OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MAX'),
+      OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM2_5TURBO8B_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_MAX_STEPS'),
+      OPENAI_WORKER_LFM2_5TURBO24B_MODEL: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_MODEL'),
+      OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MIN'),
+      OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MAX'),
+      OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_DEFAULT'),
+      OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_NOTE'),
+      OPENAI_WORKER_LFM2_5TURBO24B_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_MAX_STEPS'),
+      OPENAI_WORKER_INKLING2MINI_MODEL: await $.env.get('OPENAI_WORKER_INKLING2MINI_MODEL'),
+      OPENAI_WORKER_INKLING2MINI_EFFORT_MIN: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_MIN'),
+      OPENAI_WORKER_INKLING2MINI_EFFORT_MAX: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_MAX'),
+      OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT'),
+      OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
+      OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
     };
     envSnapshot = env;
     const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     for (const [type, spec] of Object.entries(TYPES)) {
       try {
-        const tier = await agentTier(env, type);
         const model = envValue(env, spec.env)?.trim() || spec.model;
         const effort = effortPolicy(type, await agentEffortEnv(env, type), model);
+        // Provider workers have no service tier.
+        if (spec.provider) { settings.push({ name: type, model, key: spec.key, provider: spec.provider, tier: '—', effort }); continue; }
+        const tier = await agentTier(env, type);
         settings.push({ name: type, model, key: spec.key, tier: tier ?? 'auto', effort });
       } catch (err) { settings.push({ name: type, error: errorText(err) }); }
     }
@@ -603,7 +754,8 @@ export function register(on) {
     }
     return { text: renderStatus({
       now: new Date(), version: VERSION, color: env.OAI_STATUS_COLOR === '1',
-      keys: [{ label: 'straight (OPENAI_API_KEY)', ...health.standard }, { label: 'free (OPENAI_FREE_API_KEY)', ...health.free }],
+      keys: [{ label: 'straight (OPENAI_API_KEY)', ...health.standard }, { label: 'free (OPENAI_FREE_API_KEY)', ...health.free },
+        ...(health.nvidia ? [{ label: 'nvidia (NVIDIA_API_KEY)', configured: Boolean(health.nvidia.configured), source: health.nvidia.source }] : [])],
       workers: settings, usage, usageError,
       notes: usage ? [usage.monthlyLimitUsd == null ? 'The local ledger does not block requests on cost while no monthly limit is set.'
         : `Monthly spend limit: $${usage.monthlyLimitUsd} local estimate across both keys; $${usage.monthlyCommittedUsd} committed this UTC month (local estimates, not a bill).`, migrationLine(usage)] : [],
@@ -708,6 +860,72 @@ export function register(on) {
         OPENAI_WORKER_TERRA5_6FREE_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_TERRA5_6FREE_EFFORT_NOTE'),
         OPENAI_WORKER_TERRA5_6FREE_MAX_STEPS: await $.env.get('OPENAI_WORKER_TERRA5_6FREE_MAX_STEPS'),
         OPENAI_WORKER_TERRA5_6FREE_MAX_USD: await $.env.get('OPENAI_WORKER_TERRA5_6FREE_MAX_USD'),
+        OPENAI_WORKER_KIMIK3_1PRO_MODEL: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_MODEL'),
+        OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MIN: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MIN'),
+        OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MAX: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_MAX'),
+        OPENAI_WORKER_KIMIK3_1PRO_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_DEFAULT'),
+        OPENAI_WORKER_KIMIK3_1PRO_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_EFFORT_NOTE'),
+        OPENAI_WORKER_KIMIK3_1PRO_MAX_STEPS: await $.env.get('OPENAI_WORKER_KIMIK3_1PRO_MAX_STEPS'),
+        OPENAI_WORKER_MISTRAL4LARGE_MODEL: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_MODEL'),
+        OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MIN: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MIN'),
+        OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MAX: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_MAX'),
+        OPENAI_WORKER_MISTRAL4LARGE_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_DEFAULT'),
+        OPENAI_WORKER_MISTRAL4LARGE_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_EFFORT_NOTE'),
+        OPENAI_WORKER_MISTRAL4LARGE_MAX_STEPS: await $.env.get('OPENAI_WORKER_MISTRAL4LARGE_MAX_STEPS'),
+        OPENAI_WORKER_NEMO3_5SUPERVL_MODEL: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_MODEL'),
+        OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MIN: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MIN'),
+        OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MAX: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_MAX'),
+        OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_DEFAULT'),
+        OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_EFFORT_NOTE'),
+        OPENAI_WORKER_NEMO3_5SUPERVL_MAX_STEPS: await $.env.get('OPENAI_WORKER_NEMO3_5SUPERVL_MAX_STEPS'),
+        OPENAI_WORKER_NEMO3_5LIGHTNING_MODEL: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_MODEL'),
+        OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MIN: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MIN'),
+        OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MAX: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_MAX'),
+        OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_DEFAULT'),
+        OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_EFFORT_NOTE'),
+        OPENAI_WORKER_NEMO3_5LIGHTNING_MAX_STEPS: await $.env.get('OPENAI_WORKER_NEMO3_5LIGHTNING_MAX_STEPS'),
+        OPENAI_WORKER_SPROCKET0_5_MODEL: await $.env.get('OPENAI_WORKER_SPROCKET0_5_MODEL'),
+        OPENAI_WORKER_SPROCKET0_5_EFFORT_MIN: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_MIN'),
+        OPENAI_WORKER_SPROCKET0_5_EFFORT_MAX: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_MAX'),
+        OPENAI_WORKER_SPROCKET0_5_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_DEFAULT'),
+        OPENAI_WORKER_SPROCKET0_5_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_SPROCKET0_5_EFFORT_NOTE'),
+        OPENAI_WORKER_SPROCKET0_5_MAX_STEPS: await $.env.get('OPENAI_WORKER_SPROCKET0_5_MAX_STEPS'),
+        OPENAI_WORKER_LFM2_5MINI_MODEL: await $.env.get('OPENAI_WORKER_LFM2_5MINI_MODEL'),
+        OPENAI_WORKER_LFM2_5MINI_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_MIN'),
+        OPENAI_WORKER_LFM2_5MINI_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_MAX'),
+        OPENAI_WORKER_LFM2_5MINI_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_DEFAULT'),
+        OPENAI_WORKER_LFM2_5MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM2_5MINI_EFFORT_NOTE'),
+        OPENAI_WORKER_LFM2_5MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM2_5MINI_MAX_STEPS'),
+        OPENAI_WORKER_LFM3HERETIC_MODEL: await $.env.get('OPENAI_WORKER_LFM3HERETIC_MODEL'),
+        OPENAI_WORKER_LFM3HERETIC_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_MIN'),
+        OPENAI_WORKER_LFM3HERETIC_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_MAX'),
+        OPENAI_WORKER_LFM3HERETIC_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_DEFAULT'),
+        OPENAI_WORKER_LFM3HERETIC_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM3HERETIC_EFFORT_NOTE'),
+        OPENAI_WORKER_LFM3HERETIC_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM3HERETIC_MAX_STEPS'),
+        OPENAI_WORKER_LFM3VL_MODEL: await $.env.get('OPENAI_WORKER_LFM3VL_MODEL'),
+        OPENAI_WORKER_LFM3VL_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_MIN'),
+        OPENAI_WORKER_LFM3VL_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_MAX'),
+        OPENAI_WORKER_LFM3VL_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_DEFAULT'),
+        OPENAI_WORKER_LFM3VL_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM3VL_EFFORT_NOTE'),
+        OPENAI_WORKER_LFM3VL_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM3VL_MAX_STEPS'),
+        OPENAI_WORKER_LFM2_5TURBO8B_MODEL: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_MODEL'),
+        OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MIN'),
+        OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_MAX'),
+        OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_DEFAULT'),
+        OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_EFFORT_NOTE'),
+        OPENAI_WORKER_LFM2_5TURBO8B_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM2_5TURBO8B_MAX_STEPS'),
+        OPENAI_WORKER_LFM2_5TURBO24B_MODEL: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_MODEL'),
+        OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MIN: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MIN'),
+        OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MAX: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_MAX'),
+        OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_DEFAULT'),
+        OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_EFFORT_NOTE'),
+        OPENAI_WORKER_LFM2_5TURBO24B_MAX_STEPS: await $.env.get('OPENAI_WORKER_LFM2_5TURBO24B_MAX_STEPS'),
+        OPENAI_WORKER_INKLING2MINI_MODEL: await $.env.get('OPENAI_WORKER_INKLING2MINI_MODEL'),
+        OPENAI_WORKER_INKLING2MINI_EFFORT_MIN: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_MIN'),
+        OPENAI_WORKER_INKLING2MINI_EFFORT_MAX: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_MAX'),
+        OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT'),
+        OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
+        OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
       };
       envSnapshot = env;
       const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
@@ -741,7 +959,8 @@ export function register(on) {
         // Complimentary-key workers are not subject to the paid worker's default
         // $4 estimate guardrail. An explicit per-worker limit still works.
         const freeWorker = spec.key === 'free';
-        const maxUsd = cap(envValue(env, `OPENAI_WORKER_${envSuffix(type)}_MAX_USD`),
+        // Provider workers (NVIDIA Build, LM Studio) cost nothing: no USD guardrail at all.
+        const maxUsd = spec.provider ? Infinity : cap(envValue(env, `OPENAI_WORKER_${envSuffix(type)}_MAX_USD`),
           freeWorker ? Infinity : cap(env.OPENAI_WORKER_MAX_USD, 4));
         if (run.steps >= maxSteps || run.estimatedUsd >= maxUsd) {
           const costLimit = Number.isFinite(maxUsd) ? `; estimated $${run.estimatedUsd.toFixed(3)}/$${maxUsd}` : '';
@@ -750,10 +969,13 @@ export function register(on) {
         } else {
           const model = envValue(env, spec.env)?.trim() || spec.model;
           const effortSelection = await agentEffort(env, type, requestedEffort);
-          const service_tier = await agentTier(env, type);
+          // Service tiers are an OpenAI concept; provider workers never send one.
+          const service_tier = spec.provider ? undefined : await agentTier(env, type);
           const flexWait = Math.min(120, cap(env.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES, 45));
           let response, nativeContext;
-          if (ultraEnabled) {
+          if (ultraEnabled && spec.provider) {
+            throw new Error(`${providerName(spec)} workers are not governed by protected ULTRA missions`);
+          } else if (ultraEnabled) {
             const info = await $.session.info();
             if (!Array.isArray(info.dataRules) || info.dataRules.length) throw new Error('External native provider use is held while host organization data rules are unknown or active');
             nativeContext = await nativeBridge(host, nativeChannel, 'context', { hostAgentId: e.agentId });
@@ -770,8 +992,10 @@ export function register(on) {
               try {
               response = await query(host.call, { worker_type: type, model, input: plan.input, previous_response_id: plan.previous_response_id,
               instructions: await instructions(() => $.session.cwd(), p => $.fs.read(p)), tools: OPENAI_TOOLS, effort: effortSelection.effective,
-              max_output_tokens: effortSelection.effective === 'max' ? 32000 : 16000, ...(service_tier && { service_tier }) }, next.signal,
-              service_tier === 'flex' ? flexWait : 15, steering ? hardCheck : null);
+              max_output_tokens: effortSelection.effective === 'max' ? 32000 : 16000, ...(service_tier && { service_tier }),
+              // Provider workers poll the operator's mid-reasoning tips (thought-steering) by host agent id.
+              ...(spec.provider && { agent_id: e.agentId }) }, next.signal,
+              spec.provider ? 30 : service_tier === 'flex' ? flexWait : 15, steering ? hardCheck : null);
               } catch (error) {
                 // A hard tip cancels the in-flight request; resend the same step with the tip appended.
                 if (!error?.steerInterrupt || interrupts++ >= 3) throw error;
@@ -787,7 +1011,7 @@ export function register(on) {
           }
           const verifiedCost = Number.isFinite(response.estimatedUsd) && response.estimatedUsd >= 0;
           const failedUnbilled = response.status !== 'completed' && !response.usage;
-          result = failedUnbilled ? finalStep(`OpenAI request ${response.status}: ${response.reason ?? 'no reason given'}`, seed, handback) : verifiedCost ? responseStep(response, seed, handback, nativeContext && { allowedTools: nativeContext.tools.map(tool => tool.name) }) :
+          result = failedUnbilled ? finalStep(`${providerName(spec)} request ${response.status}: ${response.reason ?? 'no reason given'}`, seed, handback) : verifiedCost ? responseStep(response, seed, handback, nativeContext && { allowedTools: nativeContext.tools.map(tool => tool.name) }) :
             finalStep(`OpenAI accounting HOLD: response ${response.id ?? '(unknown)'} has unverified usage or pricing. No returned tool call was executed. Existing reservations are retained.\n${response.text ?? ''}`, seed, handback);
           if (steering?.tips?.some(t => t.ack || t.assess || t.conseq) && response.text)
             await steerCall(steerHost, { op: 'reply', agentId: e.agentId, step: run.steps, text: response.text });

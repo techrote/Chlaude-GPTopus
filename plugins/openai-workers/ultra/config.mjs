@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
-import { WORKER_TYPES } from '../bridge/workers.mjs';
+import { WORKER_TYPES as ALL_WORKER_TYPES, OPENAI_WORKERS } from '../bridge/workers.mjs';
+// ULTRA orchestrates the OpenAI (Responses API) workers only; chat-completions provider workers are not part of its policy.
+const WORKER_TYPES = Object.fromEntries(OPENAI_WORKERS.map(name => [name, ALL_WORKER_TYPES[name]]));
 
 export const CONFIG_VERSION = 1;
 /** Stable identifier of one required verification; shared by owner policy, workflow plans and evidence. */

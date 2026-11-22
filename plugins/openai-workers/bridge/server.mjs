@@ -2,7 +2,9 @@
 import readline from 'node:readline';
 import { basename } from 'node:path';
 import { configuredKey, keyProfileForWorker, createTurn, pollTurn, cancelTurn, validateTurnArgs, mayHaveIncurredUsage } from './openai.mjs';
-import { workerSettings, selectWorkerEffort, workerEnvSuffix, canonicalWorker } from './workers.mjs';
+import { workerSettings, selectWorkerEffort, workerEnvSuffix, canonicalWorker, isProviderWorker } from './workers.mjs';
+import { chat as defaultChat, providerUrl } from './chat.mjs';
+import { rotationSnapshot } from './rotation.mjs';
 import { traceRequest, traceResponse, writeTrace } from './trace.mjs';
 import * as steer from './steer.mjs';
 import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot, quoteRequest,
@@ -32,7 +34,7 @@ async function ultraService(options = {}) {
 const defs = [
   { name: 'health', description: 'Workers are native subagents: use the Agent tool with subagent_type oai:<worker>. Report whether the bridge has a configured API key (never returns it).', inputSchema: { type: 'object', properties: {} } },
   { name: 'create', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Start a Responses API model step for the plugin.', inputSchema: { type: 'object', properties: {
-    model: { type: 'string' }, worker_type: { type: 'string' }, input: {}, instructions: { type: 'string' }, tools: { type: 'array' }, effort: { type: 'string' }, previous_response_id: { type: 'string' }, max_output_tokens: { type: 'integer' }, request_id: { type: 'string' },
+    model: { type: 'string' }, worker_type: { type: 'string' }, input: {}, instructions: { type: 'string' }, tools: { type: 'array' }, effort: { type: 'string' }, previous_response_id: { type: 'string' }, max_output_tokens: { type: 'integer' }, request_id: { type: 'string' }, agent_id: { type: 'string' },
     service_tier: { type: 'string', enum: ['auto', 'default', 'flex', 'fast', 'priority'] } }, required: ['worker_type', 'model', 'input', 'instructions', 'tools'] } },
   { name: 'usage', description: 'Show local free-key daily tokens, reservations and UTC rollover; these are not authoritative API billing counters.', inputSchema: { type: 'object', properties: {} } },
   { name: 'poll', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Poll an in-progress OpenAI response, up to five seconds.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' }, wait_ms: { type: 'integer' } }, required: ['id', 'worker_type'] } },
@@ -115,10 +117,15 @@ export async function dispatch(name, args = {}, options = {}) {
   const env = options.env ?? process.env;
   const ledgerOptions = { ...options, env };
   const transport = options.transport ?? { create: createTurn, poll: pollTurn, cancel: cancelTurn };
+  // Chat-completions provider workers (NVIDIA Build, LM Studio): no OpenAI key, ledger, price guard, tier or response binding.
+  if (['create', 'poll', 'cancel'].includes(name) && isProviderWorker(args.worker_type)) return providerDispatch(name, args, env, options);
   switch (name) {
     case 'health': return {
       standard: { configured: Boolean(configuredKey(env, 'standard')), source: configuredKey(env, 'standard') || 'none' },
       free: { configured: Boolean(configuredKey(env, 'free')), source: configuredKey(env, 'free') || 'none' },
+      nvidia: { configured: Boolean(configuredKey(env, 'nvidia')), source: configuredKey(env, 'nvidia') || 'none' },
+      lmstudio: { url: providerUrl('lmstudio', env) },
+      nvidiaBudget: (() => { try { return rotationSnapshot(env); } catch { return null; } })(),
       platform: process.platform,
     };
     case 'create': {
@@ -197,6 +204,38 @@ export async function dispatch(name, args = {}, options = {}) {
     }
     default: throw new Error(`Unknown bridge tool ${String(name).slice(0, 50)}`);
   }
+}
+const PROVIDER_ID = /^chat_c[a-f0-9]{16}_\d{1,9}$/;
+/** Provider workers: the caller may not substitute the model; effort is clamped to the worker's policy. */
+async function providerDispatch(name, args, env, options) {
+  const chat = options.chat ?? defaultChat;
+  const selected = workerSettings(args.worker_type, env);
+  const chatOptions = { env, ...(options.chatOptions ?? {}) };
+  if (name === 'create') {
+    let effective;
+    try {
+      if (args.model !== selected.model) throw new Error(`Worker ${selected.name} is configured for ${selected.model}; caller model substitution is not permitted.`);
+      if (typeof args.instructions !== 'string' || !args.instructions) throw new Error('Instructions are required.');
+      if (!Array.isArray(args.tools)) throw new Error('Tool manifest required.');
+      const effort = selectWorkerEffort(selected.name, args.effort, env, selected.model).effective;
+      const { service_tier, request_id, ...rest } = args; // tiers and ledger request ids do not apply
+      effective = { ...rest, model: selected.model, effort };
+    } catch (error) { throw notSent(error); }
+    traceRequest(selected, effective, { env });
+    const response = await chat.create(effective, chatOptions);
+    if (response.status !== 'in_progress') traceResponse(selected.name, response, { env });
+    return pack(response);
+  }
+  if (typeof args.id !== 'string' || !PROVIDER_ID.test(args.id)) throw new Error('Invalid provider response id.');
+  if (name === 'poll') {
+    const response = await chat.poll(args.id, { ...chatOptions, wait_ms: args.wait_ms, worker_type: selected.name });
+    if (response.id !== args.id) throw new Error('Poll response ID differs from the requested response.');
+    if (response.status !== 'in_progress') traceResponse(selected.name, response, { env });
+    return pack(response);
+  }
+  const response = await chat.cancel(args.id, { ...chatOptions, worker_type: selected.name });
+  if (response.id !== args.id) throw new Error('Cancellation response ID differs from the requested response.');
+  return response;
 }
 /** Operator steering (see steer.mjs). Text is the operator's own; nothing here widens worker capability. */
 async function steerOp(args, env) {

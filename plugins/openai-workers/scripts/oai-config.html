@@ -124,6 +124,59 @@ header{position:sticky;top:0;z-index:20;background:linear-gradient(var(--hdr1),v
 #steer.collapsed .log,#steer.collapsed .mrow{display:none}
 body.steer-bottom #steer{position:fixed;left:0;right:0;bottom:24px;z-index:16;margin:0;box-shadow:0 -6px 18px color-mix(in srgb,var(--lo) 70%,transparent)}
 body.steer-bottom main{padding-bottom:150px}
+/* conversations (provider workers: editable history, live reasoning, thought-steer) */
+#convos{margin:0 var(--pad) 40px}
+body.steer-bottom #convos{margin-bottom:170px}
+main:has(+ #convos){padding-bottom:var(--g3)}
+#convos .cvb{display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:var(--g3);padding:var(--g2)}
+#convos.min .cvb{display:none}
+#convos .cvlist{display:flex;flex-direction:column;gap:1px;max-height:70vh;overflow-y:auto;background:var(--inset);border:1px solid var(--line);padding:2px;scrollbar-width:thin}
+#convos .cvi{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:2px 5px;align-items:center;text-align:left;padding:3px 5px;background:var(--bg2);border:1px solid var(--line);color:var(--mute);cursor:pointer;font-size:10.5px}
+#convos .cvi:hover{color:var(--text);border-color:var(--limedim)}
+#convos .cvi.sel{background:linear-gradient(var(--on1),var(--on2));color:var(--on-text);border-color:var(--on-hi)}
+#convos .cvi.sel b,#convos .cvi.sel .mini{color:var(--on-text)}
+#convos .cvi b{color:var(--lime);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#convos .cvi .mini{grid-column:2/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#convos .cvi .tm{font-size:10px;color:var(--mute)}
+#convos .cvi.sel .tm{color:var(--on-text)}
+#convos .cvhead .spacer{flex:1}
+#convos .more{align-self:flex-start}
+#convos .cvview{min-width:0;display:flex;flex-direction:column;gap:var(--g2)}
+#convos .cvhead{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g2);padding:2px 5px;font-size:11px}
+#convos .cvhead .v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#convos .stale{color:var(--amber)}
+#convos .tx{display:flex;flex-direction:column;gap:2px;max-height:70vh;overflow-y:auto;background:var(--inset);border:1px solid var(--line);padding:3px;scrollbar-width:thin}
+#convos .m{display:grid;grid-template-columns:46px minmax(0,1fr);gap:2px 6px;padding:3px 4px;background:var(--bg2);border:1px solid var(--line);border-left-width:3px}
+#convos .m.r-system{border-left-color:var(--cyan)}
+#convos .m.r-user{border-left-color:var(--lime)}
+#convos .m.r-assistant{border-left-color:var(--lcd)}
+#convos .m.r-tool{border-left-color:var(--amber)}
+#convos .m.trim{opacity:.6}
+#convos .m .role{font-size:9.5px;letter-spacing:.08em;color:var(--mute);display:flex;flex-direction:column;gap:2px}
+#convos .m .role b{color:var(--text)}
+#convos .m .body{min-width:0;display:flex;flex-direction:column;gap:2px}
+#convos .m .content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11.5px;line-height:1.4;color:var(--text)}
+#convos .m .content.empty{color:var(--faint);font-style:italic}
+#convos details.rsn>summary{cursor:pointer;font-size:9.5px;letter-spacing:.1em;color:var(--mute);list-style:none}
+#convos details.rsn>summary::-webkit-details-marker{display:none}
+#convos details.rsn>summary::before{content:"▸ "}
+#convos details.rsn[open]>summary::before{content:"▾ "}
+#convos .rtext{white-space:pre-wrap;overflow-wrap:anywhere;font-size:10.5px;line-height:1.4;color:var(--mute);background:var(--inset);border:1px dashed var(--line);padding:2px 5px;max-height:320px;overflow-y:auto}
+#convos .call{font-size:10.5px;color:var(--cyan);overflow-wrap:anywhere}
+#convos .call b{color:var(--lime2)}
+#convos .acts{display:flex;flex-wrap:wrap;gap:var(--g1);justify-content:flex-end}
+#convos .acts .btn{height:18px;font-size:9.5px;padding:0 5px}
+#convos .ed{display:flex;flex-direction:column;gap:3px;padding:3px;border:1px solid var(--amber);background:var(--bg2)}
+#convos .ed textarea{width:100%;min-height:60px;resize:vertical;background:var(--lcdbg);color:var(--lcd);border:1px solid;border-color:var(--lo) var(--lcd-edge) var(--lcd-edge) var(--lo);font:11px/1.4 var(--mono);padding:3px 5px}
+#convos .ed textarea.rs{color:var(--mute)}
+#convos .ed select{height:20px;background:var(--inset);border:1px solid var(--line);color:var(--lime)}
+#convos .lv{border:1px solid var(--lcd-edge);background:var(--lcdbg);padding:3px 5px;display:flex;flex-direction:column;gap:3px}
+#convos .lv .lt{display:flex;align-items:center;gap:var(--g2);font-size:10px;letter-spacing:.1em;color:var(--lcd)}
+#convos .lv .rtext{max-height:240px;border-style:solid;border-color:var(--lcd-edge)}
+#convos .lv .caret{color:var(--lcd)}
+#convos .ts{display:flex;gap:var(--g2);align-items:center}
+#convos .ts input{flex:1;min-width:120px;height:22px;padding:0 6px;background:var(--lcdbg);color:var(--lcd);border:1px solid;border-color:var(--lo) var(--lcd-edge) var(--lcd-edge) var(--lo);font-size:12px}
+@media (max-width:820px){#convos .cvb{grid-template-columns:1fr}#convos .cvlist{max-height:30vh}}
 /* layout */
 main{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:var(--g3);padding:var(--g3) var(--pad) 40px;align-items:start}
 .col{display:grid;gap:var(--g3);align-content:start}
@@ -330,6 +383,21 @@ footer .lcd.err{color:color-mix(in oklab,var(--red) 60%,var(--text));text-shadow
   <div class="col" id="leftCol"></div>
   <div class="col"><div class="workers" id="workers"></div><div id="advHost"></div></div>
 </main>
+<section id="convos" class="panel bevel" aria-label="Conversations">
+  <div class="ph">
+    <span class="name" title="Provider workers (NVIDIA Build, LM Studio) keep their whole history here. Edits take effect on the worker's next model step.">CONVERSATIONS</span>
+    <span class="chip" id="cvCount">0</span>
+    <span class="msum" id="cvSum"></span>
+    <span class="spacer"></span>
+    <span class="mini" id="cvDir"></span>
+    <button class="btn" id="cvReload" title="Re-read the conversation list and the open conversation">RELOAD</button>
+    <button class="btn ico" id="cvFold" title="Minimise / restore" aria-label="Minimise conversations" aria-pressed="false">▁</button>
+  </div>
+  <div class="cvb">
+    <div class="cvlist" id="cvList" role="listbox" aria-label="Conversations"></div>
+    <div class="cvview" id="cvView"><div class="mini">Select a conversation. Only provider workers (NVIDIA Build, LM Studio) have one.</div></div>
+  </div>
+</section>
 <footer><span class="lab">STATUS</span><div class="lcd" id="status">READY</div></footer>
 <script nonce="__NONCE__">
 'use strict';
@@ -688,10 +756,11 @@ function syncLocks() { for (const [id, P] of Object.entries(PANELS)) { const on 
 function build() {
   const byGroup = {}; for (const p of S.params) (byGroup[p.group] ||= []).push(p);
   const left = $('#leftCol');
-  const notes = { global: 'Defaults for every worker; per-worker values override.', quota: 'Local guardrails for the free-programme key (UTC day). Not an OpenAI entitlement.',
+  const notes = { providers: 'NVIDIA Build and LM Studio: endpoints, NVIDIA concurrency, daily hours and rotation. No token caps.', global: 'Defaults for every worker; per-worker values override.', quota: 'Local guardrails for the free-programme key (UTC day). Not an OpenAI entitlement.',
     spend: 'LIMIT is enforced. ALLOWANCE is a reference figure only and never blocks.', diag: 'Diagnostics read by the bridge and the /oai panel.',
     steer: 'Operator steering: tips to running workers via /oai:s or the console. Pause gives you a window to steer after file edits or commands.' };
-  for (const id of ['global', 'quota', 'spend', 'steer', 'diag']) {
+  for (const id of ['global', 'quota', 'spend', 'steer', 'providers', 'diag']) {
+    if (!byGroup[id] || !S.groups.find(x => x.id === id)) continue;
     const g = S.groups.find(x => x.id === id), P = panel(g, { note: notes[id], chips: id === 'spend' ? [h('span', { class: 'chip info' }, 'ALLOWANCE = INFO')] : [] });
     for (const p of byGroup[id]) P.body.append(buildRow(p).el);
     left.append(P.el);
@@ -699,7 +768,8 @@ function build() {
   const wrap = $('#workers');
   for (const w of S.workers) {
     const g = S.groups.find(x => x.id === `w:${w.name}`);
-    const P = panel(g, { summary: true, chips: [h('span', { class: `chip ${w.key === 'free' ? 'free' : 'paid'}`, title: w.key === 'free' ? 'OPENAI_FREE_API_KEY' : 'OPENAI_API_KEY' }, w.key === 'free' ? 'FREE KEY' : 'PAID KEY')] });
+    const chip = w.provider === 'nvidia' ? h('span', { class: 'chip free', title: 'NVIDIA_API_KEY · free NVIDIA Build model' }, 'NVIDIA') : w.provider === 'lmstudio' ? h('span', { class: 'chip info', title: 'Local LM Studio model on this PC' }, 'LOCAL') : h('span', { class: `chip ${w.key === 'free' ? 'free' : 'paid'}`, title: w.key === 'free' ? 'OPENAI_FREE_API_KEY' : 'OPENAI_API_KEY' }, w.key === 'free' ? 'FREE KEY' : 'PAID KEY');
+    const P = panel(g, { summary: true, chips: [chip] });
     P.el.title = ''; P.el.querySelector('.ph .name').title = `${w.description}\nDrag to reorder`;
     for (const p of byGroup[`w:${w.name}`]) { if (p.name.endsWith('EFFORT_MIN')) { P.ruler = effortRuler(w.name); P.body.append(P.ruler); } P.body.append(buildRow(p).el); }
     wrap.append(P.el);
@@ -721,7 +791,7 @@ function renderLive() {
   $('#lcd').title = `Store: ${st.storage.kind} · ${st.storage.location}`;
   const nset = Object.values(st.values).filter(v => v !== '').length, nerr = Object.keys(st.check.errors).length;
   $('#lcdState').textContent = `${String(nset).padStart(2, '0')} SET · ${nerr ? `${nerr} INVALID` : 'VALID'} · ${Object.keys(st.check.warnings).length} WARN`;
-  $('#keys').replaceChildren(...st.keys.map(k => h('div', { class: 'kv', title: `${k.name}: value never displayed` }, h('span', { class: `led ${k.configured ? 'ok' : 'bad'}` }), h('span', { class: 'lab' }, k.profile === 'free' ? 'FREE' : 'PAID'), h('span', { class: 'v' }, k.configured ? k.source : 'not configured'))));
+  $('#keys').replaceChildren(...st.keys.map(k => h('div', { class: 'kv', title: `${k.name}: value never displayed` }, h('span', { class: `led ${k.configured ? 'ok' : 'bad'}` }), h('span', { class: 'lab' }, k.label || (k.profile === 'free' ? 'FREE' : 'PAID')), h('span', { class: 'v' }, k.configured ? k.source : 'not configured'))));
   const q = $('#quota');
   if (st.usage) {
     q.replaceChildren(...['premium', 'terra'].map(g => {
@@ -1011,7 +1081,7 @@ function steerRender() {
   const chips = live.length ? [chip('*', 'ALL', '', 'Every running worker'), ...SC.runs.slice(0, 24).map(r => chip(r.agentId, `${r.worker} · s${r.step ?? 0}`, `${r.status === 'paused' ? 'paused' : ''} ${r.status === 'ended' ? 'ended' : ''}`, `${r.callsign} · ${r.worker}\n${r.description ?? ''}\nstatus ${r.status} · step ${r.step ?? 0} · started ${(r.startedAt ?? '').slice(11, 19)}Z`, r))]
     : [h('span', { class: 'mini' }, 'no worker running')];
   $('#steerRuns').replaceChildren(...chips);
-  const icon = { sent: '→', delivered: '✓', reply: '◂' };
+  const icon = { sent: '→', delivered: '✓', reply: '◂', 'thought-steer': '✦', rotation: '⟳' };
   $('#steerLog').replaceChildren(...SC.log.slice(-40).map(e => h('div', { class: e.kind, title: e.text ?? '' }, `${(e.at ?? '').slice(11, 19)} ${icon[e.kind] ?? '·'} ${e.callsign ?? '?'} ${e.kind === 'delivered' ? `delivered @ step ${e.step ?? '?'}` : e.text ?? ''}${e.flags?.length ? ` [${e.flags.join(' ')}]` : ''}`)));
   $('#steerLog').scrollTop = 1e9;
   $('#steerSend').disabled = !SC.target;
@@ -1028,11 +1098,12 @@ function steerPaste(text) {
 }
 function steerConnect() {
   const ws = new WebSocket(`ws://${location.host}/ws?t=${encodeURIComponent(TOKEN)}`); SC.ws = ws;
-  ws.onopen = () => { SC.retry = 0; $('#steerConn').textContent = 'LINK'; $('#steerConn').className = 'conn'; };
+  ws.onopen = () => { SC.retry = 0; $('#steerConn').textContent = 'LINK'; $('#steerConn').className = 'conn'; if (CV.sel) ws.send(JSON.stringify({ type: 'convo', id: CV.sel })); };
   ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (m.type === 'steer') { SC.runs = m.runs || []; SC.log = m.log || []; steerRender(); }
     else if (m.type === 'macros') steerMacros(m);
     else if (m.type === 'sent') status(`Tip queued for ${m.sent.map(x => x.callsign).join(', ')}: delivered before the next model step`);
+    else if (cvHandle(m)) { /* conversations */ }
     else if (m.type === 'error') status(`Steer: ${m.error}`, true); };
   ws.onclose = () => { $('#steerConn').textContent = 'NO LINK'; $('#steerConn').className = 'conn off'; SC.ws = null; setTimeout(steerConnect, Math.min(10000, 1000 * 2 ** SC.retry++)); };
 }
@@ -1055,7 +1126,184 @@ function initSteer() {
   document.addEventListener('keydown', e => { if (e.altKey && /^Digit[1-8]$/.test(e.code)) { e.preventDefault(); steerPaste(SC.macros[Number(e.code.slice(5)) - 1]?.text); } });
   steerRender(); steerConnect();
 }
+/* ── CONVERSATIONS: provider workers' editable history, live reasoning, thought-steer (same WebSocket) ── */
+const CV = { items: [], dir: '', sel: local.get('oai.convo.sel', null), convo: null, next: null, edit: null, stale: false, open: {}, el: null, lv: null };
+const ROLE_TAG = { system: 'SYS', user: 'USER', assistant: 'ASST', tool: 'TOOL' };
+const CLAMP = 4000;
+const hms = iso => { const d = new Date(iso || 0); return Number.isNaN(d.getTime()) || !iso ? '—' : d.toTimeString().slice(0, 8); };
+const ledFor = c => `led ${c.pending || c.live ? 'ok' : c.status === 'failed' ? 'bad' : c.status === 'running' ? 'amb' : ''}`;
+function cvSend(m) { if (!SC.ws || SC.ws.readyState !== 1) { status('Link down; reconnecting…', true); return false; } SC.ws.send(JSON.stringify(m)); return true; }
+function cvHandle(m) {
+  if (m.type === 'convos') { CV.items = m.items || []; CV.dir = m.dir || ''; cvList(); return true; }
+  if (m.type === 'convo') {
+    if (m.convo && m.convo.id !== CV.sel) return true; // reply for a conversation the operator has left
+    if (!m.convo) { if (m.gone) status('That conversation was removed', true); CV.convo = null; CV.edit = null; cvRender(); return true; }
+    if (m.op) { CV.edit = null; CV.stale = false; CV.next = null; status(`Conversation ${m.op.toUpperCase()} saved · rev ${m.convo.rev} · takes effect on the worker's next model step`); }
+    else if (CV.edit && CV.convo && CV.convo.rev !== m.convo.rev) { CV.next = m.convo; CV.stale = true; cvHead(); return true; }
+    const switched = CV.convo?.id !== m.convo.id;
+    CV.convo = m.convo; cvRender(switched); return true;
+  }
+  if (m.type === 'convo-live') {
+    if (CV.convo?.id === m.id) { CV.convo.status = m.status; CV.convo.updatedAt = m.updatedAt; if (m.pending) CV.convo.pending = m.pending; else delete CV.convo.pending; cvHead(); cvLive(); }
+    return true;
+  }
+  if (m.type === 'thought-sent') { status(`Thought-steer queued${m.callsign ? ` for ${m.callsign}` : ''}: ${m.midReasoning ? 'injected into the running reasoning within ~0.3 s' : 'used at the next reasoning phase, else delivered before the next step'}`); return true; }
+  if (m.type === 'error' && m.scope === 'convo') { status(`Conversation: ${m.error}`, true); return true; }
+  return false;
+}
+function cvList() {
+  $('#cvCount').textContent = String(CV.items.length);
+  $('#cvDir').title = CV.dir ? `Conversation files: ${CV.dir}` : '';
+  $('#cvSum').textContent = `${CV.items.length} conv · ${CV.items.filter(c => c.live).length} live`;
+  $('#cvList').replaceChildren(...(CV.items.length ? CV.items.map(c => h('button', { class: `cvi${c.id === CV.sel ? ' sel' : ''}`, role: 'option', 'aria-selected': String(c.id === CV.sel),
+    title: `${c.id}\n${c.provider} · ${c.model}\ncreated ${c.createdAt}\nrev ${c.rev}${c.agentId ? `\nrun ${c.agentId}` : ''}`, onclick: () => cvSelect(c.id) },
+    h('span', { class: ledFor(c) }), h('b', {}, `${c.callsign ? `${c.callsign} · ` : ''}${c.worker}`), h('span', { class: 'tm' }, hms(c.updatedAt)),
+    h('span', { class: 'mini' }, `${c.messages} msg · ${c.live ? 'LIVE' : c.status || 'idle'} · ${c.provider}`)))
+    : [h('div', { class: 'mini' }, 'No conversations yet. One appears when an NVIDIA or LM Studio worker runs.')]));
+}
+function cvSelect(id) {
+  if (CV.edit && !confirm('Discard the unsaved edit?')) return;
+  CV.sel = id; local.set('oai.convo.sel', id); CV.edit = null; CV.stale = false; CV.next = null;
+  if (CV.convo?.id !== id) { CV.convo = null; cvRender(); $('#cvView').replaceChildren(h('div', { class: 'mini' }, 'Loading…')); }
+  cvSend({ type: 'convo', id }); cvList();
+}
+function cvRender(scrollEnd = false) {
+  const view = $('#cvView'), c = CV.convo;
+  if (!c) { CV.lv = null; view.replaceChildren(h('div', { class: 'mini' }, 'Select a conversation. Only provider workers (NVIDIA Build, LM Studio) have one.')); return; }
+  if (!CV.el || !view.contains(CV.el.tx)) {
+    CV.el = { head: h('div', { class: 'cvhead lcd' }), tx: h('div', { class: 'tx', role: 'log', 'aria-label': 'Transcript' }), live: h('div') };
+    view.replaceChildren(CV.el.head, CV.el.tx, CV.el.live); scrollEnd = true;
+  }
+  cvHead(); cvMessages(scrollEnd); cvLive();
+}
+function cvHead() {
+  const c = CV.convo, el = CV.el?.head; if (!c || !el) return;
+  el.replaceChildren(...[h('span', { class: ledFor(c) }), h('b', {}, `${c.callsign ? `${c.callsign} · ` : ''}${c.worker}`),
+    h('span', { class: 'v', title: c.model }, `${c.provider} · ${c.model}`),
+    h('span', { class: 'v' }, `rev ${c.rev} · ${c.messages.length} msg · ${c.pending ? 'LIVE' : c.status || 'idle'} · ${hms(c.updatedAt)}`),
+    CV.stale ? h('span', { class: 'stale', title: 'The conversation changed after you opened the editor. SAVE will be refused; CANCEL shows the new version.' }, '▲ CHANGED WHILE EDITING') : null,
+    h('span', { class: 'spacer' }),
+    h('button', { class: 'btn', title: 'Insert a message at the very start', onclick: () => cvStartInsert(-1) }, '+ TOP')].filter(Boolean));
+}
+function cvMessages(scrollEnd) {
+  const c = CV.convo, tx = CV.el.tx, msgs = c.messages || [];
+  const atEnd = scrollEnd || tx.scrollHeight - tx.scrollTop - tx.clientHeight < 40, top = tx.scrollTop;
+  const rows = [];
+  if (CV.edit?.mode === 'insert' && CV.edit.i === -1) rows.push(cvInsertEditor());
+  for (const m of msgs) {
+    rows.push(cvMsg(m, msgs));
+    if (CV.edit?.mode === 'insert' && CV.edit.i === m.i) rows.push(cvInsertEditor());
+  }
+  if (!msgs.length) rows.push(h('div', { class: 'mini' }, 'No messages.'));
+  tx.replaceChildren(...rows);
+  tx.scrollTop = atEnd && !CV.edit ? tx.scrollHeight : top;
+}
+function cvMsg(m, msgs) {
+  const key = `${c4(m)}`, editing = CV.edit?.mode === 'edit' && CV.edit.i === m.i;
+  const body = h('div', { class: 'body' });
+  if (editing) body.append(cvEditor(m));
+  else {
+    if (m.reasoning) {
+      const d = h('details', { class: 'rsn', open: !!CV.open[key] }, h('summary', {}, `REASONING · ${m.reasoning.length} chars${m.steer ? ' · THOUGHT-STEERED' : ''}`), h('div', { class: 'rtext' }, m.reasoning));
+      d.addEventListener('toggle', () => { CV.open[key] = d.open; }); body.append(d);
+    }
+    const text = m.content || '', full = CV.open[`${key}:all`] || text.length <= CLAMP;
+    body.append(h('div', { class: `content${text ? '' : ' empty'}` }, text ? (full ? text : `${text.slice(0, CLAMP)}…`) : m.tool_calls?.length ? '(tool calls only)' : '(empty)'));
+    if (!full) body.append(h('button', { class: 'btn more', onclick: () => { CV.open[`${key}:all`] = true; cvMessages(); } }, `SHOW ALL (${text.length - CLAMP} more chars)`));
+    for (const t of m.tool_calls || []) { const a = String(t.function?.arguments ?? ''); body.append(h('div', { class: 'call', title: `${t.id}\n${a.slice(0, 2000)}` }, '⚙ ', h('b', {}, t.function?.name ?? '?'), ` ${a.length > 400 ? `${a.slice(0, 400)}…` : a}`)); }
+    const nextTool = msgs[m.i + 1]?.role === 'tool', grouped = m.role === 'tool' || (m.role === 'assistant' && m.tool_calls?.length);
+    body.append(h('div', { class: 'acts' },
+      h('button', { class: 'btn', title: 'Edit this message (content, and reasoning for assistant messages)', onclick: () => cvStartEdit(m) }, 'EDIT'),
+      h('button', { class: 'btn', title: grouped ? 'Delete — removes the whole tool call group (call + results) together' : 'Delete this message', onclick: () => cvDelete(m, grouped) }, 'DEL'),
+      h('button', { class: 'btn', disabled: nextTool, title: nextTool ? 'Cannot insert between a tool call and its results' : 'Insert a new message after this one', onclick: () => cvStartInsert(m.i) }, '+ AFTER'),
+      h('button', { class: 'btn', disabled: m.i === msgs.length - 1, title: 'Keep messages up to here and drop everything after', onclick: () => cvTruncate(m) }, 'CUT AFTER')));
+  }
+  const role = h('div', { class: 'role' }, h('b', {}, ROLE_TAG[m.role] || m.role), `#${m.i}`, hms(m.at), m.edited ? 'EDITED' : null, m.steer ? 'STEER' : null, m.role === 'tool' && m.name ? m.name : null);
+  if (m.role === 'tool') role.title = `tool_call_id ${m.tool_call_id || '?'}`;
+  return h('div', { class: `m r-${m.role}${m.trimMarker ? ' trim' : ''}` }, role, body);
+}
+const c4 = m => `${m.at}|${m.role}|${(m.content || '').length}`;
+function cvStartEdit(m) {
+  if (CV.edit && !confirm('Discard the unsaved edit?')) return;
+  CV.edit = { mode: 'edit', i: m.i, rev: CV.convo.rev }; cvMessages();
+  CV.el.tx.querySelector('.ed textarea')?.focus();
+}
+function cvStartInsert(i) {
+  if (CV.edit && !confirm('Discard the unsaved edit?')) return;
+  CV.edit = { mode: 'insert', i, rev: CV.convo.rev, role: 'user', content: '' }; cvMessages();
+  CV.el.tx.querySelector('.ed textarea')?.focus();
+}
+function cvCancel() { CV.edit = null; if (CV.next) { CV.convo = CV.next; CV.next = null; } CV.stale = false; cvRender(); }
+function cvOp(op, i, extra = {}) { if (!CV.convo) return; cvSend({ type: 'convo-edit', id: CV.convo.id, op, i, expectRev: CV.edit?.rev ?? CV.convo.rev, ...extra }); }
+function edKeys(el, save) { el.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); } else if (e.key === 'Escape') { e.preventDefault(); cvCancel(); } }); }
+function cvEditor(m) {
+  const ct = h('textarea', { 'aria-label': 'Message content', spellcheck: 'false' }); ct.value = CV.edit.content ?? m.content ?? '';
+  ct.addEventListener('input', () => { CV.edit.content = ct.value; });
+  const withR = m.role === 'assistant' || !!m.reasoning;
+  const rs = withR ? h('textarea', { class: 'rs', 'aria-label': 'Message reasoning', spellcheck: 'false' }) : null;
+  if (rs) { rs.value = CV.edit.reasoning ?? m.reasoning ?? ''; rs.addEventListener('input', () => { CV.edit.reasoning = rs.value; }); }
+  const save = () => cvOp('edit', m.i, { content: ct.value, ...(rs && { reasoning: rs.value }) });
+  edKeys(ct, save); if (rs) edKeys(rs, save);
+  return h('div', { class: 'ed' }, h('span', { class: 'lab' }, `EDIT #${m.i} · CONTENT${m.tool_calls?.length ? ' (tool calls stay as they are)' : ''}`), ct,
+    rs ? [h('span', { class: 'lab', title: 'Kept for the record and shown here; the bridge does not replay a model\'s own reasoning to it. Use THOUGHT-STEER to change reasoning that is still running.' }, 'REASONING · stored only, not replayed to the model'), rs] : null,
+    h('div', { class: 'acts' }, h('span', { class: 'mini' }, 'Ctrl+Enter saves · Esc cancels'), h('button', { class: 'btn on', onclick: save }, 'SAVE'), h('button', { class: 'btn', onclick: cvCancel }, 'CANCEL')));
+}
+function cvInsertEditor() {
+  const E = CV.edit;
+  const role = h('select', { 'aria-label': 'Role of the inserted message' }, ['user', 'assistant', 'system'].map(r => h('option', { value: r, selected: E.role === r }, r.toUpperCase())));
+  role.addEventListener('change', () => { E.role = role.value; });
+  const ct = h('textarea', { 'aria-label': 'Inserted message content', spellcheck: 'false', placeholder: 'message text…' }); ct.value = E.content || '';
+  ct.addEventListener('input', () => { E.content = ct.value; });
+  const save = () => { if (!ct.value.trim()) { status('Type the message first', true); ct.focus(); return; } cvOp('insert', E.i, { role: role.value, content: ct.value }); };
+  edKeys(ct, save);
+  return h('div', { class: 'ed' }, h('div', { class: 'acts' }, h('span', { class: 'lab' }, E.i < 0 ? 'INSERT AT START AS' : `INSERT AFTER #${E.i} AS`), role, h('span', { class: 'spacer' })), ct,
+    h('div', { class: 'acts' }, h('span', { class: 'mini' }, 'Ctrl+Enter inserts · Esc cancels'), h('button', { class: 'btn on', onclick: save }, 'INSERT'), h('button', { class: 'btn', onclick: cvCancel }, 'CANCEL')));
+}
+function cvDelete(m, grouped) {
+  if (CV.edit) { status('Finish or cancel the open edit first', true); return; }
+  if (!confirm(grouped ? `Delete #${m.i}? This removes the whole tool call group (the assistant call and all its results).` : `Delete message #${m.i} (${m.role})?`)) return;
+  cvOp('delete', m.i);
+}
+function cvTruncate(m) {
+  if (CV.edit) { status('Finish or cancel the open edit first', true); return; }
+  const n = CV.convo.messages.length - m.i - 1;
+  if (!confirm(`Drop the ${n} message${n === 1 ? '' : 's'} after #${m.i}? This cannot be undone.`)) return;
+  cvOp('truncate', m.i);
+}
+function cvLive() {
+  const c = CV.convo, box = CV.el?.live; if (!box) return;
+  const p = c?.pending, steerable = !!(c && c.agentId && (p || c.status === 'running'));
+  if (!c || (!p && !steerable)) { box.replaceChildren(); return; }
+  if (!CV.lv || !box.contains(CV.lv.root)) {
+    const L = CV.lv = {};
+    L.title = h('div', { class: 'lt' }); L.rtext = h('div', { class: 'rtext', 'aria-live': 'off', 'aria-label': 'Live reasoning' }); L.ctext = h('div', { class: 'content' });
+    L.input = h('input', { maxlength: '8000', spellcheck: 'true', autocomplete: 'off', 'aria-label': 'Thought-steer note' });
+    const send = () => { const text = L.input.value.trim(); if (!text || !CV.convo) return; if (cvSend({ type: 'thought-steer', id: CV.convo.id, text })) L.input.value = ''; };
+    L.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+    L.send = h('button', { class: 'btn on', onclick: send, title: 'Send as a thought-steer tip (thought: true) to this run' }, 'THOUGHT-STEER');
+    L.root = h('div', { class: 'lv' }, L.title, L.rtext, L.ctext, h('div', { class: 'ts' }, L.input, L.send));
+    box.replaceChildren(L.root);
+  }
+  const L = CV.lv, phase = p?.phase || 'waiting';
+  L.title.replaceChildren(h('span', { class: `led ${p ? 'ok' : 'amb'}` }), `LIVE · ${phase.toUpperCase()}${p?.model ? ` · ${p.model}` : ''}${p?.at ? ` · ${hms(p.at)}` : ''}`);
+  const nearEnd = L.rtext.scrollHeight - L.rtext.scrollTop - L.rtext.clientHeight < 30;
+  L.rtext.replaceChildren(p?.reasoning || (p ? '' : 'Waiting for the next model step…'), p && phase === 'reasoning' ? h('span', { class: 'caret', 'aria-hidden': 'true' }, '▍') : '');
+  if (nearEnd) L.rtext.scrollTop = L.rtext.scrollHeight;
+  L.ctext.textContent = p?.content || '';
+  L.ctext.hidden = !p?.content;
+  L.input.placeholder = phase === 'reasoning' ? 'thought-steer: injected into the reasoning before the answer starts · Enter sends'
+    : 'thought-steer: used at the next reasoning phase, else delivered before the next step · Enter sends';
+  L.input.disabled = L.send.disabled = !c.agentId;
+}
+function initConvos() {
+  const fold = on => { $('#convos').classList.toggle('min', on); $('#cvFold').textContent = on ? '▣' : '▁'; $('#cvFold').setAttribute('aria-pressed', String(on)); local.set('oai.convo.fold', on); };
+  fold(local.get('oai.convo.fold', false));
+  $('#cvFold').addEventListener('click', () => fold(!$('#convos').classList.contains('min')));
+  $('#cvReload').addEventListener('click', () => { if (CV.edit && !confirm('Discard the unsaved edit?')) return; CV.edit = null; CV.stale = false; CV.next = null; cvSend({ type: 'convos' }); if (CV.sel) cvSend({ type: 'convo', id: CV.sel }); });
+  cvList();
+}
 (async () => {
+  initConvos();
   initSteer();
   try { S = await api('/api/schema'); } catch (e) { status(`Cannot reach the config server: ${e.message}`, true); return; }
   window.PARAM = Object.fromEntries(S.params.map(p => [p.name, p]));

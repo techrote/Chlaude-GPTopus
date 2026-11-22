@@ -7,7 +7,7 @@ import { ExecutionStore, invariant } from './store.mjs';
 import { RecruitmentBroker } from './broker.mjs';
 import { UltraRuntime } from './runtime.mjs';
 import { PermissionBoundary, isSecretPathComponent } from './permissions.mjs';
-import { WORKER_TYPES, workerSettings } from '../bridge/workers.mjs';
+import { OPENAI_WORKERS, workerSettings } from '../bridge/workers.mjs';
 import { usagePath } from '../bridge/usage.mjs';
 
 /** Name of the owner channel key inside the state directory (the mod's hooks/channel.js uses the same name; a test pins the agreement). */
@@ -90,7 +90,7 @@ export class UltraService {
         enabled: this.config.enabled, policyHash: policyHash(this.config), profile: this.config.profile, recruitment: this.config.recruitment,
         desktop: this.config.desktop, surfaces: this.config.surfaces, fleets: this.config.fleets, liveApiAuthorised: this.runtime.live,
         grants: { sharedAcrossSurfaces: true, tools: this.config.permissions.tools, roots: this.config.permissions.roots, note: "permissions.tools and permissions.roots are ONE owner grant shared by every surface. Each surface (Desktop Chat via desktop.profile, Claude Code CLI via surfaces.codeCli, Desktop Code via surfaces.desktopCode) has only its own A/B/C ceiling over that grant, and there are no per-surface root lists: a root added for one surface is readable by every other surface whose ceiling is B or higher. Only the public Chat read tool ultra_read_project additionally requires desktop.roots." },
-        workers: Object.keys(WORKER_TYPES).map(w => workerSettings(w, this.env)),
+        workers: OPENAI_WORKERS.map(w => workerSettings(w, this.env)),
         trustedIdentity: this.config.authority.configuredIdentity ? 'Explicit owner configuration; expiry enforced per decision' : 'Unavailable in Desktop Chat; restricted authority applies',
         consequentialExecution: 'Separate explicit authority and actual capability required; no general shell or live-project patch executor is installed',
       };
@@ -140,7 +140,7 @@ export class UltraService {
 export const publicDefinitions = [
   ['ultra_diagnostics', 'Inspect ULTRA policy, budgets, lineage, approvals, review state and blocked-operation reasons.', { mission_id: { type: 'string' } }, []],
   ['ultra_start', 'Create a governed mission using owner configuration. Caller-supplied model identity cannot confer authority.', { task: { type: 'string' }, mission_id: { type: 'string' } }, ['task']],
-  ['ultra_recruit', 'Request a root child under the shared policy; pending approval is not permission to run.', { mission_id: { type: 'string' }, worker: { type: 'string', enum: Object.keys(WORKER_TYPES) }, task: { type: 'string' }, role: { type: 'string' }, risk: { type: 'object' }, mode: { type: 'string', enum: ['SWARM', 'REPLICATOR', 'SKYNET', 'CUSTOM'] }, budget: { type: 'object' }, request_key: { type: 'string' }, planId: { type: 'string' } }, ['mission_id', 'worker', 'task', 'risk', 'request_key']],
+  ['ultra_recruit', 'Request a root child under the shared policy; pending approval is not permission to run.', { mission_id: { type: 'string' }, worker: { type: 'string', enum: [...OPENAI_WORKERS] }, task: { type: 'string' }, role: { type: 'string' }, risk: { type: 'object' }, mode: { type: 'string', enum: ['SWARM', 'REPLICATOR', 'SKYNET', 'CUSTOM'] }, budget: { type: 'object' }, request_key: { type: 'string' }, planId: { type: 'string' } }, ['mission_id', 'worker', 'task', 'risk', 'request_key']],
   ['ultra_step', 'Run one bounded cooperative scheduler tick. Live API requests require separate local owner opt-in.', { mission_id: { type: 'string' } }, ['mission_id']],
   ['ultra_cancel', 'Cancel a mission or descendant subtree. Preserve accepted work and uncertain incurred usage.', { mission_id: { type: 'string' }, node_id: { type: 'string' } }, ['mission_id']],
   ['ultra_read_project', 'Read a non-secret source file from a configured root in Desktop B/C. Root and permissions cannot be supplied by the caller.', { root: { type: 'string' }, path: { type: 'string' } }, ['root', 'path']],

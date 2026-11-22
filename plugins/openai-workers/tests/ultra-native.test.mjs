@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { register } from '../hooks/register.js';
+import { WORKER_TYPES, OPENAI_WORKERS } from '../bridge/workers.mjs';
 import { hostVersionSupported, trustedClaudeFamily, nativeOpenAITools, filterNativeToolArgs, NATIVE_PREFIX } from '../hooks/ultra.js';
 import { NativeController } from '../ultra/native-controller.mjs';
 import { ExecutionStore } from '../ultra/store.mjs';
@@ -135,10 +136,12 @@ test('native helper schemas classify only exact known host identities and guarde
 
 test('native opt-in registers recursive Agent and scoped tools while legacy mode retains its four tools', async t => {
   const off = await fixture(t, { enabled: false });
-  assert.equal(off.registeredAgents.length, 8); assert.equal(off.registeredTools.length, 0);
+  // Legacy mode also offers the NVIDIA Build / LM Studio provider workers; protected ULTRA governs the eight OpenAI workers only.
+  assert.equal(off.registeredAgents.length, Object.keys(WORKER_TYPES).length); assert.equal(off.registeredTools.length, 0);
   assert.ok(off.registeredAgents.every(a => a.tools.join(',') === 'Read,Edit,Write,Bash'));
   const on = await fixture(t);
   assert.equal(on.registeredAgents.length, 8); assert.equal(on.registeredTools.length, 13);
+  assert.deepEqual(on.registeredAgents.map(a => a.name).sort(), [...OPENAI_WORKERS].sort());
   assert.ok(on.registeredAgents.every(a => a.tools.includes('Agent') && !a.tools.includes('Bash')));
 });
 

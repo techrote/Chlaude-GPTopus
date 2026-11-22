@@ -22,6 +22,13 @@ export function clip(text, n) {
   const chars = [...String(text ?? '')];
   return chars.length <= n ? chars.join('') : `${chars.slice(0, Math.max(0, n - 1)).join('')}…`;
 }
+/** Long provider model ids: drop the publisher prefix, then clip, so the WORKERS table stays inside the frame. */
+export const MODEL_CELL = 30;
+export function modelCell(model) {
+  const text = String(model ?? '');
+  if ([...text].length <= MODEL_CELL) return text;
+  return clip(text.includes('/') ? text.slice(text.indexOf('/') + 1) : text, MODEL_CELL);
+}
 const padEnd = (text, n) => text + ' '.repeat(Math.max(0, n - visibleLength(text)));
 const fmt = n => Number.isFinite(n) ? Math.round(n).toLocaleString('en-US') : '—';
 const usd = n => n == null || !Number.isFinite(Number(n)) ? '—' : `$${Number(n).toFixed(2)}`;
@@ -56,7 +63,7 @@ const LOGO = [
  * data = {
  *   now: Date|string, version: string, color: boolean,
  *   keys: [{ label, configured, source }],
- *   workers: [{ name, model, key, tier, effort: { min, max, default } } | { name, error }],
+ *   workers: [{ name, model, key, tier, provider?, effort: { min, max, default } } | { name, error }],  // provider: 'nvidia'|'lmstudio'
  *   usage: { utcDay, resetAtUtc, overrunPercent, groups: { premium, terra }, monthlyEstimatedUsd, monthlyAllowanceUsd,
  *            monthlyLimitUsd, monthlyCommittedUsd } | null,
  *   usageError: string|null, notes: string[],
@@ -100,9 +107,14 @@ export function renderStatus(data) {
 
   // ── workers ──────────────────────────────────────────────────────────────
   section('WORKERS');
+  // Provider workers (NVIDIA Build, LM Studio) show their provider in the key column and no tier.
+  const keyCell = w => w.provider === 'nvidia' || w.key === 'nvidia' ? paint('green', 'nvidia')
+    : w.provider === 'lmstudio' || w.key === 'none' ? paint('green', 'local')
+      : w.key === 'free' ? paint('green', 'free') : 'straight';
+  const isProvider = w => Boolean(w.provider) || w.key === 'nvidia' || w.key === 'none';
   const workerRows = (data.workers ?? []).map(w => w.error
     ? [paint('cyan', w.name), paint('red', 'CONFIG ERROR'), '', '', clip(w.error, 40)]
-    : [paint('cyan', w.name), w.model, w.key === 'free' ? paint('green', 'free') : 'straight', w.tier ?? 'auto',
+    : [paint('cyan', w.name), modelCell(w.model), keyCell(w), isProvider(w) ? '—' : w.tier ?? 'auto',
       `${w.effort.min}..${w.effort.max} (${w.effort.default})`]);
   out.push(...table(['worker', 'model', 'key', 'tier', 'effort range (default)'], workerRows, paint)
     .map(line => `${paint('magenta', '║')} ${padEnd(line, INNER)} ${paint('magenta', '║')}`));

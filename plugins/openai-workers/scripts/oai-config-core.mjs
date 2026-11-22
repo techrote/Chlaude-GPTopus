@@ -73,9 +73,58 @@ function globalParams() {
       help: 'Directory for the steering queue and console log. Empty = steer/ next to the usage ledger.' },
     { name: 'OAI_TRACE_DIR', group: 'advanced', label: 'TRACE DIR', kind: 'path', def: '',
       help: 'Directory for trace JSONL files. Empty = default per-user state directory.' },
+    // chat-completions providers (NVIDIA Build, LM Studio); the NVIDIA key itself is never a parameter
+    { name: 'OAI_NVIDIA_CONCURRENCY', group: 'providers', label: 'NVIDIA CONCURRENCY', kind: 'int', def: 1, bounds: [1, 8], window: [1, 8], notches: [1, 2, 4, 8], unit: 'req',
+      help: 'In-flight NVIDIA Build requests allowed per model, across every Claude Code process on this PC.' },
+    { name: 'OAI_NVIDIA_HOURS_PER_DAY', group: 'providers', label: 'NVIDIA HOURS/DAY', kind: 'num', def: 16, bounds: [1, 24], window: [1, 24], step: 0.5, notches: [4, 8, 12, 16, 24], unit: 'h',
+      help: 'Active request hours per NVIDIA model per UTC day. Over budget = refused (or rotated when NVIDIA ROTATE is on).' },
+    { name: 'OAI_NVIDIA_ROTATE', group: 'providers', label: 'NVIDIA ROTATE', kind: 'toggle', def: '',
+      help: 'When a model is over its daily budget, substitute the least-used NVIDIA model that is under budget (logged in the response, trace and steer console).' },
+    { name: 'OAI_NVIDIA_ROTATE_HOURS', group: 'providers', label: 'ROTATE HOURS', kind: 'num', def: 9, bounds: [1, 24], window: [1, 24], step: 0.5, notches: [6, 8, 9, 10, 12], unit: 'h',
+      help: 'Per-model daily budget used while NVIDIA ROTATE is on, so the load spreads across the pool.' },
+    { name: 'OAI_NVIDIA_URL', group: 'providers', label: 'NVIDIA URL', kind: 'text', url: true, def: '', builtin: 'https://integrate.api.nvidia.com/v1', max: 200,
+      help: 'NVIDIA Build OpenAI-compatible base URL (https only). Empty = https://integrate.api.nvidia.com/v1. Another host also needs NVIDIA CUSTOM URL, because the NVIDIA key is sent there.' },
+    { name: 'OAI_NVIDIA_URL_ALLOW_CUSTOM', group: 'providers', label: 'NVIDIA CUSTOM URL', kind: 'toggle', def: '',
+      help: 'Allow NVIDIA URL to name a host other than integrate.api.nvidia.com. The NVIDIA key is sent to that host, so only use one you trust.' },
+    { name: 'OAI_LMSTUDIO_URL', group: 'providers', label: 'LM STUDIO URL', kind: 'text', url: true, def: '', builtin: 'http://127.0.0.1:1234/v1', max: 200,
+      help: 'LM Studio server base URL. Empty = http://127.0.0.1:1234/v1. The bridge tries once to start LM Studio (lms server start) when it is not running. A non-loopback host also needs LM STUDIO REMOTE.' },
+    { name: 'OAI_LMSTUDIO_ALLOW_REMOTE', group: 'providers', label: 'LM STUDIO REMOTE', kind: 'toggle', def: '',
+      help: 'Allow LM STUDIO URL to name another machine. Conversations (including file contents the worker read) then leave this PC.' },
+    { name: 'OAI_NVIDIA_STEER_MODE', group: 'providers', label: 'NVIDIA STEER MODE', kind: 'enum', options: ['', 'user', 'think'], def: '', builtin: 'user',
+      help: 'How a mid-reasoning thought-steer reaches NVIDIA models: user = restart with an extra user message; think = restart with a <think> prefill. Empty = user.' },
+    { name: 'OAI_LMSTUDIO_STEER_MODE', group: 'providers', label: 'LMSTUDIO STEER MODE', kind: 'enum', options: ['', 'think', 'user'], def: '', builtin: 'think',
+      help: 'How a mid-reasoning thought-steer reaches LM Studio models: think = restart with a <think> prefill holding the partial reasoning and your note; user = extra user message. Empty = think.' },
+    { name: 'OAI_CONVO_DIR', group: 'advanced', label: 'CONVO DIR', kind: 'path', def: '',
+      help: 'Directory for the editable NVIDIA / LM Studio conversation histories. Empty = conversations/ next to the usage ledger.' },
+    { name: 'OAI_CONVO_MAX_BYTES', group: 'advanced', label: 'CONVO MAX BYTES', kind: 'int', def: 4194304, bounds: [65536, 67108864], window: [262144, 16777216], log: true, notches: [1048576, 4194304, 16777216], unit: 'B',
+      help: 'Size bound of one stored conversation; the oldest non-system messages are trimmed behind a marker beyond it.' },
+    { name: 'OAI_CHAT_IDLE_SECONDS', group: 'providers', label: 'STREAM IDLE', kind: 'int', def: 600, bounds: [5, 3600], window: [30, 1800], notches: [60, 300, 600, 1200], unit: 's',
+      help: 'An NVIDIA / LM Studio stream that sends nothing for this long is aborted and the step fails (slow local model loads need headroom).' },
+  ];
+}
+/** Config label for a worker's effort note, kept within the panel's 20-character label limit. */
+export function noteLabel(name) {
+  const full = `${name.toUpperCase()} NOTE`;
+  return full.length <= 20 ? full : `${name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15)} NOTE`;
+}
+const PROVIDER_LABEL = { nvidia: 'NVIDIA Build', lmstudio: 'LM Studio' };
+/** Provider workers (NVIDIA Build, LM Studio): MODEL, EFFORT MIN/DEFAULT/MAX, MAX STEPS (no tier, no USD) plus the advanced NOTE. */
+function providerWorkerParams(name) {
+  const spec = WORKER_TYPES[name], pol = DEFAULT_EFFORT_POLICIES[name], g = `w:${name}`, p = W(name), who = PROVIDER_LABEL[spec.provider] ?? spec.provider;
+  return [
+    { name: spec.env, group: g, worker: name, provider: spec.provider, label: 'MODEL', kind: 'model', slash: true, def: '', builtin: spec.model,
+      help: `${who} model id override. Built-in: ${spec.model}. Free: no price guard or USD cap applies.` },
+    { name: `${p}EFFORT_MIN`, group: g, worker: name, provider: spec.provider, label: 'EFFORT MIN', kind: 'effort', def: '', builtin: pol.min, help: 'Lowest reasoning effort a caller may request; lower requests are raised. none = thinking off where the model supports it.' },
+    { name: `${p}EFFORT_DEFAULT`, group: g, worker: name, provider: spec.provider, label: 'EFFORT DEF', kind: 'effort', def: '', builtin: pol.default, help: 'Effort used when the caller requests none. Must lie within MIN..MAX.' },
+    { name: `${p}EFFORT_MAX`, group: g, worker: name, provider: spec.provider, label: 'EFFORT MAX', kind: 'effort', def: '', builtin: pol.max, help: 'Highest reasoning effort; higher requests are lowered (xhigh/max are sent as high).' },
+    { name: `${p}MAX_STEPS`, group: g, worker: name, provider: spec.provider, label: 'MAX STEPS', kind: 'int', def: null, optional: true, inherit: 'OPENAI_WORKER_MAX_STEPS', bounds: [1, 1000], window: [1, 120], notches: [10, 20, 40, 80, 120], unit: 'steps',
+      help: 'Per-worker step guardrail. Empty = global MAX STEPS.' },
+    { name: `${p}EFFORT_NOTE`, group: 'advanced', worker: name, provider: spec.provider, label: noteLabel(name), kind: 'text', def: '', builtin: pol.note, max: 240,
+      help: 'Task-selection note shown to Claude in the worker description (240 chars max). Empty = built-in.' },
   ];
 }
 function workerParams(name) {
+  if (WORKER_TYPES[name].provider) return providerWorkerParams(name);
   const spec = WORKER_TYPES[name], pol = DEFAULT_EFFORT_POLICIES[name], g = `w:${name}`, p = W(name);
   return [
     { name: spec.env, group: g, worker: name, label: 'MODEL', kind: 'model', def: '', builtin: spec.model,
@@ -89,7 +138,7 @@ function workerParams(name) {
       help: 'Per-worker step guardrail. Empty = global MAX STEPS.' },
     { name: `${p}MAX_USD`, group: g, worker: name, label: 'MAX USD', kind: 'num', def: null, optional: true, inherit: spec.key === 'free' ? null : 'OPENAI_WORKER_MAX_USD', bounds: [0.01, 1000], window: [0.1, 25], log: true, step: 0.01, notches: [0.5, 1, 2, 4, 10, 20], unit: 'USD',
       help: spec.key === 'free' ? 'Per-run spend guardrail. Empty = none (free key).' : 'Per-run spend guardrail. Empty = global MAX USD.' },
-    { name: `${p}EFFORT_NOTE`, group: 'advanced', worker: name, label: `${name.toUpperCase()} NOTE`, kind: 'text', def: '', builtin: pol.note, max: 240,
+    { name: `${p}EFFORT_NOTE`, group: 'advanced', worker: name, label: noteLabel(name), kind: 'text', def: '', builtin: pol.note, max: 240,
       help: 'Task-selection note shown to Claude in the worker description (240 chars max). Empty = built-in.' },
   ];
 }
@@ -98,7 +147,8 @@ export const PARAM = Object.freeze(Object.fromEntries(PARAMS.map(p => [p.name, p
 export const ALLOWED = Object.freeze(PARAMS.map(p => p.name));
 export const GROUPS = Object.freeze([
   { id: 'global', label: 'GLOBAL' }, { id: 'quota', label: 'FREE QUOTA' }, { id: 'spend', label: 'MONTHLY SPEND' },
-  { id: 'steer', label: 'STEERING' }, { id: 'diag', label: 'DIAGNOSTICS' }, ...WORKERS.map(w => ({ id: `w:${w}`, label: w.toUpperCase(), worker: w })), { id: 'advanced', label: 'ADVANCED' },
+  { id: 'steer', label: 'STEERING' }, { id: 'diag', label: 'DIAGNOSTICS' }, { id: 'providers', label: 'PROVIDERS' },
+  ...WORKERS.map(w => ({ id: `w:${w}`, label: w.toUpperCase(), worker: w, ...(WORKER_TYPES[w].provider && { provider: WORKER_TYPES[w].provider }) })), { id: 'advanced', label: 'ADVANCED' },
 ]);
 export const isAllowed = name => typeof name === 'string' && Object.hasOwn(PARAM, name);
 
@@ -121,8 +171,8 @@ export function normalizeValue(name, raw) {
     }
     case 'enum': v = v.toLowerCase(); if (!p.options.includes(v)) fail(name, `Use ${p.options.filter(Boolean).join(', ')}.`); return v;
     case 'effort': v = v.toLowerCase(); if (!EFFORTS.includes(v)) fail(name, `Use ${EFFORTS.join(', ')} (not ultra).`); return v;
-    case 'model': if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$/.test(v)) fail(name, 'Invalid model identifier.'); return v;
-    case 'text': v = v.replace(/\s+/g, ' '); if (v.length > p.max) fail(name, `${p.max} characters or fewer.`); return v;
+    case 'model': if (!(p.slash ? /^[A-Za-z0-9][A-Za-z0-9_.:\/-]{0,159}$/ : /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$/).test(v) || (p.slash && /\/\/|\.\./.test(v))) fail(name, 'Invalid model identifier.'); return v;
+    case 'text': v = v.replace(/\s+/g, ' '); if (v.length > p.max) fail(name, `${p.max} characters or fewer.`); return p.url ? baseUrl(name, v) : v;
     case 'path': if (v.length > 260 || !isAbsolute(v)) fail(name, 'Use an absolute path (260 characters max).'); return v;
     case 'int': case 'num': {
       if (!/^[0-9]*\.?[0-9]+(e[0-9]+)?$/i.test(v)) fail(name, 'Enter a plain non-negative number.');
@@ -134,6 +184,14 @@ export function normalizeValue(name, raw) {
     }
   }
   fail(name, 'Unsupported parameter.');
+}
+/** Provider base URL: plain http(s), no credentials, query or fragment; trailing slashes dropped. */
+function baseUrl(name, v) {
+  let u; try { u = new URL(v); } catch { fail(name, 'Use an http(s) URL.'); }
+  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) fail(name, 'Use a plain http(s) base URL (no credentials, query or fragment).');
+  // The NVIDIA key is never sent in clear text (plain http only to this PC itself).
+  if (name === 'OAI_NVIDIA_URL' && u.protocol !== 'https:' && !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname.toLowerCase())) fail(name, 'Use https: the NVIDIA key is sent to this URL.');
+  return v.replace(/\/+$/, '');
 }
 /**
  * Validate a complete candidate configuration with the plugin's own parsers
@@ -147,8 +205,17 @@ export function validateConfig(values) {
     try { normalizeValue(name, v); } catch (e) { errors[name] = e.message; }
   }
   try { usageSettings(env); } catch (e) { errors.OPENAI_WORKER_PREMIUM_DAILY_TOKENS ??= e.message; }
-  for (const name of ['OPENAI_WORKER_MAX_STEPS', 'OPENAI_WORKER_MAX_USD', 'OPENAI_WORKER_FLEX_TIMEOUT_MINUTES', ...WORKERS.flatMap(w => [`${W(w)}MAX_STEPS`, `${W(w)}MAX_USD`])]) {
+  for (const name of ['OPENAI_WORKER_MAX_STEPS', 'OPENAI_WORKER_MAX_USD', 'OPENAI_WORKER_FLEX_TIMEOUT_MINUTES', ...WORKERS.flatMap(w => WORKER_TYPES[w].provider ? [`${W(w)}MAX_STEPS`] : [`${W(w)}MAX_STEPS`, `${W(w)}MAX_USD`])]) {
     if (env[name] !== undefined && !posNum(env[name]) && !errors[name]) errors[name] = 'Must be greater than zero (the plugin ignores zero).';
+  }
+  const on = v => ['1', 'true', 'yes', 'on'].includes(String(v ?? '').trim().toLowerCase());
+  const hostOf = v => { try { return new URL(v).hostname.toLowerCase(); } catch { return ''; } };
+  if (env.OAI_NVIDIA_URL && !errors.OAI_NVIDIA_URL && !on(env.OAI_NVIDIA_URL_ALLOW_CUSTOM)) {
+    if (hostOf(env.OAI_NVIDIA_URL) !== 'integrate.api.nvidia.com') errors.OAI_NVIDIA_URL = 'Not integrate.api.nvidia.com: turn on NVIDIA CUSTOM URL to send the NVIDIA key to this host.';
+    else if (!env.OAI_NVIDIA_URL.startsWith('https:')) errors.OAI_NVIDIA_URL = 'Use https: the NVIDIA key is sent to this URL.';
+  }
+  if (env.OAI_LMSTUDIO_URL && !errors.OAI_LMSTUDIO_URL && !on(env.OAI_LMSTUDIO_ALLOW_REMOTE) && !['127.0.0.1', 'localhost', '[::1]'].includes(hostOf(env.OAI_LMSTUDIO_URL))) {
+    errors.OAI_LMSTUDIO_URL = 'Not a loopback address: turn on LM STUDIO REMOTE to send conversations to another machine.';
   }
   for (const w of WORKERS) {
     try { workerSettings(w, env); } catch (e) {
@@ -159,6 +226,7 @@ export function validateConfig(values) {
       errors[target] ??= msg;
     }
     const spec = WORKER_TYPES[w], model = env[spec.env] || spec.model;
+    if (spec.provider) continue; // free chat-completions providers: no price guard or quota group
     if (!Object.hasOwn(LOCAL_PRICE_ESTIMATES, model)) {
       warnings[spec.env] = spec.key === 'standard' ? `${model} has no local price: the paid spend guard will REFUSE requests.` : `${model} has no local price estimate (cost shows as unknown).`;
     }
@@ -179,6 +247,12 @@ export function effectiveConfig(values) {
     const spec = WORKER_TYPES[w], p = W(w);
     let ws = null, error = null;
     try { ws = workerSettings(w, env); } catch (e) { error = e.message; }
+    if (spec.provider) {
+      out.workers[w] = { model: ws?.model ?? (env[spec.env] || spec.model), tier: null, effort: ws?.effort_policy ?? null,
+        maxSteps: cap(env[`${p}MAX_STEPS`], out.global.maxSteps), maxUsd: null, key: spec.key, provider: spec.provider, priced: false, free: true,
+        steerMode: ws?.steer_mode ?? null, thinking: ws?.thinking ?? null, error };
+      continue;
+    }
     const maxUsd = cap(env[`${p}MAX_USD`], spec.key === 'free' ? null : out.global.maxUsd);
     out.workers[w] = { model: ws?.model ?? (env[spec.env] || spec.model), tier: ws ? (ws.service_tier ?? 'project default') : null, effort: ws?.effort_policy ?? null,
       maxSteps: cap(env[`${p}MAX_STEPS`], out.global.maxSteps), maxUsd, key: spec.key, priced: Object.hasOwn(LOCAL_PRICE_ESTIMATES, ws?.model ?? spec.model), error };

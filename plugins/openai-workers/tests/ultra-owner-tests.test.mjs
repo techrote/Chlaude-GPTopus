@@ -355,7 +355,7 @@ test('reachability: no MCP tool, native tool, hook or bridge path can plan, waiv
   const creators = sources.filter(([, text]) => /source:\s*'test-runner'/.test(text)).map(([name]) => name);
   assert.deepEqual(creators, ['ultra/owner-tests.mjs'], 'only the owner CLI module builds a test-runner principal');
   for (const [name, text] of sources) {
-    if (/^(bridge|hooks)\//.test(name)) assert.ok(!/owner-tests|ultra-test-runner|child_process/.test(text.replace(/^import \{ execFileSync \} from 'node:child_process';$/m, '')), `${name} must not reach the owner test routes`);
+    if (/^(bridge|hooks)\//.test(name)) assert.ok(!/owner-tests|ultra-test-runner|child_process/.test(text.replace(/^import \{ execFile(?:Sync)? \} from 'node:child_process';$/m, '')), `${name} must not reach the owner test routes`);
   }
   const importers = sources.filter(([, text]) => /from '\.\/owner-tests\.mjs'|owner-tests\.mjs/.test(text)).map(([name]) => name);
   assert.deepEqual(importers, ['ultra/cli.mjs']);

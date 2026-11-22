@@ -11,8 +11,9 @@
  * See oai-config-core.mjs for storage locations and OAI_CONFIG_STORE / OAI_CONFIG_STATE_DIR.
  */
 import http from 'node:http';
-import { readFileSync, statSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, statSync, mkdirSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import * as steer from '../bridge/steer.mjs';
+import * as convoStore from '../bridge/convo.mjs';
 import { acceptUpgrade } from './oai-ws.mjs';
 import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
@@ -52,9 +53,12 @@ export async function liveState({ store, stateDir, env = process.env, now = new 
   const values = store.read(ALLOWED);
   const ui = readUi(stateDir);
   const merged = baseEnv(values, env);
-  const keys = ['standard', 'free'].map(profile => {
+  // Key presence only (env or DPAPI file); a key value is never read here.
+  const KEY_NAMES = { standard: 'OPENAI_API_KEY', free: 'OPENAI_FREE_API_KEY', nvidia: 'NVIDIA_API_KEY' };
+  const KEY_LABELS = { standard: 'PAID', free: 'FREE', nvidia: 'NVIDIA' };
+  const keys = ['standard', 'free', 'nvidia'].map(profile => {
     let source = null; try { source = configuredKey(env, profile); } catch { /* treat as missing */ }
-    return { profile, name: profile === 'free' ? 'OPENAI_FREE_API_KEY' : 'OPENAI_API_KEY', configured: Boolean(source), source: source ?? 'none' };
+    return { profile, name: KEY_NAMES[profile], label: KEY_LABELS[profile], configured: Boolean(source), source: source ?? 'none' };
   });
   let usageInfo = null, usageError = null;
   try { usageInfo = await Promise.race([usage({ env: merged, now }), new Promise((_, r) => setTimeout(() => r(new Error('ledger busy')), 4000))]); }
@@ -105,9 +109,80 @@ export function handleConsoleMessage(msg, env) {
   const live = steer.listRuns(env, { includeEnded: false });
   const targets = msg.target === '*' ? live : live.filter(r => r.agentId === msg.target);
   if (!targets.length) return { type: 'error', error: 'That worker is no longer running.' };
-  const flags = { hard: !!msg.hard, pin: !!msg.pin, ack: !!msg.ack, assess: !!msg.assess, conseq: !!msg.conseq };
+  const flags = { hard: !!msg.hard, pin: !!msg.pin, ack: !!msg.ack, assess: !!msg.assess, conseq: !!msg.conseq, thought: !!msg.thought };
   const sent = targets.map(r => ({ callsign: r.callsign, tip: steer.enqueueTip(r.agentId, { text, ...flags, from: 'console' }, env) }));
   return { type: 'sent', sent: sent.map(s => ({ callsign: s.callsign, id: s.tip.id })) };
+}
+
+// ── conversations: the provider workers' editable history (bridge/convo.mjs) ──
+export const CONVO_TYPES = new Set(['convos', 'convo', 'convo-edit', 'thought-steer']);
+const runsById = env => { try { return new Map(steer.listRuns(env).map(r => [r.agentId, r])); } catch { return new Map(); } };
+/** Conversation summaries for the list, newest first, with the steer callsign when a run matches the agentId. */
+export function convoSummaries(env) {
+  const runs = runsById(env);
+  return convoStore.list(env).map(c => { const run = c.agentId ? runs.get(c.agentId) : null; return { ...c, callsign: run?.callsign ?? null, runStatus: run?.status ?? null }; });
+}
+export function convosSnapshot(env) { return { type: 'convos', items: convoSummaries(env), dir: convoStore.convoDir(env) }; }
+/** Full view of one conversation (messages, pending live preview) plus its callsign. */
+export function convoView(convo, env) {
+  if (!convo) return { type: 'convo', convo: null };
+  let run = null; try { run = convo.agentId ? steer.getRun(convo.agentId, env) : null; } catch { /* unknown run */ }
+  return { type: 'convo', convo: { ...convo, callsign: run?.callsign ?? null, runStatus: run?.status ?? null } };
+}
+/** What a viewer needs after the file changed: the whole conversation when its history changed, else only the live part. */
+export function convoDelta(seen, convo) {
+  if (!convo) return { type: 'convo', convo: null, gone: true };
+  if (!seen || seen.id !== convo.id || seen.rev !== convo.rev || seen.count !== (convo.messages?.length ?? 0)) return null; // caller sends convoView
+  return { type: 'convo-live', id: convo.id, rev: convo.rev, status: convo.status, updatedAt: convo.updatedAt, pending: convo.pending ?? null };
+}
+export const convoSeen = convo => convo ? { id: convo.id, rev: convo.rev, count: convo.messages?.length ?? 0 } : null;
+/** A cheap change stamp of the conversation directory (file names + mtimes). */
+export function convoStamp(env) {
+  const dir = convoStore.convoDir(env);
+  let names = [];
+  try { names = readdirSync(dir).filter(n => /^c[a-f0-9]{16}\.json$/.test(n)).sort(); } catch { return ''; }
+  let s = '';
+  for (const n of names) { try { s += `${n}:${statSync(join(dir, n)).mtimeMs};`; } catch {} }
+  return s;
+}
+export function convoMtime(id, env) { if (!convoStore.CONVO_ID.test(String(id ?? ''))) return null; try { return statSync(join(convoStore.convoDir(env), `${id}.json`)).mtimeMs; } catch { return null; } }
+const optText = v => typeof v === 'string' ? v : undefined;
+/** Handle one conversation message from the panel. Pure apart from the conversation/steer stores. */
+export function handleConvoMessage(msg, env) {
+  try {
+    if (msg?.type === 'convos') return convosSnapshot(env);
+    if (msg?.type === 'convo') {
+      if (msg.id === null || msg.id === undefined || msg.id === '') return { type: 'convo', convo: null };
+      const convo = convoStore.get(String(msg.id), env);
+      if (!convo) return { type: 'error', scope: 'convo', error: 'Conversation not found.' };
+      return convoView(convo, env);
+    }
+    if (msg?.type === 'convo-edit') {
+      const id = String(msg.id ?? ''), i = Number(msg.i), expectRev = msg.expectRev ?? undefined;
+      if (!Number.isInteger(i)) return { type: 'error', scope: 'convo', error: 'Message index must be a whole number.' };
+      let convo;
+      if (msg.op === 'edit') convo = convoStore.editMessage(id, i, { content: optText(msg.content), reasoning: optText(msg.reasoning), expectRev }, env);
+      else if (msg.op === 'delete') convo = convoStore.deleteMessage(id, i, { expectRev }, env);
+      else if (msg.op === 'insert') convo = convoStore.insertMessage(id, i, { role: msg.role, content: optText(msg.content) ?? '', reasoning: optText(msg.reasoning), expectRev }, env);
+      else if (msg.op === 'truncate') convo = convoStore.truncateAfter(id, i, { expectRev }, env);
+      else return { type: 'error', scope: 'convo', error: 'Unknown edit operation.' };
+      return { ...convoView(convo, env), op: msg.op };
+    }
+    if (msg?.type === 'thought-steer') {
+      const text = String(msg.text ?? '').trim();
+      if (!text) return { type: 'error', scope: 'convo', error: 'Empty thought-steer.' };
+      const convo = convoStore.get(String(msg.id ?? ''), env);
+      if (!convo) return { type: 'error', scope: 'convo', error: 'Conversation not found.' };
+      if (!convo.agentId) return { type: 'error', scope: 'convo', error: 'This conversation has no steerable run (no agent id).' };
+      let run = null; try { run = steer.getRun(convo.agentId, env); } catch {}
+      if (!(convo.pending || convo.status === 'running') && (!run || run.status === 'ended')) return { type: 'error', scope: 'convo', error: 'That worker is no longer running.' };
+      const tip = steer.enqueueTip(convo.agentId, { text, thought: true, from: 'panel' }, env);
+      return { type: 'thought-sent', id: convo.id, callsign: run?.callsign ?? null, tipId: tip.id, midReasoning: convo.pending?.phase === 'reasoning' };
+    }
+    return { type: 'error', scope: 'convo', error: 'Unknown message' };
+  } catch (e) {
+    return { type: 'error', scope: 'convo', error: String(e?.message || e).slice(0, 300) };
+  }
 }
 
 /** Build the server (not listening). Tests pass a memory store and a temp state dir. */
@@ -172,19 +247,50 @@ export function createConfigServer({ store = defaultStore(), stateDir = defaultS
     const conn = acceptUpgrade(req, socket, {
       onMessage: text => { onActivity(); let msg; try { msg = JSON.parse(text); } catch { return conn.send({ type: 'error', error: 'Invalid JSON' }); }
         if (msg?.type === 'hello') return conn.send({ type: 'macros', ...readMacros(stateDir) });
+        if (CONVO_TYPES.has(msg?.type)) {
+          const e = steerEnv(), reply = handleConvoMessage(msg, e);
+          if (msg.type === 'convo' && reply.type === 'convo') viewing.set(conn, reply.convo ? { ...convoSeen(reply.convo), mtime: convoMtime(reply.convo.id, e) } : null);
+          if (msg.type === 'convo-edit' && reply.type === 'convo' && reply.convo) viewing.set(conn, { ...convoSeen(reply.convo), mtime: convoMtime(reply.convo.id, e) });
+          conn.send(reply);
+          if (msg.type === 'convo-edit' || msg.type === 'thought-steer') push(true);
+          return;
+        }
         conn.send(handleConsoleMessage(msg, steerEnv())); push(true); },
-      onClose: () => clients.delete(conn),
+      onClose: () => { clients.delete(conn); viewing.delete(conn); },
     });
     if (!conn) return;
     clients.add(conn);
-    conn.send(steerSnapshot(steerEnv())); conn.send({ type: 'macros', ...readMacros(stateDir) });
+    const e0 = steerEnv();
+    conn.send(steerSnapshot(e0)); conn.send({ type: 'macros', ...readMacros(stateDir) });
+    try { conn.send(convosSnapshot(e0)); } catch { /* conversation store unreadable */ }
   });
-  let last = '', lastMacro = '';
+  let last = '', lastMacro = '', lastConvo = '', lastConvoList = 0;
+  /** conn -> { id, rev, count, mtime } of the conversation that client is viewing. */
+  const viewing = new Map();
   function push(force = false) {
     if (!clients.size) return;
     const e = steerEnv(), stamp = steer.storeStamp(e), ms = macroStamp(stateDir);
     if (force || stamp !== last) { last = stamp; const snap = steerSnapshot(e); for (const c of clients) c.send(snap); }
     if (ms !== lastMacro) { lastMacro = ms; const m = { type: 'macros', ...readMacros(stateDir) }; for (const c of clients) c.send(m); }
+    pushConvos(e, force);
+  }
+  /** Conversation list: on any file change (at most every 1.5 s while streams rewrite it). Viewers: live part or full view. */
+  function pushConvos(e, force) {
+    const cs = convoStamp(e);
+    if (cs !== lastConvo && (force || Date.now() - lastConvoList > 1500)) {
+      lastConvo = cs; lastConvoList = Date.now();
+      const snap = convosSnapshot(e); for (const c of clients) c.send(snap);
+    }
+    for (const [conn, seen] of viewing) {
+      if (!seen) continue;
+      const mtime = convoMtime(seen.id, e);
+      if (!force && mtime === seen.mtime) continue;
+      let convo = null; try { convo = convoStore.get(seen.id, e); } catch { continue; } // mid-write: next tick
+      const delta = convoDelta(seen, convo);
+      const msg = delta ?? convoView(convo, e);
+      viewing.set(conn, convo ? { ...convoSeen(convo), mtime } : null);
+      conn.send(msg);
+    }
   }
   const timer = setInterval(() => { try { push(); } catch { /* store briefly unreadable */ } }, 400);
   timer.unref?.();

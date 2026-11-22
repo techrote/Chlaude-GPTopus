@@ -15,7 +15,7 @@ import { homedir } from 'node:os';
 
 const MAX_STRING = 200_000;
 const SECRET_FIELD = /^(authorization|api[_-]?key|x-api-key|bearer|password|secret|token)$/i;
-const KEY_PATTERN = /\b(sk-[A-Za-z0-9_-]{16,}|sess-[A-Za-z0-9_-]{16,})\b/g;
+const KEY_PATTERN = /\b(sk-[A-Za-z0-9_-]{16,}|sess-[A-Za-z0-9_-]{16,}|nvapi-[A-Za-z0-9_-]{16,})\b/g;
 
 export function traceEnabled(env = process.env) { return ['1', 'true', 'yes', 'on'].includes(String(env.OAI_TRACE ?? '').trim().toLowerCase()); }
 
@@ -29,7 +29,7 @@ export const traceFile = (env = process.env, now = new Date(), platform = proces
 
 /** Deep copy with secret fields dropped and key-shaped / configured-key strings masked. */
 export function redact(value, env = process.env) {
-  const known = [env.OPENAI_API_KEY, env.OPENAI_FREE_API_KEY].map(k => typeof k === 'string' ? k.trim() : '').filter(k => k.length >= 8);
+  const known = [env.OPENAI_API_KEY, env.OPENAI_FREE_API_KEY, env.NVIDIA_API_KEY].map(k => typeof k === 'string' ? k.trim() : '').filter(k => k.length >= 8);
   const scrub = text => {
     let out = String(text);
     for (const key of known) out = out.split(key).join('[redacted]');
@@ -46,6 +46,28 @@ export function redact(value, env = process.env) {
     return out;
   };
   return walk(value, 0);
+}
+
+/**
+ * Key-only scrub for data that must round-trip unchanged (the editable conversation store): masks configured and
+ * key-shaped strings and secret-named fields like redact(), but never truncates strings or cuts deep objects.
+ */
+export function redactKeys(value, env = process.env) {
+  const known = [env.OPENAI_API_KEY, env.OPENAI_FREE_API_KEY, env.NVIDIA_API_KEY].map(k => typeof k === 'string' ? k.trim() : '').filter(k => k.length >= 8);
+  const scrub = text => {
+    let out = String(text);
+    for (const key of known) if (out.includes(key)) out = out.split(key).join('[redacted]');
+    return out.replace(KEY_PATTERN, '[redacted]');
+  };
+  const walk = v => {
+    if (typeof v === 'string') return scrub(v);
+    if (v === null || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map(walk);
+    const out = {};
+    for (const [k, item] of Object.entries(v)) out[k] = SECRET_FIELD.test(k) ? '[redacted]' : walk(item);
+    return out;
+  };
+  return walk(value);
 }
 
 export function writeTrace(record, options = {}) {

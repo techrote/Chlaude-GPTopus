@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { WORKER_TYPES, canonicalWorker } from './workers.mjs';
+import { WORKER_TYPES, canonicalWorker, isProviderWorker } from './workers.mjs';
 
 const ENDPOINT = 'https://api.openai.com/v1';
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
@@ -27,6 +27,8 @@ const onWindows = (env = process.env) => process.platform === 'win32' || env.OPE
 const PROFILES = {
   standard: { env: 'OPENAI_API_KEY', file: 'openai-key.dpapi' },
   free: { env: 'OPENAI_FREE_API_KEY', file: 'openai-free-key.dpapi' },
+  // NVIDIA Build key for the chat-completions provider workers (bridge/chat.mjs) only; never sent to OpenAI.
+  nvidia: { env: 'NVIDIA_API_KEY', file: 'nvidia-key.dpapi' },
 };
 export function keyProfileForWorker(workerType) {
   // Undefined is the legacy native bridge's standard-key route; a misspelled
@@ -56,6 +58,7 @@ export function getKey(env = process.env, profile = 'standard') {
   if (providedKey(env[spec.env])) return providedKey(env[spec.env]);
   if (env === process.env && cachedKeys.has(profile)) return cachedKeys.get(profile);
   if (!onWindows(env) || !env.LOCALAPPDATA || !existsSync(join(env.LOCALAPPDATA, 'ClaudeOpenAIWorkers', spec.file))) {
+    if (profile === 'nvidia') throw new Error(`Missing NVIDIA API key. Set NVIDIA_API_KEY${onWindows(env) ? ' or run set-nvidia-key.ps1' : ''}.`);
     throw new Error(`Missing ${profile} OpenAI key. Set ${spec.env}${onWindows(env) ? ' or run set-openai-key.ps1 -Profile ' + profile : ''}.`);
   }
   const script = join(myDir, '..', 'scripts', 'read-openai-key.ps1');
@@ -67,6 +70,7 @@ export function getKey(env = process.env, profile = 'standard') {
     if (env === process.env) cachedKeys.set(profile, key);
     return key;
   } catch {
+    if (profile === 'nvidia') throw new Error('Could not decrypt the NVIDIA DPAPI key. Run set-nvidia-key.ps1 as this Windows user.');
     throw new Error(`Could not decrypt the ${profile} OpenAI DPAPI key. Run set-openai-key.ps1 -Profile ${profile} as this Windows user.`);
   }
 }
@@ -181,6 +185,8 @@ export async function createTurn(args, options = {}) {
   let payload;
   try {
     if (args.worker_type !== undefined) {
+      // Provider workers (NVIDIA, LM Studio) use bridge/chat.mjs; their key must never reach the OpenAI endpoint.
+      if (isProviderWorker(canonicalWorker(args.worker_type))) throw new Error('Provider workers do not use the OpenAI Responses transport.');
       const expected = keyProfileForWorker(args.worker_type);
       if (options.profile !== undefined && options.profile !== expected) throw new Error('Worker key-profile mismatch; no fallback is permitted.');
       options = { ...options, profile: expected };

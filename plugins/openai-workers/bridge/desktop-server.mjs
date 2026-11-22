@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { dispatch } from './server.mjs';
-import { WORKER_TYPES, workerSettings, EFFORTS, selectWorkerEffort } from './workers.mjs';
+import { OPENAI_WORKERS, workerSettings, EFFORTS, selectWorkerEffort, isProviderWorker, canonicalWorker } from './workers.mjs';
 import { configuredKey } from './openai.mjs';
 import { publicDefinitions, readOwnerConfig } from '../ultra/service.mjs';
 import { isNativeNamespaceName } from '../hooks/ultra.js';
@@ -17,7 +17,8 @@ import { isNativeNamespaceName } from '../hooks/ultra.js';
 const MAX_TASK_CHARS = 60000;
 const MAX_CONTEXT_CHARS = 180000;
 const ID_RE = /^resp_[A-Za-z0-9_-]{4,128}$/;
-const agentEnum = Object.keys(WORKER_TYPES);
+// Desktop Chat delegates to the OpenAI workers only; provider workers run inside Claude Code.
+const agentEnum = [...OPENAI_WORKERS];
 const MODERN_PROTOCOL = '2026-07-28';
 const LEGACY_PROTOCOLS = Object.freeze(['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']);
 const PROTOCOL_VERSION_META = 'io.modelcontextprotocol/protocolVersion';
@@ -100,6 +101,10 @@ export async function invoke(name, args = {}, backend = dispatch, env = process.
     note: 'Default Desktop Chat delegation is think-only. Opt-in ULTRA uses owner policy for scoped reads and private stages; inspect ultra_diagnostics. Native tools require separately qualified local Code integration. Never put keys into prompts.',
   };
   if (name === 'openai_worker_daily_usage') return backend('usage', {});
+  // The published enum is not enforcement: NVIDIA / LM Studio provider workers stay inside Claude Code.
+  if (['ask_openai_worker', 'poll_openai_worker', 'cancel_openai_worker'].includes(name) && isProviderWorker(canonicalWorker(args.worker))) {
+    throw new Error(`Desktop Chat delegates to OpenAI workers only (${agentEnum.join(', ')}).`);
+  }
   if (name === 'ask_openai_worker') {
     const selected = workerSettings(args.worker, env); // fails closed for unknown workers
     const task = assertText(args.task, 'task', MAX_TASK_CHARS, true);
