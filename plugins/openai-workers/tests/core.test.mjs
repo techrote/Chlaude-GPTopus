@@ -233,7 +233,7 @@ test('stdio MCP worker responds to initialization, tool listing and health witho
   child.kill();
   assert.equal(outputs.length, 3);
   assert.equal(outputs.find(x => x.id === 1).result.serverInfo.name, 'openai-workers-bridge');
-  assert.equal(outputs.find(x => x.id === 2).result.tools.length, 6);
+  assert.equal(outputs.find(x => x.id === 2).result.tools.length, 7);
   const status = JSON.parse(outputs.find(x => x.id === 3).result.content[0].text);
   assert.equal(status.standard.configured, true);
   assert.equal(status.free.configured, false);

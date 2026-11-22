@@ -55,6 +55,12 @@ function globalParams() {
       help: 'INFORMATIONAL ONLY: shown as a reference in /oai. It never blocks anything; use MONTHLY LIMIT to enforce.' },
     { name: 'OAI_TRACE', group: 'diag', label: 'LIVE TRACE', kind: 'toggle', def: '',
       help: 'Append every OpenAI request/response (keys redacted) to the trace directory. Follow with scripts/oai-trace.ps1.' },
+    { name: 'OAI_STEER', group: 'steer', label: 'STEERING', kind: 'toggle', def: '',
+      help: 'Operator steering: callsigns on worker tasks, /oai:s tips and the console. Off = workers run exactly as before.' },
+    { name: 'OAI_STEER_PAUSE_SECONDS', group: 'steer', label: 'STEER PAUSE', kind: 'num', def: 0, bounds: [0, 120], window: [0, 30], step: 0.5, notches: [0, 2, 5, 10, 20, 30], unit: 's',
+      help: 'After a worker runs one of the PAUSE TOOLS, hold this long before its next model step so you can steer. A tip ends the pause early. 0 = no pause. Costs no tokens.' },
+    { name: 'OAI_STEER_PAUSE_TOOLS', group: 'steer', label: 'PAUSE TOOLS', kind: 'text', def: 'Edit,Write,Bash', max: 120,
+      help: 'Comma-separated tools that trigger the steer pause (Read, Edit, Write, Bash).' },
     { name: 'OAI_STATUS_COLOR', group: 'diag', label: 'STATUS COLOR', kind: 'toggle', def: '',
       help: 'ANSI colour in the /oai status panel.' },
     { name: 'OPENAI_WORKER_DAILY_RESERVE_TOKENS', group: 'advanced', label: 'RESERVE TOKENS', kind: 'int', def: 12000, bounds: [1, 10000000], window: [1000, 200000], log: true, notches: [12000], unit: 'tok',
@@ -63,6 +69,8 @@ function globalParams() {
       help: 'Concurrent free-key reservations admitted by the daily ledger.' },
     { name: 'OPENAI_WORKER_USAGE_DIR', group: 'advanced', label: 'LEDGER DIR', kind: 'path', def: '',
       help: 'Directory of the local usage ledger. Changing it starts a separate ledger. Empty = default per-user state directory.' },
+    { name: 'OAI_STEER_DIR', group: 'advanced', label: 'STEER DIR', kind: 'path', def: '',
+      help: 'Directory for the steering queue and console log. Empty = steer/ next to the usage ledger.' },
     { name: 'OAI_TRACE_DIR', group: 'advanced', label: 'TRACE DIR', kind: 'path', def: '',
       help: 'Directory for trace JSONL files. Empty = default per-user state directory.' },
   ];
@@ -90,7 +98,7 @@ export const PARAM = Object.freeze(Object.fromEntries(PARAMS.map(p => [p.name, p
 export const ALLOWED = Object.freeze(PARAMS.map(p => p.name));
 export const GROUPS = Object.freeze([
   { id: 'global', label: 'GLOBAL' }, { id: 'quota', label: 'FREE QUOTA' }, { id: 'spend', label: 'MONTHLY SPEND' },
-  { id: 'diag', label: 'DIAGNOSTICS' }, ...WORKERS.map(w => ({ id: `w:${w}`, label: w.toUpperCase(), worker: w })), { id: 'advanced', label: 'ADVANCED' },
+  { id: 'steer', label: 'STEERING' }, { id: 'diag', label: 'DIAGNOSTICS' }, ...WORKERS.map(w => ({ id: `w:${w}`, label: w.toUpperCase(), worker: w })), { id: 'advanced', label: 'ADVANCED' },
 ]);
 export const isAllowed = name => typeof name === 'string' && Object.hasOwn(PARAM, name);
 

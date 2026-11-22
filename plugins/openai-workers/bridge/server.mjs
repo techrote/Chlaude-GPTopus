@@ -3,7 +3,8 @@ import readline from 'node:readline';
 import { basename } from 'node:path';
 import { configuredKey, keyProfileForWorker, createTurn, pollTurn, cancelTurn, validateTurnArgs, mayHaveIncurredUsage } from './openai.mjs';
 import { workerSettings, selectWorkerEffort, workerEnvSuffix, canonicalWorker } from './workers.mjs';
-import { traceRequest, traceResponse } from './trace.mjs';
+import { traceRequest, traceResponse, writeTrace } from './trace.mjs';
+import * as steer from './steer.mjs';
 import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot, quoteRequest,
   markRequestAmbiguous, responseRecord } from './usage.mjs';
 
@@ -36,6 +37,9 @@ const defs = [
   { name: 'usage', description: 'Show local free-key daily tokens, reservations and UTC rollover; these are not authoritative API billing counters.', inputSchema: { type: 'object', properties: {} } },
   { name: 'poll', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Poll an in-progress OpenAI response, up to five seconds.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' }, wait_ms: { type: 'integer' } }, required: ['id', 'worker_type'] } },
   { name: 'page', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Fetch a page of an oversized completed response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, page: { type: 'integer' } }, required: ['id', 'page'] } },
+  { name: 'steer', description: 'INTERNAL plugin transport for operator steering, refused for model calls. Operators steer workers with /oai:s or the /oai:config console.', inputSchema: { type: 'object', properties: {
+    op: { type: 'string', enum: ['reserve', 'sync', 'wait', 'send', 'list', 'hard', 'reply', 'end'] }, agentId: { type: 'string' }, worker: { type: 'string' }, description: { type: 'string' },
+    step: { type: 'integer' }, status: { type: 'string' }, callsign: { type: 'string' }, peek: { type: 'boolean' }, args: { type: 'string' }, workers: { type: 'array' }, ms: { type: 'integer' }, tools: { type: 'array' }, text: { type: 'string' }, tipIds: { type: 'array' } }, required: ['op'] } },
   { name: 'cancel', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id', 'worker_type'] } },
 ];
 const has = (o, key) => Object.prototype.hasOwnProperty.call(o ?? {}, key);
@@ -183,6 +187,7 @@ export async function dispatch(name, args = {}, options = {}) {
       }
       return usageSnapshot(ledgerOptions);
     }
+    case 'steer': return steerOp(args, options.env ?? process.env);
     case 'page': {
       const str = cache.get(args.id);
       if (str === undefined) throw new Error('Paged response not found (bridge may have restarted).');
@@ -192,6 +197,46 @@ export async function dispatch(name, args = {}, options = {}) {
     }
     default: throw new Error(`Unknown bridge tool ${String(name).slice(0, 50)}`);
   }
+}
+/** Operator steering (see steer.mjs). Text is the operator's own; nothing here widens worker capability. */
+async function steerOp(args, env) {
+  const op = String(args.op ?? '');
+  if (op === 'reserve') return { callsign: steer.nextCallsign(args.worker, env) };
+  if (op === 'list') return { runs: steer.listRuns(env), log: steer.readLog(env, 20), pause: steer.pausePolicy(env) };
+  if (op === 'send') {
+    const parsed = steer.parseSteer(args.args, Array.isArray(args.workers) ? args.workers : []);
+    const runs = steer.listRuns(env, { includeEnded: false });
+    if (!parsed.text) return { usage: true, runs };
+    const targets = steer.resolveTarget(parsed.target, runs);
+    if (!targets.length) return { error: parsed.target ? `No running worker matches "${parsed.target}".` : runs.length ? 'Several workers are running: name one (callsign, worker name or *).' : 'No OpenAI worker is running.', runs };
+    const sent = targets.map(r => ({ callsign: r.callsign, worker: r.worker, step: r.step ?? 0, tip: steer.enqueueTip(r.agentId, { ...parsed, from: 'oai:s' }, env) }));
+    for (const s of sent) writeTrace({ type: 'steer', worker: s.worker, callsign: s.callsign, text: s.tip.text, flags: s.tip }, { env });
+    return { sent, parsed };
+  }
+  const agentId = String(args.agentId ?? '');
+  if (op === 'sync') {
+    const run = steer.upsertRun(agentId, { callsign: args.callsign, worker: args.worker, description: args.description, step: args.step, status: args.status ?? 'running' }, env);
+    const tips = steer.takeTips(agentId, args.step ?? 0, env);
+    for (const t of tips) writeTrace({ type: 'steer-delivered', worker: run.worker, callsign: run.callsign, step: args.step, text: t.text }, { env });
+    return { callsign: run.callsign, tips: tips.map(t => ({ ...t, message: steer.tipMessage(t) })), pinned: steer.pinnedMessage(run.pinned ?? []), pause: steer.pausePolicy(env) };
+  }
+  if (op === 'hard') return { hard: steer.hasHardTip(agentId, env) };
+  if (op === 'wait') {
+    const pause = steer.pausePolicy(env);
+    const used = (Array.isArray(args.tools) ? args.tools : []).filter(t => pause.tools.includes(t));
+    if (!pause.ms || !used.length) return { waited: false };
+    steer.upsertRun(agentId, { status: 'paused' }, env);
+    const got = await steer.waitForTip(agentId, pause.ms, env);
+    steer.upsertRun(agentId, { status: 'running' }, env);
+    return { waited: true, tip: got };
+  }
+  if (op === 'reply') {
+    const run = steer.getRun(agentId, env);
+    steer.appendLog({ kind: 'reply', agentId, callsign: run?.callsign, worker: run?.worker, step: args.step, text: String(args.text ?? '').slice(0, 2000) }, env);
+    return { ok: true };
+  }
+  if (op === 'end') { steer.upsertRun(agentId, { status: 'ended' }, env); return { ok: true }; }
+  throw new Error('Unknown steer op');
 }
 const refusedLegacy = new Set();
 function legacyRefusal(name) {

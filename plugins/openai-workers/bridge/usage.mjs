@@ -528,7 +528,7 @@ export async function usageSnapshot(options = {}) {
     const allEstimated = month.free.estimatedUsd + month.standard.estimatedUsd;
     return { dirty: false, value: {
       ledgerVersion: 2, utcDay: today, resetAtUtc: `${utcDay(new Date(new Date(`${today}T00:00:00Z`).getTime() + 86400000))}T00:00:00Z`,
-      groups, profiles, overrunPercent: cfg.overrunPercent, monthlyEstimatedUsd: Number(month.free.estimatedUsd.toFixed(7)),
+      groups, profiles, workersToday: structuredClone(doc.days[today]?.workers ?? {}), overrunPercent: cfg.overrunPercent, monthlyEstimatedUsd: Number(month.free.estimatedUsd.toFixed(7)),
       allKeysMonthlyEstimatedUsd: Number(allEstimated.toFixed(7)), monthlyAllowanceUsd: cfg.monthlyAllowanceUsd,
       monthlyLimitUsd: cfg.monthlyLimitUsd, monthlyReservedUsd: sumPending(outstanding, 'reservedUsd'),
       // True only while the CURRENT UTC month's local totals are unreconciled-unknown (see migration for the full scope).

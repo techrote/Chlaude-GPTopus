@@ -11,7 +11,9 @@
  * See oai-config-core.mjs for storage locations and OAI_CONFIG_STORE / OAI_CONFIG_STATE_DIR.
  */
 import http from 'node:http';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import * as steer from '../bridge/steer.mjs';
+import { acceptUpgrade } from './oai-ws.mjs';
 import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -78,6 +80,36 @@ async function body(req) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { throw Object.assign(new Error('Invalid JSON.'), { status: 400 }); }
 }
 
+// ── steering console: macros + WebSocket hub ─────────────────────────────
+export const MACRO_COUNT = 8;
+export function macroDir(stateDir) { return join(stateDir, 'macros'); }
+export function readMacros(stateDir) {
+  const dir = macroDir(stateDir);
+  try { mkdirSync(dir, { recursive: true }); } catch {}
+  const items = [];
+  for (let n = 1; n <= MACRO_COUNT; n++) {
+    const file = join(dir, `${n}.txt`);
+    try { if (!existsSync(file)) writeFileSync(file, ''); } catch {}
+    let text = ''; try { text = readFileSync(file, 'utf8').replace(/^\uFEFF/, '').slice(0, steer.MAX_TIP); } catch {}
+    items.push({ n, text, label: text.trim().split(/\r?\n/)[0].slice(0, 40) });
+  }
+  return { dir, items };
+}
+const macroStamp = stateDir => { let s = ''; for (let n = 1; n <= MACRO_COUNT; n++) { try { s += statSync(join(macroDir(stateDir), `${n}.txt`)).mtimeMs; } catch {} s += ':'; } return s; };
+export function steerSnapshot(env) { return { type: 'steer', runs: steer.listRuns(env), log: steer.readLog(env, 120), pause: steer.pausePolicy(env) }; }
+/** Handle one console message. Targets are agent ids from the run list, or '*' for every live run. */
+export function handleConsoleMessage(msg, env) {
+  if (msg?.type !== 'tip') return { type: 'error', error: 'Unknown message' };
+  const text = String(msg.text ?? '');
+  if (!text.trim()) return { type: 'error', error: 'Empty tip' };
+  const live = steer.listRuns(env, { includeEnded: false });
+  const targets = msg.target === '*' ? live : live.filter(r => r.agentId === msg.target);
+  if (!targets.length) return { type: 'error', error: 'That worker is no longer running.' };
+  const flags = { hard: !!msg.hard, pin: !!msg.pin, ack: !!msg.ack, assess: !!msg.assess, conseq: !!msg.conseq };
+  const sent = targets.map(r => ({ callsign: r.callsign, tip: steer.enqueueTip(r.agentId, { text, ...flags, from: 'console' }, env) }));
+  return { type: 'sent', sent: sent.map(s => ({ callsign: s.callsign, id: s.tip.id })) };
+}
+
 /** Build the server (not listening). Tests pass a memory store and a temp state dir. */
 export function createConfigServer({ store = defaultStore(), stateDir = defaultStateDir(), token = newToken(), env = process.env,
   usage = usageSnapshot, onActivity = () => {}, onHeartbeat = () => {}, page = readFileSync(join(here, 'oai-config.html'), 'utf8') } = {}) {
@@ -129,7 +161,35 @@ export function createConfigServer({ store = defaultStore(), stateDir = defaultS
       return json(res, e.status ?? 500, { error: String(e.message || e).slice(0, 300) });
     }
   });
-  return { server, token };
+  // WebSocket: same token (query) and the same Host/Origin checks as the page.
+  const clients = new Set();
+  const steerEnv = () => baseEnv(store.read(ALLOWED), env);
+  server.on('upgrade', (req, socket) => {
+    const port = server.address()?.port;
+    let url; try { url = new URL(req.url, `http://127.0.0.1:${port}`); } catch { return socket.destroy(); }
+    if (url.pathname !== '/ws' || !originOk(req.headers, port) || !req.headers.origin || !tokenOk(token, url.searchParams.get('t') ?? '')) { socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return; }
+    onActivity();
+    const conn = acceptUpgrade(req, socket, {
+      onMessage: text => { onActivity(); let msg; try { msg = JSON.parse(text); } catch { return conn.send({ type: 'error', error: 'Invalid JSON' }); }
+        if (msg?.type === 'hello') return conn.send({ type: 'macros', ...readMacros(stateDir) });
+        conn.send(handleConsoleMessage(msg, steerEnv())); push(true); },
+      onClose: () => clients.delete(conn),
+    });
+    if (!conn) return;
+    clients.add(conn);
+    conn.send(steerSnapshot(steerEnv())); conn.send({ type: 'macros', ...readMacros(stateDir) });
+  });
+  let last = '', lastMacro = '';
+  function push(force = false) {
+    if (!clients.size) return;
+    const e = steerEnv(), stamp = steer.storeStamp(e), ms = macroStamp(stateDir);
+    if (force || stamp !== last) { last = stamp; const snap = steerSnapshot(e); for (const c of clients) c.send(snap); }
+    if (ms !== lastMacro) { lastMacro = ms; const m = { type: 'macros', ...readMacros(stateDir) }; for (const c of clients) c.send(m); }
+  }
+  const timer = setInterval(() => { try { push(); } catch { /* store briefly unreadable */ } }, 400);
+  timer.unref?.();
+  server.on('close', () => { clearInterval(timer); for (const c of clients) c.close(); });
+  return { server, token, clients };
 }
 
 function openBrowser(url) {
@@ -157,7 +217,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) { console.log('Usage: node scripts/oai-config.mjs [--no-open] [--port N] [--idle-minutes N]'); return; }
   let last = Date.now(), lastBeat = 0;
-  const { server, token } = createConfigServer({ onActivity: () => { last = Date.now(); }, onHeartbeat: () => { lastBeat = Date.now(); } });
+  const { server, token, clients } = createConfigServer({ onActivity: () => { last = Date.now(); }, onHeartbeat: () => { lastBeat = Date.now(); } });
   server.listen(opts.port, '127.0.0.1', () => {
     const url = `http://127.0.0.1:${server.address().port}/?t=${token}`;
     console.log(`OAI config panel: ${url}`);
@@ -165,6 +225,8 @@ async function main() {
     if (opts.open) openBrowser(url);
   });
   setInterval(() => {
+    // Stay up while the console is connected or any worker is running.
+    if (clients.size || steer.listRuns(process.env, { includeEnded: false }).length) { last = Date.now(); return; }
     const idle = Date.now() - last > opts.idleMinutes * 60000;
     const closed = lastBeat && Date.now() - lastBeat > 180000;
     if (idle || closed) { console.log(closed ? 'Page closed; exiting.' : 'Idle; exiting.'); process.exit(0); }

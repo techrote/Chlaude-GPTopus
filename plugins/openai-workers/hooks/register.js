@@ -213,7 +213,27 @@ async function bridge(call, name, params) {
   return data;
 }
 
-async function query(call, args, signal, timeoutMinutes = 15) {
+export function steerReply(r) {
+  const list = (r.runs ?? []).filter(x => x.status !== 'ended').map(x => `  ${x.callsign.padEnd(4)} ${x.worker.padEnd(14)} step ${x.step ?? 0}  ${x.status}  ${String(x.description ?? '').slice(0, 50)}`).join('\n') || '  (no worker running)';
+  if (r.usage) return `Usage: /oai:s [T3|worker|*] [!][+][?ack ?assess ?conseq] <tip>
+  ! = hard interrupt, + = pin for the rest of the task
+Running:
+${list}`;
+  if (r.error) return `${r.error}
+Running:
+${list}`;
+  const flags = ['hard', 'pin', 'ack', 'assess', 'conseq'].filter(k => r.parsed?.[k]);
+  return `Tip queued${flags.length ? ` [${flags.join(' ')}]` : ''} for ${r.sent.map(x => `${x.callsign} (${x.worker}, step ${x.step})`).join(', ')}. Delivered verbatim before the next model step.`;
+}
+/** Operator steering transport; never fatal to a worker step. */
+async function steerCall(call, args) { try { return await bridge(call, 'steer', args); } catch { return null; } }
+export function withSteering(input, messages) {
+  const extra = messages.filter(Boolean);
+  if (!extra.length) return input;
+  if (typeof input === 'string') return [input, ...extra].join('\n\n');
+  return [...input, ...extra.map(text => ({ role: 'user', content: text }))];
+}
+async function query(call, args, signal, timeoutMinutes = 15, interrupted = null) {
   let id;
   try {
     let t = await bridge(call, 'create', args);
@@ -222,6 +242,7 @@ async function query(call, args, signal, timeoutMinutes = 15) {
     while (t.status === 'in_progress') {
       if (signal?.aborted) throw new Error('OpenAI subagent interrupted');
       if (Date.now() > deadline) throw new Error(`OpenAI subagent timed out after ${timeoutMinutes} minutes`);
+      if (interrupted && await interrupted()) throw Object.assign(new Error('Operator hard interrupt'), { steerInterrupt: true });
       t = await bridge(call, 'poll', { id, worker_type: args.worker_type, wait_ms: 5000 });
     }
     return t;
@@ -368,6 +389,7 @@ export function register(on) {
         tools: ultraEnabled ? Object.keys(ULTRA_NATIVE_SPECS) : ['Read', 'Edit', 'Write', 'Bash'] });
     }
     await $.command.register({ name: 'oai', description: 'OpenAI subagent diagnostics (usage: /oai)' });
+    await $.command.register({ name: 'oai:s', description: 'Steer a running OpenAI worker verbatim: /oai:s [T3|worker|*] [!][+][?ack ?assess ?conseq] <tip>' });
     return next(e);
   }).catch(($, e, next) => {
     ultraEnabled = true; nativeChannel = null; nativeError = 'Native bootstrap failed or timed out; protected workers remain held.';
@@ -392,7 +414,18 @@ export function register(on) {
   });
 
   on('agent.spawn', async ($, e, next) => {
-    if (!ultraEnabled) return next(e);
+    if (!ultraEnabled) {
+      const type = Object.keys(TYPES).find(t => e.subagentType === owner(t));
+      if (!type || await $.env.get('OAI_STEER') !== '1') return next(e);
+      // Give each worker run a callsign (T3, S1, ...) and show it in the task title so /oai:s can target it.
+      const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
+      const reserved = await steerCall(call, { op: 'reserve', worker: type });
+      const callsign = reserved?.callsign;
+      const tagged = callsign && typeof e.description === 'string' ? { ...e, description: `[${callsign}] ${e.description}` } : e;
+      const result = await next(tagged);
+      if (callsign && result?.agentId) await steerCall(call, { op: 'sync', agentId: result.agentId, worker: type, callsign, step: 0, description: e.description, status: 'starting', peek: true });
+      return result;
+    }
     if (!nativeWorker(e.subagentType)) return { deny: 'Protected ULTRA missions may recruit only classified native OpenAI worker types; an ungoverned intermediary is not authorised.' };
     if (!nativeChannel) return { deny: `ULTRA native admission is held: ${nativeError}` };
     if (e.workflow || e.isTeammate || e.fork) return { deny: 'This native spawn form has not been qualified for ULTRA.' };
@@ -456,6 +489,14 @@ export function register(on) {
     return { result: JSON.stringify(result) };
   }).catch(($, e, next) => next.called ? next(e) : { deny: 'ULTRA tool execution guard failed or timed out; no operation is authorised.' });
 
+  on('command.run', { command: 'oai:s' }, async ($, e) => {
+    const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
+    if (await $.env.get('OAI_STEER') !== '1') return { text: 'Steering is off. Turn on STEERING in /oai:config (OAI_STEER=1), then restart Claude Code.' };
+    let r;
+    try { r = await bridge(call, 'steer', { op: 'send', args: String(e.args ?? ''), workers: Object.keys(TYPES) }); }
+    catch (err) { return { text: `Steer failed: ${errorText(err)}` }; }
+    return { text: steerReply(r) };
+  });
   on('command.run', { command: 'oai' }, async ($) => {
     const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
     let health;
@@ -678,6 +719,14 @@ export function register(on) {
       messages = marked.messages;
       const requestedEffort = run.effort ?? marked.effort ?? e.effort;
       const plan = nextInput(messages, run);
+      // Operator steering: optional pause after configured tools, then deliver queued tips verbatim.
+      const steerHost = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
+      let steering = null;
+      if (plan.kind === 'openai' && !ultraEnabled && await $.env.get('OAI_STEER') === '1') {
+        if (run.lastTools?.length) await steerCall(steerHost, { op: 'wait', agentId: e.agentId, tools: run.lastTools });
+        steering = await steerCall(steerHost, { op: 'sync', agentId: e.agentId, worker: type, description: agent.description, step: run.steps, status: 'running' });
+        if (steering) plan.input = withSteering(plan.input, [...(steering.tips ?? []).map(t => t.message), typeof plan.input === 'string' ? '' : steering.pinned]);
+      }
       const api = await $.session.messages({ agentId: e.agentId, as: 'api' }).catch(() => null);
       // Hosts that require it expose SubagentHandback as a tool or mention it in the API transcript.
       handback = Boolean((Array.isArray(e.tools) && e.tools.some(t => (t?.name ?? t) === 'SubagentHandback')) || (api && JSON.stringify(api).includes('SubagentHandback')));
@@ -716,11 +765,21 @@ export function register(on) {
               nativeContext.serviceTier === 'flex' ? flexWait : 15);
           } else {
             // OpenAI rate limits (TPM/RPM) come back as failed responses: wait as told and retry.
-            for (let attempt = 0; ; attempt++) {
+            const hardCheck = () => steerCall(steerHost, { op: 'hard', agentId: e.agentId }).then(r => r?.hard === true);
+            for (let attempt = 0, interrupts = 0; ; attempt++) {
+              try {
               response = await query(host.call, { worker_type: type, model, input: plan.input, previous_response_id: plan.previous_response_id,
               instructions: await instructions(() => $.session.cwd(), p => $.fs.read(p)), tools: OPENAI_TOOLS, effort: effortSelection.effective,
               max_output_tokens: effortSelection.effective === 'max' ? 32000 : 16000, ...(service_tier && { service_tier }) }, next.signal,
-              service_tier === 'flex' ? flexWait : 15);
+              service_tier === 'flex' ? flexWait : 15, steering ? hardCheck : null);
+              } catch (error) {
+                // A hard tip cancels the in-flight request; resend the same step with the tip appended.
+                if (!error?.steerInterrupt || interrupts++ >= 3) throw error;
+                const more = await steerCall(steerHost, { op: 'sync', agentId: e.agentId, worker: type, step: run.steps, status: 'running' });
+                steering = { ...steering, tips: [...(steering?.tips ?? []), ...(more?.tips ?? [])] };
+                plan.input = withSteering(plan.input, (more?.tips ?? []).map(t => t.message));
+                attempt = -1; continue;
+              }
               const wait = rateLimitWaitMs(response);
               if (wait === null || attempt >= 4 || next.signal?.aborted) break;
               await new Promise(r => setTimeout(r, wait));
@@ -730,7 +789,10 @@ export function register(on) {
           const failedUnbilled = response.status !== 'completed' && !response.usage;
           result = failedUnbilled ? finalStep(`OpenAI request ${response.status}: ${response.reason ?? 'no reason given'}`, seed, handback) : verifiedCost ? responseStep(response, seed, handback, nativeContext && { allowedTools: nativeContext.tools.map(tool => tool.name) }) :
             finalStep(`OpenAI accounting HOLD: response ${response.id ?? '(unknown)'} has unverified usage or pricing. No returned tool call was executed. Existing reservations are retained.\n${response.text ?? ''}`, seed, handback);
-          nextState = { effort: run.effort ?? marked.effort, responseId: failedUnbilled ? run.responseId : response.id, pending: result.pending, seenPrompts: plan.seenPrompts,
+          if (steering?.tips?.some(t => t.ack || t.assess || t.conseq) && response.text)
+            await steerCall(steerHost, { op: 'reply', agentId: e.agentId, step: run.steps, text: response.text });
+          if (steering && result.finished) await steerCall(steerHost, { op: 'end', agentId: e.agentId });
+          nextState = { lastTools: (result.toolUses ?? []).map(u => u.name), effort: run.effort ?? marked.effort, responseId: failedUnbilled ? run.responseId : response.id, pending: result.pending, seenPrompts: plan.seenPrompts,
             steps: run.steps + 1, estimatedUsd: verifiedCost ? run.estimatedUsd + response.estimatedUsd : run.estimatedUsd,
             usageStatus: verifiedCost ? 'verified' : 'unverified', finished: result.finished, handback: result.handback };
         }

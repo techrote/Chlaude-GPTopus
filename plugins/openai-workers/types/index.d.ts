@@ -13,6 +13,7 @@ declare module 'claude-code' {
         usageStatus?: string;
         finished?: unknown;
         handback?: unknown;
+        lastTools?: unknown[];
       };
     };
   }

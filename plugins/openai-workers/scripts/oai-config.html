@@ -9,6 +9,8 @@
   /* semantic tokens (set live by the COLOURWAY panel; defaults = WINAMP LIME) */
   --c-shadow:#020302;--c-bg:#070907;--c-panel:#121712;--c-line:#243024;--c-panel-hi:#33432f;--c-text-dim:#8aa184;--c-text:#d6e8cc;
   --c-lcd-bg:#041204;--c-accent-2:#8fdc1e;--c-accent:#b8ff3c;--c-ok:#b8ff3c;--c-lcd:#7dff4f;--c-info:#6fd6ff;--c-warn:#ffb627;--c-hot:#ff6b2c;--c-err:#ff4545;--c-pending:#ff4545;
+  /* fixed hazard/launch-button colours (not part of the colourway) */
+  --hz-1:#f2f2f2;--hz-2:#f2c200;--hz-3:#121212;--hz-4:#0b0b0b;--hz-5:#2a2a2a;--hz-6:#000;--hz-7:rgba(0,0,0,.55);--hz-8:#ffd0c8;--hz-9:#ff2a1a;--hz-10:#8a0a00;--hz-11:#3a0000;--hz-12:#ff7a6b;--hz-13:#d81300;--hz-14:#6e0700;--hz-15:#fff;--hz-16:#1b1b1b;--hz-17:rgba(220,240,255,.55);--hz-18:rgba(255,255,255,.38);--hz-19:rgba(190,220,255,.12);--hz-20:rgba(255,255,255,.05);--hz-21:rgba(255,255,255,.22);--hz-22:rgba(255,255,255,.6);--hz-23:rgba(0,0,0,.6);--hz-24:rgba(255,255,255,.8);--hz-25:#d8d8d8;--hz-26:#151515;--hz-27:#cfcfcf;--hz-28:#c81200;--hz-29:#ff9c90;--hz-30:#5a0500;
   /* everything below derives from the tokens */
   --bg:var(--c-bg);--panel:var(--c-panel);--hi:var(--c-panel-hi);--lo:var(--c-shadow);--line:var(--c-line);
   --bg2:color-mix(in oklab,var(--c-bg) 60%,var(--c-panel));--panel2:color-mix(in oklab,var(--c-panel) 80%,var(--c-panel-hi));--inset:color-mix(in oklab,var(--c-bg) 50%,var(--c-shadow));
@@ -22,6 +24,7 @@
   --lcd-edge:color-mix(in oklab,var(--c-line) 85%,var(--c-lcd));--led-off:color-mix(in oklab,var(--c-panel-hi) 40%,var(--c-panel));--err-bg:color-mix(in oklab,var(--c-err) 22%,var(--c-shadow));
   --mono:ui-monospace,"Cascadia Mono","Cascadia Code",Consolas,"SF Mono",Menlo,"DejaVu Sans Mono",monospace;
   --row:24px;--g1:2px;--g2:4px;--g3:8px;--pad:6px;
+
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);font:12px/1.3 var(--mono);font-variant-numeric:tabular-nums}
@@ -45,13 +48,16 @@ button,input,select{font:inherit;color:inherit}
 .led.amb{background:var(--amber);box-shadow:0 0 6px var(--amber)}
 /* header */
 header{position:sticky;top:0;z-index:20;background:linear-gradient(var(--hdr1),var(--hdr2));border-bottom:1px solid var(--lo);box-shadow:0 1px 0 var(--line),0 6px 18px color-mix(in srgb,var(--lo) 60%,transparent)}
-.titlebar{display:flex;align-items:center;gap:var(--g3);padding:4px var(--pad);height:22px;background:repeating-linear-gradient(0deg,var(--hdr1) 0 1px,var(--hdr2) 1px 3px);border-bottom:1px solid var(--lo)}
+.titlebar{display:flex;align-items:center;gap:var(--g3);padding:2px var(--pad);height:16px;background:repeating-linear-gradient(0deg,var(--hdr1) 0 1px,var(--hdr2) 1px 3px);border-bottom:1px solid var(--lo)}
 .titlebar b{color:var(--lime);letter-spacing:.3em;font-size:11px}
 .titlebar .grip{flex:1;height:6px;background:repeating-linear-gradient(0deg,color-mix(in oklab,var(--hi) 85%,var(--panel)) 0 1px,transparent 1px 3px);border-top:1px solid var(--lo)}
 .titlebar .sub{color:var(--faint);font-size:10px;letter-spacing:.12em}
-.bar{display:flex;flex-wrap:wrap;align-items:stretch;gap:var(--g2);padding:var(--g2) var(--pad)}
-.readout{display:flex;align-items:center;gap:10px;padding:2px 8px;min-height:44px}
-.readout .big{font-size:22px;letter-spacing:.08em;line-height:1}
+.bar{display:flex;flex-wrap:wrap;align-items:stretch;gap:var(--g2);padding:2px var(--pad)}
+.readout{display:flex;align-items:center;gap:6px;padding:0 5px;min-height:0}
+.readout .big{font-size:17px;letter-spacing:.06em;line-height:20px}
+.tt{position:relative;display:inline-grid;place-items:center;height:18px;padding:0 4px;font-size:10px;letter-spacing:.08em;border:1px solid var(--line);color:var(--faint);cursor:pointer;user-select:none}
+.tt:has(input:checked){color:var(--lcd);border-color:var(--lcd-edge);text-shadow:0 0 4px var(--lcd)}
+.tt input{position:absolute;opacity:0;width:0;height:0}
 .readout .small{font-size:10px;line-height:1.35;letter-spacing:.06em}
 .presets{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g1);padding:3px 4px;max-width:100%;min-width:0}
 .presets select{height:20px;background:var(--inset);border:1px solid var(--line);color:var(--lime);padding:0 4px;min-width:100px;max-width:190px}
@@ -72,15 +78,52 @@ header{position:sticky;top:0;z-index:20;background:linear-gradient(var(--hdr1),v
 .qbar .t{width:1px;background:var(--text);opacity:.7}
 .mini{font-size:10px;color:var(--mute)}
 /* pending */
-#pending{display:none;align-items:center;gap:var(--g3);padding:5px var(--pad);background:repeating-linear-gradient(-45deg,color-mix(in oklab,var(--pend) 22%,var(--lo)) 0 10px,color-mix(in oklab,var(--pend) 14%,var(--lo)) 10px 20px);border-top:1px solid var(--pend);border-bottom:1px solid var(--lo);color:var(--text)}
+#pending{display:none;align-items:center;gap:var(--g3);padding:9px calc(var(--pad) + 4px);margin:3px 0;color:var(--hz-1);
+  background:repeating-linear-gradient(-45deg,var(--hz-2) 0 13px,var(--hz-3) 13px 26px);
+  clip-path:polygon(0 3px,2% 0,5% 4px,9% 1px,13% 5px,18% 0,24% 3px,31% 0,37% 4px,44% 1px,52% 5px,58% 0,65% 3px,71% 1px,78% 5px,84% 0,90% 4px,95% 1px,100% 3px,100% calc(100% - 4px),97% 100%,92% calc(100% - 3px),86% 100%,80% calc(100% - 5px),73% 100%,67% calc(100% - 2px),60% 100%,54% calc(100% - 4px),47% 100%,40% calc(100% - 3px),33% 100%,27% calc(100% - 5px),21% 100%,15% calc(100% - 2px),10% 100%,4% calc(100% - 4px),0 100%)}
+#pending .plate{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g3);flex:1;min-width:0;padding:3px 8px;background:var(--hz-4);border:1px solid var(--hz-5);box-shadow:inset 0 0 0 1px var(--hz-6),0 0 0 2px var(--hz-7)}
 #pending.show{display:flex;flex-wrap:wrap}
-#pending .msg{font-weight:700;letter-spacing:.14em;font-size:13px;color:color-mix(in oklab,var(--pend) 12%,var(--text));text-shadow:0 0 8px var(--pend)}
-#pending .led{width:12px;height:12px;background:var(--red);box-shadow:0 0 10px var(--red)}
-#pending .names{flex:1;min-width:120px;font-size:10px;color:color-mix(in oklab,var(--pend) 40%,var(--text));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#pending select{height:20px;background:color-mix(in oklab,var(--pend) 10%,var(--lo));border:1px solid color-mix(in oklab,var(--pend) 45%,var(--lo));color:color-mix(in oklab,var(--pend) 25%,var(--text))}
-@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.15}}
-#pending .led,#pending .msg{animation:blink 1s steps(1) infinite}
-@media (prefers-reduced-motion:reduce){#pending .led,#pending .msg{animation:none}}
+#pending .msg{font-weight:800;letter-spacing:.14em;font-size:12.5px;color:var(--hz-2)}
+#pending .led{width:13px;height:13px;background:radial-gradient(circle at 35% 30%,var(--hz-8),var(--hz-9) 45%,var(--hz-10));box-shadow:0 0 10px var(--hz-9),0 0 2px var(--hz-6) inset}
+.launch{position:relative;width:120px;height:34px;flex:0 0 auto;perspective:220px}
+.launch .fire{position:absolute;inset:4px 6px;border-radius:3px;border:1px solid var(--hz-11);background:radial-gradient(ellipse at 50% 30%,var(--hz-12),var(--hz-13) 55%,var(--hz-14));color:var(--hz-15);font-weight:800;font-size:10px;letter-spacing:.08em;white-space:nowrap;padding:0;text-shadow:0 1px 0 var(--hz-6);box-shadow:0 3px 0 var(--hz-11),0 0 0 3px var(--hz-16),0 0 0 4px var(--hz-2);cursor:pointer}
+.launch .fire:active{transform:translateY(2px);box-shadow:0 1px 0 var(--hz-11),0 0 0 3px var(--hz-16),0 0 0 4px var(--hz-2)}
+.launch .fire:disabled{cursor:not-allowed}
+.launch .cover{position:absolute;inset:0;border-radius:4px;border:1px solid var(--hz-17);background:linear-gradient(160deg,var(--hz-18),var(--hz-19) 40%,var(--hz-20) 60%,var(--hz-21));box-shadow:inset 0 1px 0 var(--hz-22),0 2px 4px var(--hz-23);transform-origin:50% 0;cursor:pointer;color:transparent;font-size:0;padding:0;z-index:2}
+.launch .cover::after{content:"LIFT";position:absolute;bottom:2px;right:4px;font-size:8px;letter-spacing:.1em;color:var(--hz-24)}
+.launch.open .cover{transform:rotateX(-112deg);pointer-events:none}
+.launch.open .cover::after{content:""}
+@media (prefers-reduced-motion:no-preference){.launch .cover{transition:transform .18s ease-out}}
+#pending .names{flex:1;min-width:120px;font-size:10px;color:var(--hz-25);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pending select{height:20px;background:var(--hz-26);border:1px solid var(--hz-2);color:var(--hz-2)}
+#pending .chk{color:var(--hz-27)}
+
+/* steering console */
+#steer{display:grid;gap:3px;padding:3px 5px;margin:2px var(--pad)}
+#steer .srow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g2);min-width:0}
+#steer .runs{flex:1;display:flex;gap:2px;overflow-x:auto;min-width:0;scrollbar-width:thin}
+#steer .run{flex:0 0 auto;height:20px;padding:0 6px;font-size:10px;letter-spacing:.04em;background:var(--bg2);color:var(--mute);border:1px solid var(--line);cursor:pointer;white-space:nowrap}
+#steer .run b{color:var(--lime);margin-right:4px}
+#steer .run.paused{border-color:var(--amber)}
+#steer .run.paused::after{content:" ‖";color:var(--amber)}
+#steer .run.sel{background:linear-gradient(var(--on1),var(--on2));color:var(--on-text);border-color:var(--on-hi)}
+#steer .run.sel b{color:var(--on-text)}
+#steer .run.ended{opacity:.5}
+#steer .macros{display:flex;gap:1px}
+#steer .macros button{width:24px;height:18px;padding:0;font-size:10px;background:var(--bg2);color:var(--mute);border:1px solid var(--line);cursor:pointer}
+#steer .macros button.has{color:var(--lcd);border-color:var(--lcd-edge)}
+#steer .macros button:hover{color:var(--lime)}
+#steer .in{flex:1;min-width:160px;height:22px;padding:0 6px;background:var(--lcdbg);color:var(--lcd);border:1px solid;border-color:var(--lo) var(--lcd-edge) var(--lcd-edge) var(--lo);font-size:12px}
+#steer .flag{height:20px;padding:0 5px;font-size:9.5px;letter-spacing:.06em}
+#steer .flag.on.hard{background:linear-gradient(var(--hz-12),var(--hz-28));color:var(--hz-15);border-color:var(--hz-29) var(--hz-30) var(--hz-30) var(--hz-29)}
+#steer .log{max-height:62px;overflow-y:auto;font-size:10px;line-height:1.35;color:var(--mute);background:var(--inset);border:1px solid var(--line);padding:1px 4px;white-space:nowrap}
+#steer .log div{overflow:hidden;text-overflow:ellipsis}
+#steer .log .sent{color:var(--text)}#steer .log .delivered{color:var(--lime2)}#steer .log .reply{color:var(--cyan)}#steer .log .err{color:var(--red)}
+#steer .conn{font-size:9.5px;letter-spacing:.08em}
+#steer .conn.off{color:var(--red)}
+#steer.collapsed .log,#steer.collapsed .mrow{display:none}
+body.steer-bottom #steer{position:fixed;left:0;right:0;bottom:24px;z-index:16;margin:0;box-shadow:0 -6px 18px color-mix(in srgb,var(--lo) 70%,transparent)}
+body.steer-bottom main{padding-bottom:150px}
 /* layout */
 main{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:var(--g3);padding:var(--g3) var(--pad) 40px;align-items:start}
 .col{display:grid;gap:var(--g3);align-content:start}
@@ -90,6 +133,15 @@ main{display:grid;grid-template-columns:minmax(320px,380px) 1fr;gap:var(--g3);pa
 .ph .name{font-weight:700;letter-spacing:.14em;color:var(--lime);font-size:11.5px;white-space:nowrap}
 .ph .name::before{content:"";display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--lime);box-shadow:0 0 5px var(--lime);vertical-align:0}
 .ph .spacer{flex:1}
+.ph .name{cursor:grab}
+.ph .msum{font-size:10px;color:var(--lcd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;display:none}
+.panel.min .ph .msum{display:block}
+.panel.min .pb,.panel.min .summary{display:none}
+.panel.dragging{opacity:.45}
+.panel.drop-before{box-shadow:0 -3px 0 var(--lime)}
+.panel.drop-after{box-shadow:0 3px 0 var(--lime)}
+.workers .panel.drop-before{box-shadow:-3px 0 0 var(--lime)}
+.workers .panel.drop-after{box-shadow:3px 0 0 var(--lime)}
 .chip{font-size:9.5px;letter-spacing:.08em;padding:1px 4px;border:1px solid var(--line);color:var(--mute);white-space:nowrap}
 .chip.free{color:var(--cyan);border-color:color-mix(in oklab,var(--cyan) 35%,var(--lo))}
 .chip.paid{color:var(--amber);border-color:color-mix(in oklab,var(--amber) 35%,var(--lo))}
@@ -217,12 +269,32 @@ footer .lcd.err{color:color-mix(in oklab,var(--red) 60%,var(--text));text-shadow
 </style>
 </head>
 <body>
+<section id="steer" class="bevel" aria-label="Steering console">
+  <div class="srow">
+    <span class="lab" title="Operator steering: your text reaches the selected worker verbatim before its next model step. Needs STEERING on (restart Claude Code after enabling).">STEER</span>
+    <div class="runs" id="steerRuns" role="radiogroup" aria-label="Target worker"></div>
+    <span class="conn" id="steerConn">…</span>
+    <button class="btn ico" id="steerPlace" title="Move console to the bottom/top">▼</button>
+    <button class="btn ico" id="steerFold" title="Fold macros and log">▁</button>
+  </div>
+  <div class="srow mrow"><span class="lab" id="macroLab">MACROS</span><div class="macros" id="macros"></div></div>
+  <div class="srow">
+    <input class="in" id="steerIn" placeholder="tip for the selected worker…  (! = hard interrupt, + = pin)  Enter sends" maxlength="8000" spellcheck="true" autocomplete="off" aria-label="Steering message">
+    <button class="btn flag hard" data-f="hard" title="HARD: cancel the in-flight OpenAI request and resend with this tip (tokens already spent on it are lost)">HARD</button>
+    <button class="btn flag" data-f="pin" title="PIN: repeat this tip at every step for the rest of the task">PIN</button>
+    <button class="btn flag" data-f="ack" title="ACK: worker starts its next reply with a one-line acknowledgement">ACK</button>
+    <button class="btn flag" data-f="assess" title="ASSESS: worker states how it understood the tip">ASSESS</button>
+    <button class="btn flag" data-f="conseq" title="CONSEQ: worker states how the tip changes its approach">CONSEQ</button>
+    <button class="btn on" id="steerSend">SEND</button>
+  </div>
+  <div class="log" id="steerLog" aria-live="polite"></div>
+</section>
 <header>
   <div class="titlebar"><b>OAI</b><span class="grip"></span><span class="sub">OPENAI WORKERS · CONFIGURATION DECK</span><span class="grip"></span><span class="sub" id="ver">v—</span></div>
   <div class="bar">
-    <div class="readout lcd" id="lcd" aria-live="polite">
+    <div class="readout lcd" id="lcd">
       <div class="big" id="clock">--:--</div>
-      <div class="small"><div id="lcdStore">STORE —</div><div id="lcdState">STATE —</div></div>
+      <label class="tt" title="Tooltips on/off"><input type="checkbox" id="tips" checked>TT</label>
     </div>
     <div class="presets bevel" role="group" aria-label="Presets">
       <span class="lab">PRESET</span>
@@ -233,17 +305,19 @@ footer .lcd.err{color:color-mix(in oklab,var(--red) 60%,var(--text));text-shadow
       <button class="btn ico" id="presetDel" title="Delete the selected user preset" aria-label="Delete preset">−</button>
       <label class="chk" title="Load ignores group locks this one time; the locks themselves are not changed"><input type="checkbox" id="overrideLocks">G:UNLOCK</label>
     </div>
-    <div class="presets bevel">
-      <label class="chk"><input type="checkbox" id="tips" checked>TOOLTIPS</label>
-      <button class="btn" id="refresh" title="Re-read the stored values">RELOAD</button>
-    </div>
+    <div class="presets bevel"><button class="btn" id="refresh" title="Re-read the stored values">RELOAD</button><span class="mini" id="lcdState"></span></div>
   </div>
   <div id="pending" role="alert">
-    <span class="led"></span>
-    <span class="msg">CHANGES PENDING — RESTART CLAUDE CODE</span>
-    <span class="names" id="pendingNames"></span>
-    <label class="chk">AUTO-CLEAR <select id="autoClear" aria-label="Auto-clear pending marker"><option value="0">NEVER</option><option value="10">10 MIN</option><option value="30">30 MIN</option><option value="60">1 H</option><option value="240">4 H</option></select></label>
-    <button class="btn warn" id="restarted">I RESTARTED</button>
+    <div class="plate">
+      <span class="led" aria-hidden="true"></span>
+      <span class="msg">CHANGES PENDING — RESTART CLAUDE CODE</span>
+      <span class="names" id="pendingNames"></span>
+      <label class="chk">AUTO-CLEAR <select id="autoClear" aria-label="Auto-clear pending marker"><option value="0">NEVER</option><option value="10">10 MIN</option><option value="30">30 MIN</option><option value="60">1 H</option><option value="240">4 H</option></select></label>
+    </div>
+    <div class="launch" id="launch">
+      <button class="fire" id="restarted" disabled title="Lift the cover first">I RESTARTED</button>
+      <button class="cover" id="launchCover" aria-label="Lift the safety cover over I RESTARTED" aria-expanded="false" title="Lift cover">cover</button>
+    </div>
   </div>
   <div class="live">
     <div class="cell bevel"><h4>KEYS</h4><div id="keys"></div></div>
@@ -359,14 +433,17 @@ function numericRow(p) {
 }
 function notchesIn(p) { const [a, b] = win(p); return (p.notches || []).filter(n => n >= a && n <= b); }
 function trackPx(row) { return Math.max(1, row.range.getBoundingClientRect().width - 12); }
-/* Display-space notch attraction: capture within 3 CSS px, release beyond 8 px (hysteresis). */
+/* Display-space notch attraction (Compute Alignment ref): capture within 2.5 CSS px, release beyond 5 px;
+   radii shrink when notches are dense so neighbouring capture zones never overlap. */
 function sliderValue(row) {
   const p = row.p, pos = Number(row.range.value), width = trackPx(row), px = pos / POS * width, mode = align(p);
   const ns = notchesIn(p).map(n => ({ n, px: T(p, n) * width }));
   if (mode === 'forced' && ns.length) { const best = ns.reduce((a, b) => Math.abs(b.px - px) < Math.abs(a.px - px) ? b : a); row.range.value = Math.round(T(p, best.n) * POS); return best.n; }
   if (mode === 'notched' && ns.length) {
-    if (row.captured !== null) { const c = ns.find(x => x.n === row.captured); if (c && Math.abs(c.px - px) <= 8) { row.range.value = Math.round(T(p, c.n) * POS); return c.n; } row.captured = null; }
-    const near = ns.filter(x => Math.abs(x.px - px) <= 3).sort((a, b) => Math.abs(a.px - px) - Math.abs(b.px - px))[0];
+    const gap = ns.length > 1 ? Math.min(...ns.slice(1).map((x, i) => x.px - ns[i].px)) : Infinity;
+    const capture = Math.min(2.5, gap * 0.45), release = Math.min(5, gap * 0.49);
+    if (row.captured !== null) { const c = ns.find(x => x.n === row.captured); if (c && Math.abs(c.px - px) <= release) { row.range.value = Math.round(T(p, c.n) * POS); return c.n; } row.captured = null; }
+    const near = ns.filter(x => Math.abs(x.px - px) <= capture).sort((a, b) => Math.abs(a.px - px) - Math.abs(b.px - px))[0];
     if (near) { row.captured = near.n; row.range.value = Math.round(T(p, near.n) * POS); return near.n; }
   }
   return tidy(p, Tinv(p, pos / POS));
@@ -569,15 +646,38 @@ async function commit(row, value) {
 /* ── panels ── */
 function panel(group, { chips = [], summary = false, note } = {}) {
   const lock = h('button', { class: 'btn lock', title: 'LOCK protects this group from preset loads (G:UNLOCK overrides once)', 'aria-pressed': 'false', onclick: () => toggleLock(group.id) }, 'OFF');
-  const head = h('div', { class: 'ph' }, h('span', { class: 'name' }, group.label), ...chips, h('span', { class: 'spacer' }), h('span', { class: 'lab' }, 'LOCK'), lock);
+  const msum = h('span', { class: 'msum' });
+  const minBtn = h('button', { class: 'btn ico', title: 'Minimise / restore', 'aria-label': `Minimise ${group.label}`, 'aria-pressed': 'false', onclick: () => toggleMin(group.id) }, '▁');
+  const name = h('span', { class: 'name', title: [note, 'Drag to reorder'].filter(Boolean).join('\n') }, group.label);
+  const head = h('div', { class: 'ph' }, name, ...chips, msum, h('span', { class: 'spacer' }), h('span', { class: 'lab' }, 'LOCK'), lock, minBtn);
   const body = h('div', { class: 'pb' });
-  if (note) body.append(h('div', { class: 'grpnote' }, note));
-  const el = h('section', { class: 'panel bevel', 'aria-label': group.label }, head);
+  const el = h('section', { class: 'panel bevel', 'aria-label': group.label, 'data-gid': group.id }, head);
+  name.draggable = true;
+  name.addEventListener('dragstart', e => { DRAG.id = group.id; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', group.id); });
+  name.addEventListener('dragend', () => { el.classList.remove('dragging'); clearDrop(); DRAG.id = null; });
+  el.addEventListener('dragover', e => { const src = PANELS[DRAG.id]?.el; if (!src || src === el || src.parentNode !== el.parentNode) return; e.preventDefault(); clearDrop(); el.classList.add(dropAfter(e, el) ? 'drop-after' : 'drop-before'); });
+  el.addEventListener('drop', e => { const src = PANELS[DRAG.id]?.el; if (!src || src === el || src.parentNode !== el.parentNode) return; e.preventDefault(); el.parentNode.insertBefore(src, dropAfter(e, el) ? el.nextSibling : el); clearDrop(); saveOrder(el.parentNode); });
   const sum = summary ? h('div', { class: 'summary lcd' }) : null;
   if (sum) el.append(sum);
   el.append(body);
-  PANELS[group.id] = { el, body, lock, sum };
+  PANELS[group.id] = { el, body, lock, sum, msum, minBtn };
   return PANELS[group.id];
+}
+const DRAG = { id: null };
+const local = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+function dropAfter(e, el) { const r = el.getBoundingClientRect(), multi = getComputedStyle(el.parentNode).gridTemplateColumns.split(' ').length > 1; return multi ? e.clientX > r.left + r.width / 2 : e.clientY > r.top + r.height / 2; }
+function clearDrop() { for (const x of document.querySelectorAll('.drop-before,.drop-after')) x.classList.remove('drop-before', 'drop-after'); }
+function saveOrder(container) { local.set(`oai.order.${container.id}`, [...container.children].map(c => c.dataset.gid).filter(Boolean)); }
+function applyOrder(container) {
+  const order = local.get(`oai.order.${container.id}`, []);
+  for (const id of order) { const el = PANELS[id]?.el; if (el && el.parentNode === container) container.append(el); }
+}
+function toggleMin(id, force) {
+  const P = PANELS[id]; if (!P || !P.minBtn) return;
+  const mins = local.get('oai.min', {}), on = force ?? !mins[id];
+  if (on) mins[id] = true; else delete mins[id];
+  if (force === undefined) local.set('oai.min', mins);
+  P.el.classList.toggle('min', on); P.minBtn.setAttribute('aria-pressed', String(on)); P.minBtn.textContent = on ? '▣' : '▁';
 }
 async function toggleLock(id) {
   const doc = structuredClone(STATE.ui); if (doc.locks[id]) delete doc.locks[id]; else doc.locks[id] = true;
@@ -589,8 +689,9 @@ function build() {
   const byGroup = {}; for (const p of S.params) (byGroup[p.group] ||= []).push(p);
   const left = $('#leftCol');
   const notes = { global: 'Defaults for every worker; per-worker values override.', quota: 'Local guardrails for the free-programme key (UTC day). Not an OpenAI entitlement.',
-    spend: 'LIMIT is enforced. ALLOWANCE is a reference figure only and never blocks.', diag: 'Diagnostics read by the bridge and the /oai panel.' };
-  for (const id of ['global', 'quota', 'spend', 'diag']) {
+    spend: 'LIMIT is enforced. ALLOWANCE is a reference figure only and never blocks.', diag: 'Diagnostics read by the bridge and the /oai panel.',
+    steer: 'Operator steering: tips to running workers via /oai:s or the console. Pause gives you a window to steer after file edits or commands.' };
+  for (const id of ['global', 'quota', 'spend', 'steer', 'diag']) {
     const g = S.groups.find(x => x.id === id), P = panel(g, { note: notes[id], chips: id === 'spend' ? [h('span', { class: 'chip info' }, 'ALLOWANCE = INFO')] : [] });
     for (const p of byGroup[id]) P.body.append(buildRow(p).el);
     left.append(P.el);
@@ -599,7 +700,7 @@ function build() {
   for (const w of S.workers) {
     const g = S.groups.find(x => x.id === `w:${w.name}`);
     const P = panel(g, { summary: true, chips: [h('span', { class: `chip ${w.key === 'free' ? 'free' : 'paid'}`, title: w.key === 'free' ? 'OPENAI_FREE_API_KEY' : 'OPENAI_API_KEY' }, w.key === 'free' ? 'FREE KEY' : 'PAID KEY')] });
-    P.el.title = ''; P.body.append(h('div', { class: 'grpnote' }, w.description));
+    P.el.title = ''; P.el.querySelector('.ph .name').title = `${w.description}\nDrag to reorder`;
     for (const p of byGroup[`w:${w.name}`]) { if (p.name.endsWith('EFFORT_MIN')) { P.ruler = effortRuler(w.name); P.body.append(P.ruler); } P.body.append(buildRow(p).el); }
     wrap.append(P.el);
   }
@@ -608,6 +709,8 @@ function build() {
   PANELS.advanced.el = det;
   for (const p of byGroup.advanced) P.body.append(buildRow(p).el);
   $('#advHost').append(det);
+  applyOrder($('#leftCol')); applyOrder($('#workers'));
+  for (const id of Object.keys(local.get('oai.min', {}))) toggleMin(id, true);
   document.body.append(h('datalist', { id: 'models' }, S.pricedModels.map(m => h('option', { value: m }))));
 }
 
@@ -615,8 +718,7 @@ function build() {
 function renderLive() {
   const st = STATE;
   $('#ver').textContent = `v${st.version}`;
-  $('#lcdStore').textContent = `STORE ${st.storage.kind.toUpperCase()}`;
-  $('#lcdStore').title = st.storage.location;
+  $('#lcd').title = `Store: ${st.storage.kind} · ${st.storage.location}`;
   const nset = Object.values(st.values).filter(v => v !== '').length, nerr = Object.keys(st.check.errors).length;
   $('#lcdState').textContent = `${String(nset).padStart(2, '0')} SET · ${nerr ? `${nerr} INVALID` : 'VALID'} · ${Object.keys(st.check.warnings).length} WARN`;
   $('#keys').replaceChildren(...st.keys.map(k => h('div', { class: 'kv', title: `${k.name}: value never displayed` }, h('span', { class: `led ${k.configured ? 'ok' : 'bad'}` }), h('span', { class: 'lab' }, k.profile === 'free' ? 'FREE' : 'PAID'), h('span', { class: 'v' }, k.configured ? k.source : 'not configured'))));
@@ -655,7 +757,7 @@ function titleState(on) {
   clearInterval(blinkTimer); blinkTimer = null;
   if (!on) { document.title = 'OAI CONFIG'; return; }
   document.title = '⚠ RESTART CLAUDE CODE · OAI CONFIG';
-  if (!reduced) { let a = true; blinkTimer = setInterval(() => { a = !a; document.title = a ? '⚠ RESTART CLAUDE CODE · OAI CONFIG' : '■ CHANGES PENDING · OAI CONFIG'; }, 1000); }
+
 }
 function applyTips() {
   const on = $('#tips').checked; document.body.classList.toggle('notips', !on);
@@ -673,6 +775,9 @@ function renderValues() {
     P.ruler?.sync();
     P.sum.textContent = e.error ? `⚠ ${e.error}` : `${e.model} · ${e.tier} · ${e.effort.min}..${e.effort.max} ▸${e.effort.default} · ${e.maxSteps} st · ${e.maxUsd == null ? '∞' : `$${e.maxUsd}`}`;
     P.sum.title = 'Effective runtime values the plugin will use after a restart';
+    const today = STATE.usage?.workersToday?.[w.name], tok = today?.tokens ?? 0, usd = w.key === 'free' ? null : today?.estimatedUsd ?? 0;
+    P.msum.textContent = e.error ? '⚠ config error' : `${e.effort.default} · ${e.tier} · ${(tok / 1000).toFixed(1)}k tok${usd == null ? ' · free' : ` · $${usd.toFixed(3)}`}`;
+    P.msum.title = 'Default effort · tier · tokens today (UTC) · estimated spend outside the free quota today';
   }
   const g = STATE.effective.global, flex = ROWS.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES;
   if (flex && Number(STATE.values.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES) > 120) setMsg(flex, `effective ${g.flexMinutes} min (plugin caps at 120)`, true);
@@ -684,7 +789,9 @@ async function refresh() {
 }
 
 /* ── wiring ── */
-$('#restarted').addEventListener('click', async () => { await api('/api/restarted', {}); status('Pending marker cleared'); refresh(); });
+function setCover(open) { $('#launch').classList.toggle('open', open); $('#launchCover').setAttribute('aria-expanded', String(open)); $('#restarted').disabled = !open; $('#restarted').title = open ? 'Confirm Claude Code was restarted' : 'Lift the cover first'; }
+$('#launchCover').addEventListener('click', () => { setCover(true); $('#restarted').focus(); });
+$('#restarted').addEventListener('click', async () => { setCover(false); await api('/api/restarted', {}); status('Pending marker cleared'); refresh(); });
 $('#autoClear').addEventListener('change', async e => { const doc = structuredClone(STATE.ui); doc.autoClearMinutes = Number(e.target.value); const r = await api('/api/ui', { ui: doc }); if (r.ok) { STATE.ui = r.ui; status(`Auto-clear: ${e.target.value === '0' ? 'never' : e.target.value + ' min after the last change'}`); refresh(); } });
 $('#tips').addEventListener('change', async e => { applyTips(); const doc = structuredClone(STATE.ui); doc.tooltips = e.target.checked; const r = await api('/api/ui', { ui: doc }); if (r.ok) STATE.ui = r.ui; });
 $('#refresh').addEventListener('click', () => { for (const r of Object.values(ROWS)) r.editing = false; refresh().then(() => status('Reloaded stored values')); });
@@ -893,7 +1000,63 @@ function initColourway(host) {
   CW.cur = saved || cwClone(OC.BUILTIN_COLOURWAYS['WINAMP LIME']);
   buildColourway(host); cwApply();
 }
+/* ── steering console (WebSocket) ── */
+const SC = { ws: null, runs: [], log: [], macros: [], target: local.get('oai.steer.target', null), flags: {}, retry: 0 };
+function steerPlace(where) { document.body.classList.toggle('steer-bottom', where === 'bottom'); $('#steerPlace').textContent = where === 'bottom' ? '▲' : '▼'; $('#steerPlace').title = where === 'bottom' ? 'Move console to the top' : 'Move console to the bottom'; local.set('oai.steer.place', where); }
+function steerFold(on) { $('#steer').classList.toggle('collapsed', on); $('#steerFold').textContent = on ? '▣' : '▁'; local.set('oai.steer.fold', on); }
+function steerRender() {
+  const live = SC.runs.filter(r => r.status !== 'ended');
+  if (SC.target !== '*' && !live.some(r => r.agentId === SC.target)) SC.target = live[0]?.agentId ?? null;
+  const chip = (id, label, cls, title, run) => h('button', { class: `run ${cls} ${SC.target === id ? 'sel' : ''}`, role: 'radio', 'aria-checked': String(SC.target === id), title, onclick: () => { SC.target = id; local.set('oai.steer.target', id); steerRender(); $('#steerIn').focus(); } }, run ? h('b', {}, run.callsign) : null, label);
+  const chips = live.length ? [chip('*', 'ALL', '', 'Every running worker'), ...SC.runs.slice(0, 24).map(r => chip(r.agentId, `${r.worker} · s${r.step ?? 0}`, `${r.status === 'paused' ? 'paused' : ''} ${r.status === 'ended' ? 'ended' : ''}`, `${r.callsign} · ${r.worker}\n${r.description ?? ''}\nstatus ${r.status} · step ${r.step ?? 0} · started ${(r.startedAt ?? '').slice(11, 19)}Z`, r))]
+    : [h('span', { class: 'mini' }, 'no worker running')];
+  $('#steerRuns').replaceChildren(...chips);
+  const icon = { sent: '→', delivered: '✓', reply: '◂' };
+  $('#steerLog').replaceChildren(...SC.log.slice(-40).map(e => h('div', { class: e.kind, title: e.text ?? '' }, `${(e.at ?? '').slice(11, 19)} ${icon[e.kind] ?? '·'} ${e.callsign ?? '?'} ${e.kind === 'delivered' ? `delivered @ step ${e.step ?? '?'}` : e.text ?? ''}${e.flags?.length ? ` [${e.flags.join(' ')}]` : ''}`)));
+  $('#steerLog').scrollTop = 1e9;
+  $('#steerSend').disabled = !SC.target;
+}
+function steerMacros(m) {
+  SC.macros = m.items || [];
+  $('#macroLab').title = `Macro files: ${m.dir}\\1.txt … 8.txt (edit them in any text editor; the buttons update live)`;
+  $('#macros').replaceChildren(...SC.macros.map(x => h('button', { class: x.text.trim() ? 'has' : '', title: x.text.trim() ? x.label : `${x.n}.txt is empty`, onclick: () => steerPaste(x.text) }, String(x.n))));
+}
+function steerPaste(text) {
+  const el = $('#steerIn'); if (!text) return;
+  const a = el.selectionStart ?? el.value.length, b = el.selectionEnd ?? el.value.length, t = text.replace(/\r?\n/g, ' ').trim();
+  el.value = el.value.slice(0, a) + t + el.value.slice(b); el.focus(); el.selectionStart = el.selectionEnd = a + t.length;
+}
+function steerConnect() {
+  const ws = new WebSocket(`ws://${location.host}/ws?t=${encodeURIComponent(TOKEN)}`); SC.ws = ws;
+  ws.onopen = () => { SC.retry = 0; $('#steerConn').textContent = 'LINK'; $('#steerConn').className = 'conn'; };
+  ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.type === 'steer') { SC.runs = m.runs || []; SC.log = m.log || []; steerRender(); }
+    else if (m.type === 'macros') steerMacros(m);
+    else if (m.type === 'sent') status(`Tip queued for ${m.sent.map(x => x.callsign).join(', ')}: delivered before the next model step`);
+    else if (m.type === 'error') status(`Steer: ${m.error}`, true); };
+  ws.onclose = () => { $('#steerConn').textContent = 'NO LINK'; $('#steerConn').className = 'conn off'; SC.ws = null; setTimeout(steerConnect, Math.min(10000, 1000 * 2 ** SC.retry++)); };
+}
+function steerSend() {
+  const el = $('#steerIn'); let text = el.value.trim(); if (!text || !SC.target) return;
+  const flags = { ...SC.flags };
+  for (;;) { if (text.startsWith('!')) { flags.hard = true; text = text.slice(1).trim(); } else if (text.startsWith('+')) { flags.pin = true; text = text.slice(1).trim(); } else break; }
+  if (!text) return;
+  if (!SC.ws || SC.ws.readyState !== 1) { status('Steer link down; reconnecting…', true); return; }
+  SC.ws.send(JSON.stringify({ type: 'tip', target: SC.target, text, ...flags }));
+  el.value = ''; SC.flags.hard = false; for (const b of document.querySelectorAll('#steer .flag.hard')) b.classList.remove('on');
+}
+function initSteer() {
+  steerPlace(local.get('oai.steer.place', 'top')); steerFold(local.get('oai.steer.fold', false));
+  $('#steerPlace').addEventListener('click', () => steerPlace(document.body.classList.contains('steer-bottom') ? 'top' : 'bottom'));
+  $('#steerFold').addEventListener('click', () => steerFold(!$('#steer').classList.contains('collapsed')));
+  for (const b of document.querySelectorAll('#steer .flag')) b.addEventListener('click', () => { const k = b.dataset.f; SC.flags[k] = !SC.flags[k]; b.classList.toggle('on', SC.flags[k]); b.setAttribute('aria-pressed', String(SC.flags[k])); });
+  $('#steerIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); steerSend(); } });
+  $('#steerSend').addEventListener('click', steerSend);
+  document.addEventListener('keydown', e => { if (e.altKey && /^Digit[1-8]$/.test(e.code)) { e.preventDefault(); steerPaste(SC.macros[Number(e.code.slice(5)) - 1]?.text); } });
+  steerRender(); steerConnect();
+}
 (async () => {
+  initSteer();
   try { S = await api('/api/schema'); } catch (e) { status(`Cannot reach the config server: ${e.message}`, true); return; }
   window.PARAM = Object.fromEntries(S.params.map(p => [p.name, p]));
   STATE = await api('/api/state');

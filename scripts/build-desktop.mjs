@@ -47,11 +47,12 @@ const SOURCES = {
   'server/usage.mjs': 'plugins/openai-workers/bridge/usage.mjs',
   'server/workers.mjs': 'plugins/openai-workers/bridge/workers.mjs',
   'server/trace.mjs': 'plugins/openai-workers/bridge/trace.mjs',
+  'server/steer.mjs': 'plugins/openai-workers/bridge/steer.mjs',
   'scripts/read-openai-key.ps1': 'plugins/openai-workers/scripts/read-openai-key.ps1',
 };
 // Preserve source-relative imports for the shared policy/runtime used by both
 // facades. Mirrors are deterministic copies of the same canonical bridge files.
-for (const name of ['workers.mjs', 'usage.mjs', 'openai.mjs', 'server.mjs', 'trace.mjs']) SOURCES[`bridge/${name}`] = `plugins/openai-workers/bridge/${name}`;
+for (const name of ['workers.mjs', 'usage.mjs', 'openai.mjs', 'server.mjs', 'trace.mjs', 'steer.mjs']) SOURCES[`bridge/${name}`] = `plugins/openai-workers/bridge/${name}`;
 for (const name of readdirSync(join(root, 'plugins/openai-workers/ultra')).filter(name => name.endsWith('.mjs')).sort()) SOURCES[`ultra/${name}`] = `plugins/openai-workers/ultra/${name}`;
 SOURCES['hooks/ultra.js'] = 'plugins/openai-workers/hooks/ultra.js';
 SOURCES['package.json'] = 'plugins/openai-workers/package.json';

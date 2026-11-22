@@ -17,7 +17,7 @@ const NOW = new Date('2026-11-22T10:00:00Z');
 
 test('allowlist covers every env name the mod and bridge read, and never key names', () => {
   const register = readFileSync(new URL('../hooks/register.js', import.meta.url), 'utf8');
-  const sources = register + ['usage.mjs', 'workers.mjs', 'trace.mjs'].map(f => readFileSync(new URL(`../bridge/${f}`, import.meta.url), 'utf8')).join('\n');
+  const sources = register + ['usage.mjs', 'workers.mjs', 'trace.mjs', 'steer.mjs'].map(f => readFileSync(new URL(`../bridge/${f}`, import.meta.url), 'utf8')).join('\n');
   const literal = new Set(sources.match(/\b(?:OPENAI_WORKER|OAI)_[A-Z0-9_]+\b/g));
   for (const w of Object.keys(WORKER_TYPES)) for (const f of ['MODEL', 'SERVICE_TIER', 'EFFORT_MIN', 'EFFORT_MAX', 'EFFORT_DEFAULT', 'EFFORT_NOTE', 'MAX_STEPS', 'MAX_USD'])
     literal.add(`OPENAI_WORKER_${w.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_${f}`);
