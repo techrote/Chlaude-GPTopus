@@ -530,6 +530,7 @@ export function register(on) {
     const spec = TYPES[type];
     const run = (await $.state.get({ plugin: 'openai-workers', key: 'run', id: e.agentId })).value ?? newRun();
     const seed = `${e.turnId}_${e.index}`;
+    let handback = false;
     let result;
     let nextState = run;
     try {
@@ -606,7 +607,8 @@ export function register(on) {
       if (ultraEnabled) messages = messages.map(message => typeof message.text === 'string' ? { ...message, text: message.text.replace(nativeMarker, '') } : message);
       const plan = nextInput(messages, run);
       const api = await $.session.messages({ agentId: e.agentId, as: 'api' }).catch(() => null);
-      const handback = Boolean(api && JSON.stringify(api).includes('delivered through SubagentHandback'));
+      // Hosts that require it expose SubagentHandback as a tool or mention it in the API transcript.
+      handback = Boolean((Array.isArray(e.tools) && e.tools.some(t => (t?.name ?? t) === 'SubagentHandback')) || (api && JSON.stringify(api).includes('SubagentHandback')));
       if (plan.kind === 'done') {
         result = stopStep();
       } else if (plan.kind === 'report') {
@@ -654,8 +656,8 @@ export function register(on) {
       }
     } catch (err) {
       // Fail closed. Do not call next(): that would silently consume Anthropic tokens.
-      result = stopStep(`OpenAI worker failed: ${errorText(err)}. No Anthropic model fallback was invoked.`);
-      nextState = { ...run, finished: true, handback: null, pending: [] };
+      result = finalStep(`OpenAI worker failed: ${errorText(err)}. No Anthropic model fallback was invoked.`, seed, handback);
+      nextState = { ...run, finished: true, handback: result.handback, pending: [] };
     }
     try {
       await $.state.set({ plugin: 'openai-workers', key: 'run', id: e.agentId }, nextState);
