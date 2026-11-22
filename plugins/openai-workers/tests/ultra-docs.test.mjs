@@ -1,6 +1,7 @@
 // DOC-01 and docs-versus-code drift guards. These do not judge prose; they pin the facts that went stale or false in review:
 // frozen-tree figures must carry their scope, qualification numbers must be derived rather than hard-coded for the tip, and
 // every CLI command the documentation tells an owner to run must exist.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';

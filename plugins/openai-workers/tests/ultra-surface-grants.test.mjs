@@ -1,5 +1,6 @@
 // SURF-01: surface CEILINGS are independent, but roots and tools are one shared grant. The CLI, diagnostics and docs must
 // say exactly that, and the behaviour they describe is pinned here so the statement cannot silently become false.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, realpath, readFile } from 'node:fs/promises';

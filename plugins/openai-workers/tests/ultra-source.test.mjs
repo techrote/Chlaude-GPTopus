@@ -1,4 +1,5 @@
 // Fresh independent source/integration review. This author implemented no ULTRA code.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, realpath, writeFile } from 'node:fs/promises';

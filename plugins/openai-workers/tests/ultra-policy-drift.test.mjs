@@ -4,6 +4,7 @@
 // bridge dispatcher, which re-reads the owner policy file on every request. The
 // owner edits the policy file between calls, exactly as a person would. Attenuation
 // only: nothing here may ever enlarge what a session was opened with.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';

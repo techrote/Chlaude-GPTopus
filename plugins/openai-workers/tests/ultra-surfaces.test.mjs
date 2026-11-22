@@ -2,6 +2,7 @@
 // have independent capability ceilings. Everything here drives the real production
 // controllers (NativeController, UltraRuntime, UltraService, PermissionBoundary, CLI,
 // register hooks); the only test doubles are the offline provider transport and the host.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

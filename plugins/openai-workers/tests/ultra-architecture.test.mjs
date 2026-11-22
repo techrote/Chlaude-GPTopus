@@ -1,4 +1,5 @@
 // Independent architecture regressions. This test author implemented none of ULTRA.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';

@@ -1,6 +1,7 @@
 // BUILD-01: scripts/build-desktop.mjs used to treat ANY first argument (including --help) as the output path and wrote a
 // 440 KB MCPB under that name. These tests run the real script as a process, in an empty directory, and prove that flags are
 // parsed as flags and can never become a file name.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

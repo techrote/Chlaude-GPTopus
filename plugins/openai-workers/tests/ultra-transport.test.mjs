@@ -6,6 +6,7 @@
 // provider is contacted: live API use is never enabled and no key is supplied.
 // The attacks are written against the SECURE outcome: they must fail on a
 // dispatcher that merely trusts whoever reaches it.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';

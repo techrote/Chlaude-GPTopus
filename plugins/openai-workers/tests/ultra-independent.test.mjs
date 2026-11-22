@@ -1,5 +1,6 @@
 // Independent adversarial review of broker/review/action code. The author of
 // these tests did not implement those modules. All work is deterministic/local.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, realpath, readFile } from 'node:fs/promises';

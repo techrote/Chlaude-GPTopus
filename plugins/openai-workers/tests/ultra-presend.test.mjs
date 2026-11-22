@@ -4,6 +4,7 @@
 // the real bridge dispatcher, the real NativeController, the real broker/ledger and
 // the real local spending guard (bridge/usage.mjs). Only the OpenAI HTTPS call is a
 // recording double, so `transport.calls.create` counts actual POSTs.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';

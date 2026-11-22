@@ -5,6 +5,7 @@
 // production code and nowhere else: every state change below is made by the real `ultra/cli.mjs` main() function (typing the
 // confirmation phrase on a terminal), the real ReviewController, the real execution ledger and, for run-test, a real child
 // process. Only the review MODELS are absent: reviewers are genuine broker allocations whose reports are synthetic.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';

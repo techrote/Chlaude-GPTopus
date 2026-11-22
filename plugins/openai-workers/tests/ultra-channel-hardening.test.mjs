@@ -8,6 +8,7 @@
 //   F11 the signing module needs no web global at import time; Windows is detected from the host's own report
 //   F12 relative key file / state directory overrides are refused instead of resolving against a cwd
 // All of it drives production code: the real stdio server process, the real dispatcher, the real mod hooks.
+import './support/isolate.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
