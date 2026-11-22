@@ -3,6 +3,7 @@ import { resolveConfig, evaluateRecruitment, policyHash } from './policy-api.mjs
 import { combineApprovals, orchestratorIdentity } from './policy.mjs';
 import { assessRisk, riskInput } from './risk.mjs';
 import { clone, digest, invariant } from './store.mjs';
+import { staleUnconsumedActions } from './actions.mjs';
 
 const terminal = new Set(['completed', 'failed', 'cancelled', 'blocked']);
 const reviewRoles = new Set(['reviewer', 'second_opinion', 'gap_inspector', 'judge', 'supervisor']);
@@ -268,13 +269,16 @@ export class RecruitmentBroker {
         invariant(independent(m, n.id, r.parentId), 'An author or its descendant cannot approve itself');
       } else if (principal.source === 'local-user') invariant(principal.authority === 'user', 'Local user authority mismatch');
       else { const identity = orchestratorIdentity(m.config, m, this.now()); invariant(principal.authority === 'trusted-orchestrator' && identity.trusted && (identity.profile.authority === 'full' || identity.profile.final === false), 'Native orchestrator cannot impersonate independent/human authority'); }
-      invariant(!r.approvals.some(id => m.approvals[id].authority === principal.authority), 'Authority already decided; submit a revised request');
+      // An unexpired vote stands. Once it has lapsed it no longer counts in the combination, so the same authority may decide again;
+      // otherwise a slow co-approver would leave the request unanswerable (the owner can also expire it: `expire`).
+      invariant(!r.approvals.some(id => m.approvals[id].authority === principal.authority && m.approvals[id].expiresAt > this.now()),
+        'Authority already has an unexpired vote on this request; it stays in force until it lapses, after which the authority may decide again (or the owner may expire the request and a new one be submitted)');
       const a = { id: randomUUID(), requestId, inputHash: r.inputHash, policyHash: m.policyHash, authority: principal.authority,
         principal: clone(principal), decision: decision.decision, rationale: String(decision.rationale ?? '').slice(0, 20000),
         modification: decision.modification ? clone(decision.modification) : null, scope: 'recruitment', createdAt: this.now(), expiresAt: this.now() + Math.min(3600000, positive(decision.ttlMs, 'approval TTL', 900000)), consumed: false };
       m.approvals[a.id] = a; r.approvals.push(a.id); event('approval.decided', missionId, a);
-      if (decision.decision === 'MODIFY' && !required.consultation) { r.status = 'modify'; return r; }
-      if (decision.decision === 'ESCALATE' && !required.consultation) { r.status = 'escalated'; return r; }
+      // MODIFY and ESCALATE are not terminal on their own: combineApprovals alone decides when the outcome is settled,
+      // so a verdict never depends on which authority happened to answer first.
       const votes = r.approvals.map(id => m.approvals[id]).filter(v => v.expiresAt > this.now());
       const freshParent = this.promotedParent(m, nodeOf(m, r.parentId), r.proposal);
       if (r.originId) freshParent.keyProfile = nodeOf(m, r.originId).keyProfile;
@@ -346,6 +350,28 @@ export class RecruitmentBroker {
     });
     return this.request(missionId, parentId, { ...r.proposal, ...changes }, key, { predecessorId: requestId, reviewerPolicy: r.reviewerPolicy, originId: r.originId, protectedAuthority: r.protectedAuthority, binding: r.binding, gapReuseAuthorId: r.gapReuseAuthorId });
   }
+  /**
+   * Owner/full-orchestrator closure of a recruitment request that is still waiting for votes (typically because a co-approver's
+   * vote lapsed before the others answered and its authority cannot or will not decide again). The request becomes the terminal
+   * status 'expired': it stops counting toward the outstanding-recruitment limit, its not-yet-finished supervisors are cancelled and
+   * no further vote is accepted. It confers nothing; recruiting the work still needs a new request (with a new idempotency key)
+   * that is adjudicated from scratch. Recorded votes and incurred usage are retained.
+   */
+  async expire(missionId, requestId, reason, principal) {
+    return this.store.transaction((state, event) => {
+      const m = missionOf(state, missionId), r = m.requests[requestId], identity = orchestratorIdentity(m.config, m, this.now());
+      invariant(principal?.trusted && (principal.source === 'local-user' && principal.authority === 'user' || principal.source === 'native-host' && principal.authority === 'trusted-orchestrator' && identity.trusted && identity.profile.authority === 'full'), 'Expiring a recruitment request needs authorised owner or full orchestrator authority');
+      invariant(r && r.status === 'pending' && !r.successor, 'Only a recruitment request still awaiting votes can be expired');
+      invariant(typeof reason === 'string' && reason.trim() && reason.length <= 2000, 'Expiring a recruitment request needs a reason');
+      r.status = 'expired'; r.expiredAt = this.now(); r.expiredBy = clone(principal); r.expiryReason = reason;
+      for (const n of Object.values(m.nodes)) if (n.supervises === requestId && !terminal.has(n.status)) {
+        n.status = 'cancelled'; n.lease = null;
+        const synthetic = m.requests[n.requestId]; if (synthetic && ['pending', 'queued', 'running'].includes(synthetic.status)) synthetic.status = 'cancelled';
+      }
+      refreshWaiting(m, event);
+      event('recruitment.expired', missionId, { requestId, reason, principal: clone(principal) }); return r;
+    });
+  }
   async escalate(missionId, requestId, changes, key, principal) {
     const prior = await this.store.transaction((state, event) => {
       const m = missionOf(state, missionId), r = m.requests[requestId];
@@ -369,8 +395,8 @@ export class RecruitmentBroker {
       const record = { id: randomUUID(), nodeId, policyHash: m.policyHash, original: clone(original), previous: clone(node.risk), replacement: riskInput(replacement), assessment: assessRisk(replacement, m.config.risk), rationale: grant.rationale, principal: clone(principal), createdAt: this.now(), expiresAt: this.now() + grant.ttlMs };
       node.riskOverride = record; node.risk = record.assessment; node.riskRevision = (node.riskRevision ?? 0) + 1;
       m.riskOverrides ??= {}; m.riskOverrides[record.id] = record;
-      for (const workflow of Object.values(m.workflows)) if (workflow.authors.includes(nodeId)) { workflow.status = 'held'; workflow.approval = null; workflow.reason = 'Risk classification changed; start a fresh source-bound review workflow'; }
-      for (const action of Object.values(m.actions)) if (action.status !== 'executed' && (action.nodeId === nodeId || m.workflows[action.workflowId]?.authors.includes(nodeId))) action.status = 'stale';
+      for (const workflow of Object.values(m.workflows)) if (workflow.authors.includes(nodeId) && workflow.status !== 'superseded') { workflow.status = 'held'; workflow.approval = null; workflow.reason = 'Risk classification changed; start a fresh source-bound review workflow'; }
+      staleUnconsumedActions(m, action => action.nodeId === nodeId || m.workflows[action.workflowId]?.authors.includes(nodeId));
       event('risk.overridden', missionId, record); return record;
     });
   }

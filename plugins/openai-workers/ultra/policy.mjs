@@ -82,6 +82,8 @@ function ruleMatches(when, context) {
   return true;
 }
 
+// Identity, risk, transition and bootstrap gates are independent requirements: always mandatory, so no OR/prioritised
+// combination can let one authority stand in for another. HELICOP rules override these flags with the owner's own.
 function approval(authority, reason, extra = {}) {
   return { authority, scope: 'recruitment', mandatory: true, veto: true, priority: authority === 'user' ? 1000 : authority === 'helicop-astra' ? 100 : 50, reason, ...extra };
 }
@@ -208,35 +210,96 @@ export function evaluateRecruitment({ config = DEFAULT_CONFIG, parent, request, 
   return finish(requiredApprovals.length ? 'PENDING' : 'APPROVE', allocation);
 }
 
-/** Resolve authenticated, request-bound decisions supplied by the durable approval engine. */
+export const APPROVAL_COMBINATIONS = Object.freeze(['AND', 'OR', 'veto', 'prioritised', 'escalation']);
+const VOTES = Object.freeze(['APPROVE', 'REJECT', 'MODIFY', 'ESCALATE']);
+const MAX_UNRESOLVED_AUTHORITIES = 6;
+
+/**
+ * Requirements for a consequential-action gate. Authorities are listed highest priority first.
+ * AND makes every authority mandatory and veto makes every authority a veto holder by definition;
+ * OR, prioritised and escalation only treat owner-listed authorities as mandatory/veto holders.
+ */
+export function executionRequirements(authorities, combination, { mandatoryAuthorities = [], vetoAuthorities = [] } = {}) {
+  if (!APPROVAL_COMBINATIONS.includes(combination)) throw new Error('Unknown approval combination.');
+  return authorities.map((authority, i) => ({ id: `execution:${authority}`, authority, scope: 'execution',
+    mandatory: combination === 'AND' || mandatoryAuthorities.includes(authority), veto: combination === 'veto' || vetoAuthorities.includes(authority), priority: authorities.length - i }));
+}
+
+/**
+ * Complete-information truth table. Every non-dropped requirement carries a value.
+ * A blocking gate (mandatory or veto) must approve; consultation answers are advisory and count as approval.
+ * Optional gates are combined by `combination`. Precedence of a non-approval: blocking REJECT; blocking MODIFY, then
+ * blocking ESCALATE; then the optional policy (see docs/ULTRA_POLICY.md).
+ */
+function resolveComplete(records, combination) {
+  const blocking = records.filter(r => r.blocking), optional = records.filter(r => !r.blocking);
+  const topPriority = Math.max(...optional.map(r => r.requirement.priority ?? 0));
+  const relevant = combination === 'prioritised' ? optional.filter(r => (r.requirement.priority ?? 0) === topPriority) : optional;
+  if (blocking.some(r => r.value === 'REJECT')) return { decision: 'REJECT', key: 'REJECT' };
+  const optionalSatisfied = combination === 'OR' ? !optional.length || optional.some(r => r.value === 'APPROVE') : relevant.every(r => r.value === 'APPROVE');
+  if (blocking.every(r => r.value === 'APPROVE') && optionalSatisfied) return { decision: 'APPROVE', key: 'APPROVE' };
+  // The most senior authority's modification prevails; requirement order is only the final tiebreak.
+  const modify = pool => {
+    const source = pool.filter(r => r.value === 'MODIFY').sort((a, b) => (b.requirement.priority ?? 0) - (a.requirement.priority ?? 0) || a.index - b.index)[0];
+    return source ? { decision: 'MODIFY', key: `MODIFY:${source.index}`, source } : null;
+  };
+  const blockingModify = modify(blocking);
+  if (blockingModify) return blockingModify;
+  if (blocking.some(r => r.value === 'ESCALATE')) return { decision: 'ESCALATE', key: 'ESCALATE' };
+  if (combination === 'escalation') return { decision: 'ESCALATE', key: 'ESCALATE' };
+  if (combination !== 'OR' && relevant.some(r => r.value === 'REJECT')) return { decision: 'REJECT', key: 'REJECT' };
+  const optionalModify = modify(relevant);
+  if (optionalModify) return optionalModify;
+  if (relevant.some(r => r.value === 'ESCALATE')) return { decision: 'ESCALATE', key: 'ESCALATE' };
+  return { decision: 'REJECT', key: 'REJECT' };
+}
+
+/**
+ * Resolve authenticated, request-bound decisions supplied by the durable approval engine.
+ *
+ * The result is the outcome that every possible answer from the authorities that have not yet answered would share,
+ * otherwise PENDING. It is therefore a pure function of the set of decisions: independent of arrival order and
+ * monotone (once APPROVE/REJECT/MODIFY/ESCALATE, always the same under any additional decision).
+ */
 export function combineApprovals(requirements, decisions, combination = 'AND') {
-  if (!['AND', 'OR', 'veto', 'prioritised', 'escalation'].includes(combination)) throw new Error('Unknown approval combination.');
-  const records = requirements.map(requirement => {
-    const original = decisions.find(d => d.authority === requirement.authority && (!d.requirementId || d.requirementId === requirement.id));
-    const decision = requirement.consultation && original && ['APPROVE', 'REJECT', 'MODIFY', 'ESCALATE'].includes(original.decision) ? { ...original, decision: 'APPROVE' } : original;
-    return { requirement, decision };
+  if (!APPROVAL_COMBINATIONS.includes(combination)) throw new Error('Unknown approval combination.');
+  const records = [];
+  let malformed = null;
+  requirements.forEach((requirement, index) => {
+    const matches = decisions.filter(d => d.authority === requirement.authority && (!d.requirementId || d.requirementId === requirement.id));
+    const consultation = requirement.consultation === true;
+    // Advisory consultation never blocks and can never satisfy an optional quorum.
+    if (consultation && !requirement.mandatory) return;
+    const values = [...new Set(matches.map(d => d.decision))];
+    let value = values[0];
+    if (values.length > 1) { malformed ??= `${requirement.authority} cast conflicting decisions.`; value = 'REJECT'; }
+    else if (value !== undefined && !VOTES.includes(value)) { malformed ??= 'Malformed authority decision.'; value = 'REJECT'; }
+    else if (consultation && value !== undefined) value = 'APPROVE';
+    records.push({ requirement, index, authority: requirement.authority, blocking: Boolean(requirement.mandatory) || (!consultation && Boolean(requirement.veto)), value, decision: matches[0] });
   });
   if (!records.length) return { decision: 'APPROVE', reasons: ['No independent approval is required.'] };
-  const veto = records.find(({ requirement, decision }) => decision?.decision === 'REJECT' && (requirement.veto || requirement.mandatory));
-  if (veto) return { decision: 'REJECT', reasons: [`${veto.requirement.authority} rejected a mandatory/veto gate.`] };
-  const invalid = records.find(({ decision }) => decision && !['APPROVE', 'REJECT', 'MODIFY', 'ESCALATE'].includes(decision.decision));
-  if (invalid) return { decision: 'REJECT', reasons: ['Malformed authority decision.'] };
-  const modification = records.find(({ decision }) => decision?.decision === 'MODIFY');
-  if (modification) return { decision: 'MODIFY', reasons: ['Modified proposals must be revalidated against all governing permissions.'], modification: clone(modification.decision.modification ?? {}) };
-  if (records.some(({ decision }) => decision?.decision === 'ESCALATE')) return { decision: 'ESCALATE', reasons: ['An authority explicitly requires escalation.'] };
-  if (records.some(({ requirement, decision }) => requirement.mandatory && decision?.decision !== 'APPROVE')) return { decision: 'PENDING', reasons: ['A mandatory authority has not approved.'] };
-  const optional = records.filter(({ requirement }) => !requirement.mandatory);
-  if (!optional.length) return { decision: 'APPROVE', reasons: ['All mandatory authorities approved.'] };
-  if (combination === 'prioritised') {
-    const priority = Math.max(...optional.map(({ requirement }) => requirement.priority ?? 0));
-    const highest = optional.filter(({ requirement }) => (requirement.priority ?? 0) === priority);
-    if (highest.some(({ decision }) => decision?.decision === 'REJECT')) return { decision: 'REJECT', reasons: ['Highest-priority authority rejected.'] };
-    return { decision: highest.every(({ decision }) => decision?.decision === 'APPROVE') ? 'APPROVE' : 'PENDING', reasons: ['Highest-priority authorities determine optional gates.'] };
+  if (malformed) return { decision: 'REJECT', reasons: [malformed] };
+  const veto = records.find(r => r.blocking && r.value === 'REJECT');
+  if (veto) return { decision: 'REJECT', reasons: [`${veto.authority} rejected a mandatory/veto gate.`] };
+  const unresolved = [...new Set(records.filter(r => r.value === undefined).map(r => r.authority))];
+  if (unresolved.length > MAX_UNRESOLVED_AUTHORITIES) throw new Error('Too many distinct unresolved approval authorities.');
+  // A required consultation must still be answered; its content cannot matter but its absence can, so such an
+  // authority also has a "never answers" possibility.
+  const possibilities = unresolved.map(authority => records.some(r => r.authority === authority && r.requirement.consultation) ? [...VOTES, undefined] : VOTES);
+  const total = possibilities.reduce((product, choices) => product * choices.length, 1);
+  let outcome = null, ambiguous = false;
+  for (let n = 0; n < total && !ambiguous; n++) {
+    let rest = n; const assignment = new Map(unresolved.map((authority, i) => { const choices = possibilities[i]; const choice = choices[rest % choices.length]; rest = Math.floor(rest / choices.length); return [authority, choice]; }));
+    const completed = records.map(r => r.value !== undefined ? r : { ...r, value: r.requirement.consultation && assignment.get(r.authority) !== undefined ? 'APPROVE' : assignment.get(r.authority) });
+    const result = resolveComplete(completed, combination);
+    if (!outcome) outcome = result; else if (outcome.key !== result.key) ambiguous = true;
   }
-  if (combination === 'OR') {
-    if (optional.some(({ decision }) => decision?.decision === 'APPROVE')) return { decision: 'APPROVE', reasons: ['An eligible optional authority approved; mandatory gates also passed.'] };
-    return { decision: optional.every(({ decision }) => decision?.decision === 'REJECT') ? 'REJECT' : 'PENDING', reasons: ['No optional authority has approved.'] };
-  }
-  if (optional.some(({ decision }) => decision?.decision === 'REJECT')) return { decision: combination === 'escalation' ? 'ESCALATE' : 'REJECT', reasons: ['Authorities disagree or reject.'] };
-  return { decision: optional.every(({ decision }) => decision?.decision === 'APPROVE') ? 'APPROVE' : 'PENDING', reasons: ['All applicable authorities must respond before admission.'] };
+  if (ambiguous) return { decision: 'PENDING', reasons: ['The outcome still depends on authorities that have not answered.'] };
+  const reasons = { APPROVE: ['Every required authority approved and the optional policy is satisfied.'],
+    REJECT: ['Approval is impossible: an authority whose rejection is terminal rejected, or no optional authority can still approve.'],
+    MODIFY: ['Modified proposals must be revalidated against all governing permissions.'],
+    ESCALATE: ['An authority or the escalation policy requires explicit escalation.'] }[outcome.decision];
+  return outcome.decision === 'MODIFY'
+    ? { decision: 'MODIFY', reasons, modification: clone(outcome.source.decision?.modification ?? {}) }
+    : { decision: outcome.decision, reasons };
 }

@@ -245,7 +245,18 @@
     "requireTests": true,
     "repeatedDefectLimit": 2,
     "noProgressLimit": 1,
-    "blindSecondOpinion": true
+    "blindSecondOpinion": true,
+    "requiredTests": [],
+    "testPlanRequiredImpacts": [
+      "high",
+      "critical",
+      "unknown"
+    ],
+    "ownerAttestedImpacts": [
+      "low",
+      "medium"
+    ],
+    "allowCriticalWaivers": false
   },
   "freeToPaid": {
     "policy": "C",

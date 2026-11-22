@@ -3,7 +3,7 @@
  * Free daily groups remain separate from paid usage. Nothing here is an
  * authoritative OpenAI bill, eligibility check, or account-wide token counter.
  */
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync,
   statSync, openSync, closeSync, fsyncSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -48,6 +48,8 @@ function optionalDollars(raw) {
   if (!Number.isFinite(n) || n < 0) throw new Error('Invalid local monthly spending limit.');
   return n;
 }
+/** The enforceable monthly limit alone (null = not configured); reads nothing else, in particular not the allowance. */
+export const monthlyLimitFromEnv = env => optionalDollars(env.OPENAI_WORKER_MONTHLY_LIMIT_USD);
 export function settings(env = process.env) {
   const allowance = Number(env.OPENAI_WORKER_MONTHLY_ALLOWANCE_USD);
   return {
@@ -69,7 +71,48 @@ export function usagePath(env = process.env) {
 }
 const blankStats = () => ({ tokens: 0, estimatedUsd: 0, requests: 0, unknownPriceRequests: 0 });
 const blankMonth = () => ({ free: blankStats(), standard: blankStats() });
-const blankLedger = () => ({ version: 2, days: {}, months: {}, pending: {}, processed: {}, requests: {}, releases: {} });
+const blankLedger = () => ({ version: 2, days: {}, months: {}, pending: {}, processed: {}, requests: {}, releases: {}, reconciliations: [], baselines: {} });
+const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
+const MAX_SCOPE_MONTHS = 60;
+export const sha256Hex = bytes => createHash('sha256').update(bytes).digest('hex');
+/** Stable serialisation (sorted keys) so digests do not depend on insertion order. */
+export function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (object(value)) return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
+  return JSON.stringify(value) ?? 'null';
+}
+/** Contiguous UTC months first..last inclusive. When more than MAX_SCOPE_MONTHS apply, the NEWEST
+ * ones are kept: the range is built backwards from `last`, so it always ends at the newest month
+ * (a start that is absurdly old can never push the end of the range away from the present). */
+function monthRange(first, last) {
+  const out = []; let [y, m] = last.split('-').map(Number); const [fy, fm] = first.split('-').map(Number);
+  while ((y > fy || (y === fy && m >= fm)) && out.length < MAX_SCOPE_MONTHS) {
+    out.unshift(`${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}`);
+    if (--m < 1) { m = 12; y--; }
+  }
+  return out.length ? out : [last];
+}
+/** A valid migration scope: 1..MAX_SCOPE_MONTHS real months, ascending and contiguous. */
+function validScope(months) {
+  if (!Array.isArray(months) || !months.length || months.length > MAX_SCOPE_MONTHS || !months.every(k => typeof k === 'string' && MONTH_KEY.test(k))) return false;
+  return months.every((k, i) => i === 0 || k === nextMonth(months[i - 1]));
+}
+function nextMonth(key) {
+  let [y, m] = key.split('-').map(Number); if (++m > 12) { m = 1; y++; }
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}`;
+}
+// No usage ledger can predate the Responses API, and none can describe a future more than a
+// day (clock skew) ahead of the instant it is migrated. Keys outside that window are corrupt or
+// hand-edited, and must neither widen nor shift the unknown period that gates spending.
+const FIRST_PLAUSIBLE_DAY = '2025-01-01';
+const realDay = day => /^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(Date.parse(`${day}T00:00:00Z`)) && new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) === day;
+function assertPlausibleHistory(keys, kind, now) {
+  const tomorrow = utcDay(new Date(new Date(now).getTime() + 86_400_000)), last = kind === 'month' ? tomorrow.slice(0, 7) : tomorrow;
+  const first = kind === 'month' ? FIRST_PLAUSIBLE_DAY.slice(0, 7) : FIRST_PLAUSIBLE_DAY;
+  const bad = keys.find(k => !(kind === 'month' ? MONTH_KEY.test(k) : realDay(k)) || k < first || k > last);
+  if (bad !== undefined) throw new Error(`Token usage ledger has a ${kind} key (${JSON.stringify(String(bad).slice(0, 20))}) outside the plausible range ${first}..${last}; refusing to derive the unknown-history scope from it. Repair the ledger manually (an unmigrated v1 file is left untouched).`);
+}
+const v1EvidenceName = digest => `free-usage-ledger.v1-${digest}.json`;
 function validateMap(value, label) {
   if (!object(value)) throw new Error(`Invalid token usage ledger ${label}; refusing to reset prior totals.`);
 }
@@ -78,10 +121,10 @@ function validateStats(stats) {
     throw new Error('Invalid token usage ledger totals; refusing unsafe admission.');
   }
 }
-function loadLedger(path) {
-  if (!existsSync(path)) return blankLedger();
-  let doc;
-  try { doc = JSON.parse(readFileSync(path, 'utf8')); }
+function loadLedger(path, now = new Date()) {
+  if (!existsSync(path)) return { doc: blankLedger(), v1: null, legacy: false };
+  let doc, raw, v1 = null;
+  try { raw = readFileSync(path); doc = JSON.parse(raw.toString('utf8')); }
   catch { throw new Error(`Token usage ledger is unreadable at ${path}. Repair it manually; accounting cannot safely reset itself.`); }
   if (![1, 2].includes(doc?.version)) throw new Error('Unsupported token usage ledger version.');
   for (const key of ['days', 'pending', 'processed']) validateMap(doc[key], key);
@@ -94,8 +137,8 @@ function loadLedger(path) {
   if (doc.version === 1) {
     // Preserve every available old entry. A v1 file may already have lost days;
     // migration cannot reconstruct those bills and makes that explicit.
-    doc.version = 2; doc.months = {}; doc.requests = {}; doc.releases = {};
-    doc.migration = { from: 1, historicalTotalsMayBeIncomplete: true };
+    assertPlausibleHistory(Object.keys(doc.days), 'day', now);
+    doc.version = 2; doc.months = {}; doc.requests = {}; doc.releases = {}; doc.reconciliations = []; doc.baselines = {};
     for (const [day, entry] of Object.entries(doc.days)) {
       const month = doc.months[day.slice(0, 7)] ??= blankMonth();
       month.free.estimatedUsd += entry.totalEstimatedUsd;
@@ -103,12 +146,37 @@ function loadLedger(path) {
         month.free.tokens += stats.tokens; month.free.requests += stats.requests;
       }
     }
+    // Evidence + scope of the unknown period. v1 never tracked the standard
+    // key, and its free-key history may already have been pruned, so the unknown
+    // period runs from the oldest surviving v1 day to this migration instant.
+    const migratedAt = new Date(now).toISOString(), migrationMonth = migratedAt.slice(0, 7);
+    const dayKeys = Object.keys(doc.days).sort(), months = Object.keys(doc.months).sort();
+    const earliest = dayKeys[0] ?? `${migrationMonth}-01`;
+    const latest = [migrationMonth, months.at(-1) ?? migrationMonth].sort().at(-1);
+    const digest = sha256Hex(raw);
+    doc.migration = { from: 1, historicalTotalsMayBeIncomplete: true, migratedAt,
+      evidence: { file: v1EvidenceName(digest), sha256: digest, bytes: raw.length },
+      unknownPeriod: { start: `${earliest}T00:00:00.000Z`, end: migratedAt, standardKeyTracked: false },
+      affectedMonths: monthRange(earliest.slice(0, 7), latest),
+      v1FreeTotals: Object.fromEntries(months.map(k => [k, { tokens: doc.months[k].free.tokens, estimatedUsd: doc.months[k].free.estimatedUsd, requests: doc.months[k].free.requests }])),
+      v1Pending: Object.keys(doc.pending).length, v1Processed: Object.keys(doc.processed).length };
+    v1 = { raw, file: doc.migration.evidence.file };
     for (const entry of Object.values(doc.pending)) {
       Object.assign(entry, { profile: 'free', status: 'pending', reservedUsd: null, inputBoundVerified: false });
     }
     for (const [id, day] of Object.entries(doc.processed)) doc.processed[id] = { day, profile: 'free', legacy: true };
   }
   for (const key of ['months', 'requests', 'releases']) validateMap(doc[key], key);
+  // A scope that is present but malformed would silently read as "fully tracked": refuse instead.
+  if (doc.migration?.historicalTotalsMayBeIncomplete === true && Array.isArray(doc.migration.affectedMonths) && !validScope(doc.migration.affectedMonths)) {
+    throw new Error('Invalid token usage ledger migration scope; refusing unsafe admission.');
+  }
+  doc.reconciliations ??= []; doc.baselines ??= {};
+  if (!Array.isArray(doc.reconciliations)) throw new Error('Invalid token usage ledger reconciliation audit list; refusing unsafe admission.');
+  validateMap(doc.baselines, 'baselines');
+  for (const [month, b] of Object.entries(doc.baselines)) {
+    if (!MONTH_KEY.test(month) || !object(b) || !nonnegative(b.baselineUsd) || !nonnegative(b.localAtReconciliationUsd)) throw new Error('Invalid token usage ledger reconciliation baseline; refusing unsafe admission.');
+  }
   for (const entry of Object.values(doc.months)) {
     validateMap(entry, 'month'); validateStats(entry.free); validateStats(entry.standard);
   }
@@ -118,25 +186,52 @@ function loadLedger(path) {
       throw new Error('Invalid token usage reservation; refusing unsafe admission.');
     }
   }
-  return doc;
+  return { doc, v1, legacy: normalizeLegacyMigration(doc, now) };
 }
-function saveLedger(path, doc) {
+/** A migration record written by the first v2 revision carries only the flag. It
+ * has no evidence copy and no known migration instant, so every month already
+ * present, plus the month in which it is first observed, is treated as unknown. */
+function normalizeLegacyMigration(doc, now) {
+  const m = doc.migration; if (!m || m.historicalTotalsMayBeIncomplete !== true || Array.isArray(m.affectedMonths)) return false;
+  const observed = new Date(now).toISOString(), keys = Object.keys(doc.months).filter(k => MONTH_KEY.test(k)).sort();
+  assertPlausibleHistory(keys, 'month', now);
+  const latest = [observed.slice(0, 7), keys.at(-1) ?? observed.slice(0, 7)].sort().at(-1);
+  doc.migration = { ...m, legacyRecord: true, migratedAt: null, evidence: null, v1FreeTotals: null,
+    unknownPeriod: { start: null, end: observed, standardKeyTracked: false },
+    affectedMonths: monthRange(keys[0] ?? observed.slice(0, 7), latest) };
+  return true;
+}
+/** Durable write: temp file, fsync, atomic rename (used for the ledger and evidence copies). */
+export function durableWrite(path, data) {
   const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   let fd;
   try {
     fd = openSync(tmp, 'wx', 0o600);
-    writeFileSync(fd, JSON.stringify(doc, null, 2)); fsyncSync(fd); closeSync(fd); fd = undefined;
+    writeFileSync(fd, data); fsyncSync(fd); closeSync(fd); fd = undefined;
     renameSync(tmp, path);
     // Directory fsync is supported on POSIX; Windows provides rename durability
     // differently and does not permit opening a directory this way.
     if (process.platform !== 'win32') { const dir = openSync(dirname(path), 'r'); try { fsyncSync(dir); } finally { closeSync(dir); } }
   } finally { if (fd !== undefined) closeSync(fd); if (existsSync(tmp)) rmSync(tmp, { force: true }); }
 }
+function saveLedger(path, doc) { durableWrite(path, JSON.stringify(doc, null, 2)); }
+/** Keep an exact, content-addressed copy of bytes about to be superseded. Idempotent. */
+export function preserveEvidence(path, file, bytes) {
+  const target = join(dirname(path), file);
+  try { if (sha256Hex(readFileSync(target)) === sha256Hex(bytes)) return target; } catch { /* absent or unreadable: rewrite below */ }
+  durableWrite(target, bytes); return target;
+}
 function prune(doc, day) {
   const date = new Date(`${day}T00:00:00Z`); date.setUTCDate(date.getUTCDate() - 62);
   const oldest = utcDay(date);
   for (const key of Object.keys(doc.days)) if (key < oldest) delete doc.days[key];
-  // Monthly aggregates, response tombstones, request IDs and unresolved
+  // Release tombstones are audit records of a request that was proved never to
+  // have started. Nothing reads them, they are the only unbounded write-only
+  // growth in the file (every failed request adds one and every transaction
+  // rewrites the whole ledger), and dropping one cannot turn usage into zero:
+  // the reservation is already gone and the request ID stays in `requests`.
+  for (const [ticket, release] of Object.entries(doc.releases ?? {})) if (!object(release) || typeof release.day !== 'string' || release.day < oldest) delete doc.releases[ticket];
+  // Monthly aggregates, processed-response tombstones, request IDs and unresolved
   // reservations are intentionally retained. Age never proves zero usage.
 }
 function ownerAt(path) { try { return JSON.parse(readFileSync(join(path, 'owner.json'), 'utf8')); } catch { return null; } }
@@ -145,6 +240,11 @@ function canRecover(path, owner) {
   if (owner) return owner.host === hostname() && Number.isSafeInteger(owner.pid) && !alive(owner.pid);
   try { return Date.now() - statSync(path).mtimeMs > 30_000; } catch { return false; }
 }
+/** Serialised, crash-safe ledger transaction. fn(doc, meta) may return { dirty, value }.
+ * options.persistMigration forces a v1 upgrade (and its evidence copy) to be written;
+ * options.beforeLedgerWrite(stage) is a test seam invoked after evidence is durable and
+ * before the ledger is replaced. No MCP/desktop surface passes either. */
+export async function ledgerTransaction(fn, options = {}) { return withLedger(fn, options); }
 async function withLedger(fn, options = {}) {
   const path = options.path ?? usagePath(options.env ?? process.env);
   const lock = `${path}.lock`, reaper = `${path}.recovery`;
@@ -174,8 +274,13 @@ async function withLedger(fn, options = {}) {
   }
   if (!locked) throw new Error('Token usage ledger is busy or recovery was interrupted; inspect lock ownership before recovery.');
   try {
-    const doc = loadLedger(path), result = fn(doc);
-    if (result?.dirty) { prune(doc, utcDay(options.now ?? new Date())); saveLedger(path, doc); }
+    const now = options.now ?? new Date(), { doc, v1, legacy } = loadLedger(path, now), result = fn(doc, { path, migrated: Boolean(v1), now });
+    if (result?.dirty || ((v1 || legacy) && options.persistMigration)) {
+      prune(doc, utcDay(now));
+      // Original v1 bytes become durable BEFORE the first v2 overwrite.
+      if (v1) { preserveEvidence(path, v1.file, v1.raw); options.beforeLedgerWrite?.('v1-evidence-preserved'); }
+      saveLedger(path, doc);
+    }
     return result?.value;
   } finally {
     if (ownerAt(lock)?.token === token) rmSync(lock, { recursive: true, force: true });
@@ -185,6 +290,32 @@ function dayStats(doc, day, group) { return doc.days[day]?.groups?.[group] ?? bl
 function pendingFor(doc, day, group) { return Object.values(doc.pending).filter(p => p.day === day && p.group === group); }
 function sumPending(items, field) { return items.reduce((n, p) => n + (p[field] ?? 0), 0); }
 
+const localMonthUsd = month => month.free.estimatedUsd + month.standard.estimatedUsd;
+/** Spend the monthly guard must assume for a month: never below the local estimate,
+ * and, once the owner reconciled the month, never below the authoritative baseline
+ * plus everything this ledger recorded after that reconciliation. */
+export function committedMonthlyUsd(doc, monthKey) {
+  const local = localMonthUsd(doc.months[monthKey] ?? blankMonth()), b = doc.baselines?.[monthKey];
+  return b ? Math.max(local, b.baselineUsd + Math.max(0, local - b.localAtReconciliationUsd)) : local;
+}
+/** Months that predate complete tracking: the migration month and everything earlier,
+ * until the owner reconciles that specific month. Later months are fully tracked. */
+export function unreconciledMonth(doc, monthKey) {
+  const m = doc.migration;
+  if (!m || m.historicalTotalsMayBeIncomplete !== true) return null;
+  // Fail closed: an incomplete-history flag with an unusable scope blocks every month and cannot be reconciled.
+  if (!validScope(m.affectedMonths)) return { month: monthKey, reconcilable: false, migratedAt: m.migratedAt ?? null, legacyRecord: m.legacyRecord === true };
+  if (monthKey > m.affectedMonths.at(-1) || doc.baselines?.[monthKey]) return null;
+  return { month: monthKey, reconcilable: m.affectedMonths.includes(monthKey), migratedAt: m.migratedAt, legacyRecord: m.legacyRecord === true };
+}
+/** Owner-facing description of the unknown period; null when there was no v1 migration. */
+export function migrationSummary(doc, monthKey) {
+  const m = doc.migration; if (!m || m.historicalTotalsMayBeIncomplete !== true || !Array.isArray(m.affectedMonths)) return null;
+  return { from: m.from, migratedAt: m.migratedAt, legacyRecord: m.legacyRecord === true, evidence: m.evidence, unknownPeriod: m.unknownPeriod,
+    affectedMonths: m.affectedMonths, v1FreeTotals: m.v1FreeTotals, v1Pending: m.v1Pending ?? null, v1Processed: m.v1Processed ?? null,
+    reconciledMonths: m.affectedMonths.filter(k => doc.baselines[k]), unreconciledMonths: m.affectedMonths.filter(k => !doc.baselines[k]),
+    blockingMonth: unreconciledMonth(doc, monthKey) ? monthKey : null };
+}
 /** Conservative byte-count estimate for a complete new prompt; continued
  * Responses require an explicit bound including the server-side history. */
 export function quoteRequest(args, options = {}) {
@@ -238,11 +369,15 @@ export async function reserveRequest(args, options = {}) {
     const month = doc.months[monthKey] ?? blankMonth();
     if (cfg.monthlyLimitUsd !== null) {
       const outstanding = Object.values(doc.pending);
+      const unreconciled = unreconciledMonth(doc, monthKey);
+      if (unreconciled) {
+        throw new Error(`Local spending guard blocked: historical usage for UTC month ${monthKey} predates complete tracking (v1 ledger migration${unreconciled.migratedAt ? ` at ${unreconciled.migratedAt}` : ''}) and has not been reconciled by the owner. Run scripts/reconcile-usage.mjs status in a local terminal.`);
+      }
       if (fallbackUsd === null || reservedUsd === null || args.inputBoundVerified !== true || outstanding.some(p => p.reservedUsd === null || p.inputBoundVerified === false) ||
-        month.free.unknownPriceRequests || month.standard.unknownPriceRequests || doc.migration?.historicalTotalsMayBeIncomplete) {
+        month.free.unknownPriceRequests || month.standard.unknownPriceRequests) {
         throw new Error('Local spending guard requires known price, complete input bound and reconciled historical usage; request blocked.');
       }
-      const committed = month.free.estimatedUsd + month.standard.estimatedUsd;
+      const committed = committedMonthlyUsd(doc, monthKey);
       // Outstanding requests from earlier months still carry potential cost.
       if (committed + sumPending(outstanding, 'reservedUsd') + reservedUsd > cfg.monthlyLimitUsd) throw new Error('Local monthly spending limit including new and outstanding reservations would be exceeded.');
     }
@@ -362,11 +497,13 @@ export async function usageSnapshot(options = {}) {
       groups, profiles, overrunPercent: cfg.overrunPercent, monthlyEstimatedUsd: Number(month.free.estimatedUsd.toFixed(7)),
       allKeysMonthlyEstimatedUsd: Number(allEstimated.toFixed(7)), monthlyAllowanceUsd: cfg.monthlyAllowanceUsd,
       monthlyLimitUsd: cfg.monthlyLimitUsd, monthlyReservedUsd: sumPending(outstanding, 'reservedUsd'),
-      historicalTotalsMayBeIncomplete: doc.migration?.historicalTotalsMayBeIncomplete ?? false,
+      // True only while the CURRENT UTC month's local totals are unreconciled-unknown (see migration for the full scope).
+      historicalTotalsMayBeIncomplete: unreconciledMonth(doc, monthKey) !== null, migration: migrationSummary(doc, monthKey),
+      monthlyCommittedUsd: Number(committedMonthlyUsd(doc, monthKey).toFixed(7)),
       pendingResponseIds: [...new Set(outstanding.filter(p => p.profile === 'free' && p.responseId).map(p => p.responseId))].slice(0, 50),
       pendingResponses: outstanding.filter(p => p.responseId).map(p => ({ id: p.responseId, profile: p.profile, workerType: p.workerType, status: p.status })).slice(0, 100),
       unresolvedRequests: outstanding.filter(p => ['usage_unknown', 'ambiguous'].includes(p.status)).map(p => ({ requestId: p.requestId, responseId: p.responseId, day: p.day, profile: p.profile, status: p.status })),
-      reminder: 'Local estimates for participating clients only, never authoritative OpenAI billing. Free daily groups exclude standard-key usage. The monthly allowance reference is informational; only the separately configured monthly limit enforces admission.',
+      reminder: 'Local estimates for participating clients only, never authoritative OpenAI billing. Free daily groups exclude standard-key usage. The monthly allowance reference is informational; only the separately configured monthly limit enforces admission. Unknown pre-upgrade history is reconciled only by the local interactive owner script; no worker or MCP tool exposes it (a terminal session is checked, not authenticated).',
     } };
   }, options);
 }

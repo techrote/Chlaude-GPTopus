@@ -92,6 +92,6 @@ Developer build command from the repository root:
 node .\scripts\build-desktop.mjs
 ```
 
-This creates `dist/Chlaude-GPTopus-Desktop.mcpb` using Node built-ins, without downloading dependencies. The bundle includes only its MCP server, shared OpenAI/ledger code and Windows DPAPI key reader. It has **no shell/file editing capabilities**.
+This creates `dist/Chlaude-GPTopus-Desktop.mcpb` using Node built-ins, without downloading dependencies. The bundle includes its MCP server, the bridge modules that server imports (OpenAI client, worker definitions, usage ledger) and the Windows DPAPI key reader; the authoritative list is `SOURCES` in `scripts/build-desktop.mjs`, and later layers of this repository add their own modules there. It does not contain the owner reconciliation script. It has **no shell/file editing capabilities**.
 
 See [official Claude Desktop local-extension installation guidance](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop) and [MCPB manifest format](https://github.com/modelcontextprotocol/mcpb/blob/main/MANIFEST.md).

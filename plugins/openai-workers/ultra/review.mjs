@@ -1,9 +1,67 @@
 import { randomUUID } from 'node:crypto';
 import { clone, digest, invariant } from './store.mjs';
 import { assessRisk, activeRisk, assertWorkflowRisk, riskInput } from './risk.mjs';
+import { orchestratorIdentity } from './policy.mjs';
+import { TEST_ID_PATTERN } from './config.mjs';
+import { staleUnconsumedActions } from './actions.mjs';
 
 const severe = f => ['high', 'critical'].includes(f.severity);
 const states = new Set(['examined', 'partial', 'not_examined', 'uncertain']);
+const TEST_HOLD = 'Required independent test evidence is missing or failing';
+// The manifest is satisfied but the shared retry budget no longer allows the fresh adjudication that would lift the hold.
+const RETRY_HOLD = 'Required test evidence is satisfied but fresh adjudication cannot run';
+const isTestHold = reason => typeof reason === 'string' && (reason.startsWith(TEST_HOLD) || reason.startsWith(RETRY_HOLD));
+const superseded = w => invariant(w?.status !== 'superseded', 'Workflow was restarted by the owner and is superseded; use its successor');
+const SHA256 = /^[a-f0-9]{64}$/;
+const MAX_REQUIREMENTS = 64;
+const AREA_FLAG = { security: 'securitySensitive', privacy: 'privacySensitive', destructive: 'destructive', external: 'externalSideEffects', deployment: 'deployment', persistence: 'persistence' };
+const ALL_IMPACTS = ['low', 'medium', 'high', 'critical', 'unknown'];
+// Unknown impact is treated as high for matching *requirements* (more tests), never for relaxing them.
+const tierMatches = (list, tier) => list.includes(tier) || (tier === 'unknown' && list.includes('high'));
+
+/** One designated verification. Only these fields are hashed, so a plan hash identifies exactly what must be proven. */
+function requirement(raw, origin) {
+  invariant(raw && typeof raw === 'object' && !Array.isArray(raw), 'A required test must be an object');
+  invariant(Object.keys(raw).every(k => ['id', 'description', 'executable', 'commandDigest'].includes(k)), 'Unknown required-test field');
+  invariant(typeof raw.id === 'string' && TEST_ID_PATTERN.test(raw.id), 'A required test needs a bounded stable id');
+  const description = raw.description ?? raw.id, executable = raw.executable ?? true, commandDigest = raw.commandDigest ?? null;
+  invariant(typeof description === 'string' && description.trim() && description.length <= 500, 'A required test needs a bounded description');
+  invariant(typeof executable === 'boolean', 'Required-test executable flag must be boolean');
+  invariant(commandDigest === null || (typeof commandDigest === 'string' && SHA256.test(commandDigest)), 'Required-test command digest must be SHA-256 hex');
+  invariant(executable || commandDigest === null, 'A non-executable required test cannot pin a command');
+  return { id: raw.id, description, executable, commandDigest, origin };
+}
+const core = e => ({ id: e.id, description: e.description, executable: e.executable, commandDigest: e.commandDigest });
+const sameRequirement = (a, b) => digest(core(a)) === digest(core(b));
+function policyRequirements(config, assessment) {
+  return (config.review.requiredTests ?? []).filter(t => tierMatches(t.impacts ?? ALL_IMPACTS, assessment.effectiveImpact)
+    && (!t.areas?.length || t.areas.some(area => assessment[AREA_FLAG[area]] === true))).map(({ id, description, executable, commandDigest }) => requirement({ id, description, executable, commandDigest }, 'owner-policy'));
+}
+/** Executor attestation mirrors the isolated-runner result: command digest, exit code, runner identity, qualification, exact source. */
+function checkAttestation(evidence, entry) {
+  const a = evidence.attestation;
+  invariant(a && typeof a === 'object' && !Array.isArray(a) && Object.keys(a).every(k => ['runnerId', 'commandDigest', 'exitCode', 'sourceHash', 'qualification', 'actionHash'].includes(k)), 'Executor attestation is malformed');
+  invariant(typeof a.runnerId === 'string' && a.runnerId.trim() && a.runnerId.length <= 200, 'Executor attestation needs a runner id');
+  invariant(typeof a.commandDigest === 'string' && SHA256.test(a.commandDigest), 'Executor attestation needs the command digest');
+  invariant(Number.isInteger(a.exitCode), 'Executor attestation needs an integer exit code');
+  invariant(a.sourceHash === evidence.sourceHash, 'Executor attestation is bound to a different source');
+  invariant(a.qualification === 'trusted-executor', 'Executor attestation lacks trusted-executor qualification');
+  invariant(a.actionHash === undefined || (typeof a.actionHash === 'string' && SHA256.test(a.actionHash)), 'Executor attestation action hash is malformed');
+  invariant(evidence.passed === (a.exitCode === 0), 'Reported result contradicts the executor exit code');
+  invariant(!entry?.commandDigest || entry.commandDigest === a.commandDigest, 'Executed command differs from the required test command');
+  return clone(a);
+}
+/**
+ * Contradiction-aware, never latest-wins. An explicit superseding record (named ids and a reason, recorded by an eligible
+ * principal) removes older records from consideration; otherwise any failure plus any counting pass is a contradiction.
+ */
+function classify(records, eligible) {
+  const superseded = new Set();
+  for (const s of records) if (s.supersedes?.length && eligible(s)) for (const id of s.supersedes) superseded.add(id);
+  const live = records.filter(r => !superseded.has(r.id)), fails = live.filter(r => !r.passed), passes = live.filter(r => r.passed && eligible(r));
+  const state = fails.length && passes.length ? 'contradictory' : fails.length ? 'failing' : passes.length ? 'satisfied' : 'missing';
+  return { state, live, fails, passes };
+}
 function sourceIdentity(source) {
   invariant(source && typeof source.content === 'string' && source.content.length <= 2000000, 'Immutable source content is required');
   const snapshot = clone(source), contentHash = digest(source.content);
@@ -15,45 +73,62 @@ function validateReport(report) {
   invariant(report.findings.length <= 100 && report.coverage.length <= 200, 'Review output exceeds bounds');
   for (const f of report.findings) invariant(['low', 'medium', 'high', 'critical'].includes(f.severity) && typeof f.message === 'string', 'Invalid review finding');
   for (const c of report.coverage) invariant(typeof c.area === 'string' && states.has(c.status), 'Invalid coverage-map entry');
-  invariant(Object.keys(report).every(k => ['findings', 'coverage', 'resolutions', 'summary'].includes(k)), 'Review cannot override trusted provenance fields');
+  invariant(Object.keys(report).every(k => ['findings', 'coverage', 'resolutions', 'summary', 'requiredTests'].includes(k)), 'Review cannot override trusted provenance fields');
   const resolutions = report.resolutions ?? [];
   invariant(Array.isArray(resolutions) && resolutions.length <= 100, 'Invalid review resolutions');
-  return { findings: clone(report.findings), coverage: clone(report.coverage), resolutions: clone(resolutions), summary: String(report.summary ?? '').slice(0, 20000) };
+  const requested = report.requiredTests ?? [];
+  invariant(Array.isArray(requested) && requested.length <= 20 && requested.every(t => t && typeof t === 'object' && !Array.isArray(t)), 'Invalid requested tests');
+  // Agents may only request additional verification; nothing here is evidence and nothing can remove a requirement.
+  return { findings: clone(report.findings), coverage: clone(report.coverage), resolutions: clone(resolutions), summary: String(report.summary ?? '').slice(0, 20000), requiredTests: clone(requested) };
+}
+
+/** Weakest rule, used only when no test is designated and the tier does not demand a plan: some passing evidence, no failure or contradiction. */
+function legacyEvaluate(records) {
+  const groups = new Map();
+  for (const r of records) { const id = r.testId ?? r.name; groups.set(id, [...(groups.get(id) ?? []), r]); }
+  const results = [...groups.values()].map(group => classify(group, () => true).state);
+  const state = !results.length ? 'missing' : results.includes('contradictory') ? 'contradictory' : results.includes('failing') ? 'failing' : 'satisfied';
+  return { state, accepted: state === 'satisfied' };
 }
 
 /** Roles, evidence freshness and convergence are persisted; allocation always goes through the broker. */
 export class ReviewController {
   constructor(broker) { this.broker = broker; this.store = broker.store; }
-  async start(missionId, { authorId, source, risk = {}, policy = {} }) {
+  /** `testPlan` ({ id?, entries }) is an explicit verification plan; registering one needs a trusted owner/orchestrator `principal`. */
+  async start(missionId, { authorId, source, risk = {}, policy = {}, testPlan, principal }) {
     const artifact = sourceIdentity(source);
-    return this.store.transaction((state, event) => {
-      const m = state.missions[missionId], author = m?.nodes[authorId];
-      invariant(author && ['implementation', 'reworker'].includes(author.role), 'Workflow needs an allocated implementation author');
-      invariant(author.status === 'completed', 'Author must complete before review');
-      const admitted = activeRisk(author, this.broker.now()) ?? m.requests[author.requestId]?.evaluation.risk;
-      const reviewRisk = { ...riskInput(admitted), ...clone(risk) };
-      if (admitted) {
-        const rank = v => ['low', 'medium', 'high', 'critical'].indexOf(v === 'unknown' ? 'high' : v);
-        if (rank(admitted.effectiveImpact) > rank(reviewRisk.impact ?? 'unknown')) reviewRisk.impact = admitted.effectiveImpact;
-        for (const field of ['destructive', 'securitySensitive', 'privacySensitive', 'externalSideEffects', 'deployment', 'persistence']) if (admitted[field]) reviewRisk[field] = true;
-        reviewRisk.confidence = Math.min(reviewRisk.confidence ?? 0, admitted.confidence);
-        if (admitted.uncertain) reviewRisk.verifiability = admitted.verifiability === 'low' ? 'low' : 'unknown';
-      }
-      const assessment = assessRisk(reviewRisk, m.config.risk), configured = m.config.review;
-      const requiredSecond = configured.secondOpinionImpacts.includes(assessment.effectiveImpact) || assessment.uncertain;
-      const requiredGap = configured.gapInspectionImpacts.includes(assessment.effectiveImpact) || assessment.uncertain;
-      invariant(Object.keys(policy).every(k => ['maxRounds', 'secondOpinion', 'gapReview'].includes(k)), 'Workflow model/selection overrides belong in authorised owner policy');
-      invariant(policy.secondOpinion !== false || !requiredSecond, 'Required second opinion cannot be disabled');
-      invariant(policy.gapReview !== false || !requiredGap, 'Required coverage-gap review cannot be disabled');
-      invariant(policy.maxRounds == null || policy.maxRounds <= configured.maxRounds, 'Workflow rounds cannot exceed the mission policy');
-      const assignments = { selection: author.reviewerPolicy?.selection ?? configured.selection, reviewer: author.reviewerPolicy?.reviewer ?? configured.primary, secondReviewer: configured.secondOpinion, reworker: configured.reworker, reReviewer: configured.rereviewer, gapInspector: configured.gapInspector, judge: configured.judge, maxRounds: configured.maxRounds, secondOpinion: requiredSecond, gapReview: requiredGap, freshGapInspector: configured.freshGapInspector, blindSecondOpinion: configured.blindSecondOpinion, repeatedDefectLimit: configured.repeatedDefectLimit, noProgressLimit: configured.noProgressLimit, ...policy };
-      invariant(['B', 'C'].includes(assignments.selection), 'Invalid reviewer-selection policy');
-      invariant(Number.isInteger(assignments.maxRounds) && assignments.maxRounds >= 1 && assignments.maxRounds <= 20, 'Invalid review round limit');
-      const w = { id: randomUUID(), authorId, authors: [authorId], source: artifact, sourceOrigin: 'caller-supplied immutable snapshot; approval binds this exact snapshot', sourceHistory: [artifact], risk: reviewRisk, assessment, policy: assignments,
-        riskRevision: author.riskRevision ?? 0, riskOverrideId: author.riskOverride?.expiresAt > this.broker.now() ? author.riskOverride.id : null,
-        round: 1, judgementGeneration: 0, status: assignments.selection === 'C' ? 'selection_required' : 'review', assignments: [], reviews: [], findings: [], tests: [], history: [], selection: null };
-      m.workflows[w.id] = w; event('review.started', missionId, { ...w, source: { hash: artifact.hash, id: artifact.id } }); return w;
-    });
+    return this.store.transaction((state, event) => this.begin(state, event, missionId, { authorId, artifact, risk, policy, testPlan, principal }));
+  }
+  /** Creates a workflow inside the caller's transaction, so `restart` can supersede and replace atomically. */
+  begin(state, event, missionId, { authorId, artifact, risk, policy, testPlan, principal }) {
+    const m = state.missions[missionId], author = m?.nodes[authorId];
+    invariant(author && ['implementation', 'reworker'].includes(author.role), 'Workflow needs an allocated implementation author');
+    invariant(author.status === 'completed', 'Author must complete before review');
+    const admitted = activeRisk(author, this.broker.now()) ?? m.requests[author.requestId]?.evaluation.risk;
+    const reviewRisk = { ...riskInput(admitted), ...clone(risk) };
+    if (admitted) {
+      const rank = v => ['low', 'medium', 'high', 'critical'].indexOf(v === 'unknown' ? 'high' : v);
+      if (rank(admitted.effectiveImpact) > rank(reviewRisk.impact ?? 'unknown')) reviewRisk.impact = admitted.effectiveImpact;
+      for (const field of ['destructive', 'securitySensitive', 'privacySensitive', 'externalSideEffects', 'deployment', 'persistence']) if (admitted[field]) reviewRisk[field] = true;
+      reviewRisk.confidence = Math.min(reviewRisk.confidence ?? 0, admitted.confidence);
+      if (admitted.uncertain) reviewRisk.verifiability = admitted.verifiability === 'low' ? 'low' : 'unknown';
+    }
+    const assessment = assessRisk(reviewRisk, m.config.risk), configured = m.config.review;
+    const requiredSecond = configured.secondOpinionImpacts.includes(assessment.effectiveImpact) || assessment.uncertain;
+    const requiredGap = configured.gapInspectionImpacts.includes(assessment.effectiveImpact) || assessment.uncertain;
+    invariant(Object.keys(policy).every(k => ['maxRounds', 'secondOpinion', 'gapReview'].includes(k)), 'Workflow model/selection overrides belong in authorised owner policy');
+    invariant(policy.secondOpinion !== false || !requiredSecond, 'Required second opinion cannot be disabled');
+    invariant(policy.gapReview !== false || !requiredGap, 'Required coverage-gap review cannot be disabled');
+    invariant(policy.maxRounds == null || policy.maxRounds <= configured.maxRounds, 'Workflow rounds cannot exceed the mission policy');
+    const assignments = { selection: author.reviewerPolicy?.selection ?? configured.selection, reviewer: author.reviewerPolicy?.reviewer ?? configured.primary, secondReviewer: configured.secondOpinion, reworker: configured.reworker, reReviewer: configured.rereviewer, gapInspector: configured.gapInspector, judge: configured.judge, maxRounds: configured.maxRounds, secondOpinion: requiredSecond, gapReview: requiredGap, freshGapInspector: configured.freshGapInspector, blindSecondOpinion: configured.blindSecondOpinion, repeatedDefectLimit: configured.repeatedDefectLimit, noProgressLimit: configured.noProgressLimit, ...policy };
+    invariant(['B', 'C'].includes(assignments.selection), 'Invalid reviewer-selection policy');
+    invariant(Number.isInteger(assignments.maxRounds) && assignments.maxRounds >= 1 && assignments.maxRounds <= 20, 'Invalid review round limit');
+    const plan = this.buildPlan(m, assessment, testPlan, principal);
+    const w = { id: randomUUID(), authorId, authors: [authorId], source: artifact, sourceOrigin: 'caller-supplied immutable snapshot; approval binds this exact snapshot', sourceHistory: [artifact], risk: reviewRisk, assessment, policy: assignments,
+      riskRevision: author.riskRevision ?? 0, riskOverrideId: author.riskOverride?.expiresAt > this.broker.now() ? author.riskOverride.id : null,
+      round: 1, judgementGeneration: 0, status: assignments.selection === 'C' ? 'selection_required' : 'review', assignments: [], reviews: [], findings: [], tests: [], waivers: [], testPlan: plan, history: [], selection: null };
+    this.refresh(m, w);
+    m.workflows[w.id] = w; event('review.started', missionId, { ...w, source: { hash: artifact.hash, id: artifact.id } }); return w;
   }
   async selectReviewer(missionId, workflowId, worker, principal) {
     return this.store.transaction((state, event) => {
@@ -92,7 +167,10 @@ export class ReviewController {
       const worker = role === 'reviewer' ? (w.round === 1 ? w.policy.reviewer : w.policy.reReviewer)
         : role === 'second_opinion' ? w.policy.secondReviewer : role === 'gap_inspector' ? (w.policy.freshGapInspector ? w.policy.gapInspector : m.nodes[w.authorId].worker) : role === 'judge' ? w.policy.judge : w.policy.reworker;
       // Primary and second opinion tasks are independently constructed from source/evidence only.
+      // declaredTests are the author's own claims: context only, never evidence and never part of the required-test manifest.
       const input = { role, workflowId, source: w.source, declaredTests: w.source.tests ?? [], trustedTestEvidence: w.tests.filter(t => t.sourceHash === w.source.hash), risk: w.risk,
+        verificationPlan: { planId: w.testPlan?.id ?? null, planHash: w.requiredTests?.planHash ?? null, tests: (w.requiredTests?.tests ?? []).map(({ id, description, executable, state }) => ({ id, description, executable, state })),
+          note: 'Reports may add requiredTests [{id,description,commandDigest?}] to request more verification; they can never remove or satisfy a requirement.' },
         instruction: role === 'reworker' ? 'Apply only the requested fixes using scoped Core tools. Return updated source and test evidence.'
           : role === 'gap_inspector' ? 'Investigate partial, not_examined and uncertain coverage. Return consequential findings for senior adjudication.'
             : role === 'judge' ? 'Adjudicate every disagreement and gap finding explicitly; return findings, coverage and resolutions by finding ID. Do not average away unresolved high-severity defects.'
@@ -117,7 +195,7 @@ export class ReviewController {
     const checked = validateReport(report);
     return this.store.transaction((state, event) => {
       const m = state.missions[missionId], w = m?.workflows[workflowId], node = m?.nodes[nodeId];
-      invariant(w && node, 'Unknown review/agent');
+      invariant(w && node, 'Unknown review/agent'); superseded(w);
       assertWorkflowRisk(m, w, this.broker.now());
       invariant(w.source.hash === sourceHash, 'Review evidence is stale');
       const a = w.assignments.find(a => (a.nodeId === nodeId || m.requests[a.requestId]?.nodeId === nodeId) && a.round === w.round && a.sourceHash === sourceHash);
@@ -126,7 +204,8 @@ export class ReviewController {
       invariant(!w.authors.includes(nodeId), 'Authors and reworkers cannot review their own implementation');
       invariant(node.role === a.role && node.pool === 'review' && node.status === 'completed', 'Review agent has not completed an authorised Review allocation');
       invariant(!w.reviews.some(r => r.nodeId === nodeId), 'Review already submitted');
-      const review = { id: randomUUID(), nodeId, role: a.role, round: w.round, sourceHash, ...checked, at: this.broker.now() };
+      const wasApproved = w.status === 'code_approved', requested = this.addAgentRequirements(m, w, checked.requiredTests, nodeId);
+      const review = { id: randomUUID(), nodeId, role: a.role, round: w.round, sourceHash, ...checked, requirementsAdded: requested.added, requirementsIgnored: requested.ignored, at: this.broker.now() };
       w.reviews.push(review); w.history.push({ event: 'review', id: review.id, sourceHash });
       const roundReviews = w.reviews.filter(r => r.round === w.round && r.sourceHash === sourceHash);
       const senior = roundReviews.filter(r => ['reviewer', 'second_opinion'].includes(r.role));
@@ -142,15 +221,28 @@ export class ReviewController {
         const unresolved = w.findings.filter(f => severe(f) && !resolutions.some(r => r.findingId === f.id && r.decision === 'dismissed' && typeof r.rationale === 'string' && r.rationale.trim()));
         w.findings.push(...checked.findings);
         if (unresolved.length || checked.findings.some(severe)) this.needsRework(w);
-        else if (m.config.review.requireTests && w.assessment.controls.tests && !this.testsPass(w, sourceHash)) { w.status = 'held'; w.reason = 'Required independent test evidence is missing or failing'; }
-        else { w.status = 'code_approved'; w.approval = { sourceHash, judgeId: nodeId, reviewIds: roundReviews.map(r => r.id), at: this.broker.now() }; }
+        else {
+          const gate = this.refresh(m, w);
+          if (!gate.accepted) { w.status = 'held'; w.reason = gate.reason; }
+          else {
+            w.status = 'code_approved';
+            // The approval record carries the exact verification it rested on, including every owner waiver and its rationale.
+            w.approval = { sourceHash, judgeId: nodeId, reviewIds: roundReviews.map(r => r.id), at: this.broker.now(), planId: gate.planId, planHash: gate.planHash,
+              requiredTests: { mode: gate.mode, state: gate.state, tests: gate.tests.map(({ id, state, executable, evidenceIds, waiverId }) => ({ id, state, executable, evidenceIds, waiverId })) },
+              waivers: clone(w.waivers.filter(x => x.sourceHash === sourceHash && x.planHash === gate.planHash)) };
+          }
+        }
       }
+      // A late requirement from any reviewer revokes an approval it would have prevented.
+      this.enforce(m, w, event);
+      if (wasApproved && w.status !== 'code_approved') this.staleActions(m, workflowId);
       event('review.submitted', missionId, { workflowId, review, status: w.status }); return w;
     });
   }
-  testsPass(w, sourceHash) {
-    const latest = new Map(w.tests.filter(t => t.sourceHash === sourceHash).map(t => [t.name, t]));
-    return latest.size > 0 && [...latest.values()].every(t => t.passed === true);
+  // ---- Required-test manifest -------------------------------------------------------------------------------------------
+  // The controller records attestations and evaluates them; it does not run tests. Principals are supplied by trusted host code.
+  assertOwner(principal) {
+    invariant(principal?.trusted === true && principal.source === 'local-user' && principal.authority === 'user', 'Changing or waiving a required test needs the trusted local owner');
   }
   assertPlanner(m, principal) {
     const identity = orchestratorIdentity(m.config, m, this.broker.now());
@@ -276,20 +368,39 @@ export class ReviewController {
   testsPass(w, sourceHash) { return legacyEvaluate(w.tests.filter(t => t.sourceHash === sourceHash)).accepted; }
   async recordTest(missionId, workflowId, evidence, principal) {
     return this.store.transaction((state, event) => {
-      const m = state.missions[missionId], w = m?.workflows[workflowId]; invariant(w && evidence.sourceHash === w.source.hash, 'Test evidence has stale source');
+      const m = state.missions[missionId], w = m?.workflows[workflowId]; superseded(w); invariant(w && evidence?.sourceHash === w.source.hash, 'Test evidence has stale source');
       assertWorkflowRisk(m, w, this.broker.now());
+      invariant(w.tests.length < 1000, 'Test evidence limit reached for this workflow');
       invariant(principal?.trusted && ['local-user', 'test-runner'].includes(principal.source), 'Test evidence needs a trusted runner or explicit owner record');
-      invariant(typeof evidence.name === 'string' && typeof evidence.passed === 'boolean' && typeof evidence.details === 'string', 'Complete test evidence required');
-      invariant(Object.keys(evidence).every(k => ['name', 'passed', 'details', 'sourceHash'].includes(k)), 'Test evidence cannot override trusted provenance');
-      const t = { id: randomUUID(), ...clone(evidence), principal: clone(principal), at: this.broker.now() };
+      invariant(typeof evidence.name === 'string' && typeof evidence.passed === 'boolean' && typeof evidence.details === 'string' && evidence.details.length <= 20000, 'Complete test evidence required');
+      invariant(Object.keys(evidence).every(k => ['name', 'testId', 'passed', 'details', 'sourceHash', 'planHash', 'attestation', 'supersedes', 'reason'].includes(k)), 'Test evidence cannot override trusted provenance');
+      const plan = this.ensurePlan(m, w), entries = this.effective(plan), planHash = this.planHashOf(w, plan, entries);
+      const testId = evidence.testId ?? evidence.name;
+      invariant(typeof testId === 'string' && testId.trim() && testId.length <= 200, 'Test evidence needs a test id');
+      if (entries.length) invariant(typeof evidence.planHash === 'string', 'Test evidence must name the verification plan it was run against');
+      invariant(evidence.planHash === undefined || evidence.planHash === planHash, 'Test evidence is bound to a different verification plan');
+      const entry = entries.find(e => e.id === testId);
+      invariant(!entry || entry.executable, 'A non-executable required test can only be satisfied by an explicit owner waiver');
+      // Provenance is derived here from the principal and attestation; the caller can never assert its own class.
+      let provenance, attestation = null;
+      if (principal.source === 'local-user') {
+        invariant(principal.authority === 'user', 'Owner test records need the local user');
+        invariant(evidence.attestation === undefined, 'An owner record cannot carry executor attestation');
+        provenance = 'owner-attested';
+      } else if (evidence.attestation !== undefined) { attestation = checkAttestation(evidence, entry); provenance = 'executed'; }
+      else provenance = 'unattested-runner';
+      let supersedes = [], reason = null;
+      if (evidence.supersedes !== undefined) {
+        invariant(provenance !== 'unattested-runner', 'Superseding evidence needs an executor attestation or the local owner');
+        invariant(Array.isArray(evidence.supersedes) && evidence.supersedes.length >= 1 && evidence.supersedes.length <= 20 && new Set(evidence.supersedes).size === evidence.supersedes.length, 'Superseded evidence must be a bounded list of unique ids');
+        invariant(typeof evidence.reason === 'string' && evidence.reason.trim() && evidence.reason.length <= 2000, 'Superseding evidence needs a reason');
+        for (const id of evidence.supersedes) invariant(w.tests.some(t => t.id === id && (t.testId ?? t.name) === testId && t.sourceHash === evidence.sourceHash && t.planHash === planHash), 'Only evidence for the same test, source and plan can be superseded');
+        supersedes = [...evidence.supersedes]; reason = evidence.reason;
+      } else invariant(evidence.reason === undefined, 'A reason is only meaningful for superseding evidence');
+      const t = { id: randomUUID(), testId, name: evidence.name, passed: evidence.passed, details: evidence.details, sourceHash: evidence.sourceHash, planHash, provenance, attestation, supersedes, reason, principal: clone(principal), at: this.broker.now() };
       w.tests.push(t);
-      if (w.status === 'code_approved' && !this.testsPass(w, w.source.hash)) { w.status = 'held'; w.approval = null; w.reason = 'Required independent test evidence is missing or failing'; }
-      if (w.status === 'held' && w.reason === 'Required independent test evidence is missing or failing' && this.testsPass(w, w.source.hash) && (w.judgementGeneration ?? 0) < m.config.mission.maxRetries && (m.retryCount ?? 0) < m.config.mission.maxRetries) {
-        this.broker.consumeRetry(m, event, { kind: 'evidence-readjudication', workflowId });
-        w.judgementGeneration = (w.judgementGeneration ?? 0) + 1; w.status = 'adjudication'; w.reason = null;
-        event('review.readjudication_required', missionId, { workflowId, generation: w.judgementGeneration, sourceHash: w.source.hash });
-      }
-      for (const action of Object.values(m.actions)) if (action.workflowId === workflowId && action.status !== 'executed') action.status = 'stale';
+      this.enforce(m, w, event, { readjudicate: true });
+      this.staleActions(m, workflowId);
       event('review.test_evidence', missionId, { workflowId, ...t }); return t;
     });
   }
@@ -386,18 +497,48 @@ export class ReviewController {
         else { w.round++; w.status = 'rework'; }
       } else if (w.sourceHistory.some(s => s.contentHash === next.contentHash)) { w.status = 'held'; w.reason = 'Source oscillation detected'; }
       else { w.source = next; w.sourceHistory.push(next); w.round++; w.status = 'review'; w.authors.push(reworkerId); w.approval = null; w.noProgressCount = 0; }
-      for (const action of Object.values(m.actions)) if (action.workflowId === workflowId && action.status !== 'executed') { action.status = 'stale'; }
+      this.staleActions(m, workflowId); this.refresh(m, w);
       event('review.source_changed', missionId, { workflowId, sourceHash: next.hash, reworkerId, status: w.status }); return w;
     });
   }
   async invalidate(missionId, workflowId, source) {
     const next = sourceIdentity(source);
     return this.store.transaction((state, event) => {
-      const m = state.missions[missionId], w = m?.workflows[workflowId]; invariant(w, 'Unknown workflow');
+      const m = state.missions[missionId], w = m?.workflows[workflowId]; invariant(w, 'Unknown workflow'); superseded(w);
       if (w.source.hash === next.hash) return w;
       w.source = next; w.sourceHistory.push(next); w.approval = null; w.status = 'held'; w.reason = 'Source changed outside authorised rework; fresh review required';
-      for (const a of Object.values(m.actions)) if (a.workflowId === workflowId && a.status !== 'executed') a.status = 'stale';
+      this.staleActions(m, workflowId); this.refresh(m, w);
       event('review.invalidated', missionId, { workflowId, sourceHash: next.hash }); return w;
+    });
+  }
+  /**
+   * Owner remedy for a held workflow that cannot move on its own (exhausted retry budget, unsatisfiable agent-requested tests,
+   * round limits, a changed risk classification). The held workflow is superseded and an independent fresh review of the same
+   * source (or an owner-supplied replacement) starts in its place, in one transaction. It carries no evidence, no agent-added
+   * requirements and no re-adjudication count: owner-registered plan entries are carried over unless the owner passes a new
+   * `testPlan`; owner-policy tests apply as always. It does not draw on the shared retry budget; its cost is bounded by the
+   * ordinary fleet, mission and spending limits that every new allocation passes through.
+   */
+  async restart(missionId, workflowId, { reason, source, risk, testPlan } = {}, principal) {
+    const replacement = source === undefined ? null : sourceIdentity(source);
+    return this.store.transaction((state, event) => {
+      const m = state.missions[missionId], w = m?.workflows[workflowId]; invariant(w, 'Unknown workflow');
+      superseded(w); this.assertOwner(principal);
+      invariant(w.status === 'held', 'Only a held workflow can be restarted');
+      invariant(typeof reason === 'string' && reason.trim() && reason.length <= 2000, 'Restarting a workflow needs a reason');
+      const ownerEntries = (w.testPlan?.entries ?? []).filter(e => e.origin?.startsWith('plan:')).map(core);
+      const plan = testPlan ?? (ownerEntries.length ? { entries: ownerEntries } : undefined);
+      const fresh = this.begin(state, event, missionId, { authorId: w.authors.at(-1), artifact: replacement ?? sourceIdentity(w.source), risk: risk ?? w.risk, policy: {}, testPlan: plan, principal });
+      fresh.authors = [...new Set([...w.authors, ...fresh.authors])]; fresh.restartOf = w.id;
+      w.status = 'superseded'; w.approval = null; w.supersededBy = fresh.id; w.reason = `Restarted by the local owner: ${reason}`;
+      // Unfinished review work for the old workflow is no longer wanted; incurred usage is retained, as for any cancellation.
+      for (const a of w.assignments) {
+        const request = m.requests[a.requestId], node = m.nodes[a.nodeId ?? request?.nodeId];
+        if (node && !['completed', 'failed', 'cancelled', 'blocked'].includes(node.status)) { node.status = 'cancelled'; node.lease = null; }
+        if (request && ['pending', 'queued', 'running'].includes(request.status)) request.status = 'cancelled';
+      }
+      staleUnconsumedActions(m, action => action.workflowId === w.id);
+      event('review.restarted', missionId, { workflowId, successorId: fresh.id, reason, principal: clone(principal) }); return fresh;
     });
   }
 }

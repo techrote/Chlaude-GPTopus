@@ -18,7 +18,7 @@ Start with `/openai-workers` inside Claude Code. It prints effective agent model
 | Flex unavailable | Model incompatible with Flex | Use `flex6-1` (`gpt-6.1-sol`) or select `default` tier for incompatible models |
 | Daily worker paused at limit | Used + reserved tokens reached soft threshold | Wait for 00:00 UTC rollover, or inspect genuine in-flight reservations; do not erase ledger |
 | Ledger unreadable | Invalid/corrupt `free-usage-ledger.json` | Back up the file; inspect it and repair deliberately; free workers fail closed |
-| Large reservations remain after interruption | Network timeout may have created an upstream response | Run `/openai-workers` to reconcile known response IDs; investigate before any manual edit |
+| Large reservations remain after interruption | Network timeout may have created an upstream response | `/openai-workers` is read-only and shows the local usage and reservations; the bridge `usage` result lists the pending response IDs, and polling a response (`poll_openai_worker` with the same worker and ID) settles it once OpenAI reports final usage. Investigate before any manual edit |
 | Subagent doesn't edit a file | Claude Code tool permission denied | Inspect Claude Code permission prompts and managed policy; return a suggested patch instead |
 
 ## Commands worth knowing

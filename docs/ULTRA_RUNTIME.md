@@ -30,7 +30,7 @@ Core and Review have independent depth, lifetime invocation and concurrency allo
 
 ## Evidence, changes and recovery
 
-Review source identity covers the complete immutable source/evidence snapshot; a separate content hash detects unchanged implementation and oscillation. Reports cannot overwrite trusted node/role/source provenance. Trusted tests are recorded separately from author-declared tests and sent to the final judge. Missing-test holds can receive a bounded fresh adjudication after valid evidence arrives.
+Review source identity covers the complete immutable source/evidence snapshot; a separate content hash detects unchanged implementation and oscillation. Reports cannot overwrite trusted node/role/source provenance. Trusted tests are recorded separately from author-declared tests and sent to the final judge. Acceptance requires every test in the source-bound required-test manifest (owner policy plus trusted plan, see [ULTRA_POLICY.md](ULTRA_POLICY.md#required-test-manifest)) to be satisfied by current executed or tier-permitted owner-attested evidence, or explicitly waived by the owner. Missing-test holds can receive a bounded fresh adjudication after valid evidence arrives.
 
 A revised controller request keeps its originating key route and exact review role/source/task. Its workflow assignment is rebound in the same admission transaction, preserving predecessor history. An authorised risk override records original and replacement assessments, scope, rationale, principal and expiry; it invalidates prior workflow evidence without expanding tools or budgets.
 

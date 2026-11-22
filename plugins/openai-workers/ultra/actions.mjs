@@ -1,8 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { digest, clone, invariant } from './store.mjs';
-import { combineApprovals, orchestratorIdentity } from './policy.mjs';
+import { combineApprovals, executionRequirements, orchestratorIdentity } from './policy.mjs';
 import { assessRisk, assertWorkflowRisk } from './risk.mjs';
 const ACTION_CAPABILITY = Object.freeze({ test: 'run_test', command: 'run_command', write: 'stage_write', delete: 'delete', merge: 'merge', deploy: 'deploy', external: 'external' });
+
+/**
+ * Authority that has not been spent yet. Evidence, plan, waiver, source or risk changes revoke exactly these. An action that was
+ * already consumed ('executing') or finished ('executed') keeps its state: the effect may already be happening, so it must still be
+ * able to record its result, and a terminal decision ('rejected', 'escalated', 'expired') has no authority left to revoke.
+ */
+export const REVOCABLE_ACTION_STATES = Object.freeze(['pending', 'approved']);
+export function staleUnconsumedActions(m, applies = () => true) {
+  const revoked = [];
+  for (const action of Object.values(m.actions)) if (REVOCABLE_ACTION_STATES.includes(action.status) && applies(action)) { action.status = 'stale'; revoked.push(action.id); }
+  return revoked;
+}
 
 /** Code, tests, destructive execution and merge are different immutable requests. */
 export class ActionGate {
@@ -12,11 +24,17 @@ export class ActionGate {
     invariant(typeof action.description === 'string' && action.description.trim(), 'Actual proposed action and evidence are required');
     return this.store.transaction((state, event) => {
       const m = state.missions[missionId], n = m?.nodes[nodeId]; invariant(n, 'Unknown agent');
-      const hash = digest(action), prior = Object.values(m.actions).find(a => a.nodeId === nodeId && a.hash === hash && a.status === 'pending');
+      const hash = digest(action), now = this.broker.now();
+      // An expired proposal is never handed back: it can no longer be decided and its votes must not carry over.
+      for (const stale of Object.values(m.actions)) if (stale.status === 'pending' && stale.expiresAt <= now) { stale.status = 'expired'; event('action.expired', missionId, { actionId: stale.id }); }
+      const prior = Object.values(m.actions).find(a => a.nodeId === nodeId && a.hash === hash && a.status === 'pending');
       if (prior) return prior;
       if (action.workflowId) { const w = m.workflows[action.workflowId]; invariant(w?.status === 'code_approved' && w.approval?.sourceHash === action.sourceHash, 'Current source lacks independent code approval'); assertWorkflowRisk(m, w, this.broker.now()); }
       const authorities = clone(m.config.execution?.consequentialAuthorities ?? ['user']);
-      const a = { id: randomUUID(), nodeId, workflowId: action.workflowId ?? null, hash, action: clone(action), policyHash: m.policyHash, authorities,
+      // The approval policy is frozen into the action so a verdict never depends on who answers first or on later reads of configuration.
+      const combination = m.config.execution.combination;
+      const requirements = executionRequirements(authorities, combination, { mandatoryAuthorities: m.config.execution.mandatoryAuthorities ?? [], vetoAuthorities: m.config.execution.vetoAuthorities ?? [] });
+      const a = { id: randomUUID(), nodeId, workflowId: action.workflowId ?? null, hash, action: clone(action), policyHash: m.policyHash, authorities, combination, requirements,
         status: 'pending', votes: [], createdAt: this.broker.now(), expiresAt: this.broker.now() + 900000 };
       const risk = assessRisk(action.risk ?? {}, m.config.risk);
       if (m.config.execution.defaultApproval === 'risk-based' && action.kind === 'test' && action.isolated === true && n.permissions.tools.includes('run_test') && !risk.highImpact && !risk.uncertain && !risk.controls.executionApproval) {
@@ -39,9 +57,10 @@ export class ActionGate {
       invariant(decision.actionHash === a.hash && typeof decision.rationale === 'string', 'Decision must identify the exact action and evidence');
       invariant(!a.votes.some(v => v.authority === principal.authority), 'Authority already voted');
       a.votes.push({ principal: clone(principal), authority: principal.authority, approved: decision.approved === true, rationale: decision.rationale });
-      const combination = m.config.execution.combination;
-      const required = a.authorities.map((authority, i) => ({ authority, mandatory: combination === 'AND', veto: true, priority: a.authorities.length - i }));
-      const verdict = combineApprovals(required, a.votes.map(v => ({ authority: v.authority, decision: v.approved ? 'APPROVE' : 'REJECT' })), combination);
+      // Actions recorded before the policy was frozen fall back to the immutable mission configuration.
+      const combination = a.combination ?? m.config.execution.combination;
+      const requirements = a.requirements ?? executionRequirements(a.authorities, combination, { mandatoryAuthorities: m.config.execution.mandatoryAuthorities ?? [], vetoAuthorities: m.config.execution.vetoAuthorities ?? [] });
+      const verdict = combineApprovals(requirements, a.votes.map(v => ({ authority: v.authority, decision: v.approved ? 'APPROVE' : 'REJECT' })), combination);
       if (verdict.decision === 'REJECT') a.status = 'rejected';
       else if (verdict.decision === 'APPROVE') a.status = 'approved';
       else if (verdict.decision === 'ESCALATE') a.status = 'escalated';
@@ -69,10 +88,13 @@ export class ActionGate {
       invariant(capability === ACTION_CAPABILITY[action.kind], 'Claimed capability does not authorise this action class');
       invariant(n?.permissions.tools.includes(capability), 'Execution approval cannot enlarge tool permissions');
       if (a.workflowId) { const w = m.workflows[a.workflowId]; invariant(w?.status === 'code_approved' && w.source.hash === action.sourceHash, 'Code evidence changed after approval'); assertWorkflowRisk(m, w, this.broker.now()); }
-      a.status = 'executing'; a.consumedAt = this.broker.now(); event('action.consumed', missionId, { actionId, hash: a.hash }); return a;
+      // Remember exactly which approval the effect ran under: later evidence changes cannot rewrite or revoke this record.
+      const w = a.workflowId ? m.workflows[a.workflowId] : null;
+      a.executedUnder = w ? { workflowId: w.id, sourceHash: w.source.hash, planHash: w.approval?.planHash ?? null, approvedAt: w.approval?.at ?? null } : null;
+      a.status = 'executing'; a.consumedAt = this.broker.now(); event('action.consumed', missionId, { actionId, hash: a.hash, executedUnder: a.executedUnder }); return a;
     });
   }
   async complete(missionId, actionId, result) {
-    return this.store.transaction((state, event) => { const a = state.missions[missionId]?.actions[actionId]; invariant(a?.status === 'executing', 'Action is not executing'); a.status = 'executed'; a.result = clone(result); event('action.completed', missionId, { actionId, resultHash: digest(result) }); return a; });
+    return this.store.transaction((state, event) => { const a = state.missions[missionId]?.actions[actionId]; invariant(a?.status === 'executing', 'Action is not executing'); a.status = 'executed'; a.result = clone(result); a.completedAt = this.broker.now(); event('action.completed', missionId, { actionId, resultHash: digest(result), executedUnder: a.executedUnder ?? null }); return a; });
   }
 }

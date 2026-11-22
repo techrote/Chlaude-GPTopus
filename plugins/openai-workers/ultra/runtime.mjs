@@ -155,7 +155,7 @@ export class UltraRuntime {
         if (n.selectsWorkflow) { const selection = parseJson(response.text); await this.reviews.selectReviewer(missionId, n.selectsWorkflow, selection.worker, { source: 'supervisor', trusted: true, authority: n.authority, nodeId: n.id }); }
         if (n.judgesAction) await this.actions.decide(missionId, n.judgesAction, parseJson(response.text), { source: 'judge', trusted: true, authority: n.authority, nodeId: n.id });
         m = await this.store.snapshot(missionId);
-        for (const w of Object.values(m.workflows)) {
+        for (const w of Object.values(m.workflows).filter(w => w.status !== 'superseded')) {
           const assignment = w.assignments.find(a => a.requestId === n.requestId && a.round === w.round);
           if (assignment?.role === 'reworker') await this.reviews.revisedSource(missionId, w.id, n.id, parseJson(response.text));
           else if (assignment) await this.reviews.submit(missionId, w.id, n.id, assignment.sourceHash, parseJson(response.text));

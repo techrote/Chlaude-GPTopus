@@ -143,6 +143,14 @@ async function agentEffort($, type, requested) {
   return selectWorkerEffort(type, actualRequested, env, model);
 }
 
+/** One line about unreconciled v1-upgrade history; empty when the ledger was never upgraded from v1. */
+function migrationLine(usage) {
+  const m = usage.migration; if (!m) return '';
+  const unreconciled = (m.unreconciledMonths ?? []).join(', ') || 'none';
+  const state = usage.monthlyLimitUsd == null ? 'not enforced because no monthly limit is set'
+    : usage.historicalTotalsMayBeIncomplete ? 'the current month is BLOCKED until the owner reconciles it' : 'the current month is not blocked';
+  return `Ledger upgraded from v1 (${m.migratedAt ?? 'time unknown'}); standard-key spend before the upgrade was never tracked. Unreconciled months: ${unreconciled}; ${state}. Reconciling is an owner action in a local terminal (scripts/reconcile-usage), not something this command does.`;
+}
 async function bridge($, name, params) {
   const r = await $.mcp.call(SERVER, name, params);
   const text = (r?.content ?? []).filter(c => typeof c?.text === 'string').map(c => c.text).join('');
@@ -348,6 +356,10 @@ export function register(on) {
         groupLine('premium', 'Astra'), groupLine('terra', 'Terra'),
         `Monthly estimated API cost of free-key workers: $${usage.monthlyEstimatedUsd} (not authoritative)`,
         usage.monthlyAllowanceUsd == null ? '' : `Monthly credit reference: $${usage.monthlyAllowanceUsd} (informational only)`,
+        usage.monthlyLimitUsd == null
+          ? 'Monthly spend limit: NOT set (OPENAI_WORKER_MONTHLY_LIMIT_USD); the local ledger does not block requests on cost.'
+          : `Monthly spend limit: $${usage.monthlyLimitUsd} local estimate across both keys; $${usage.monthlyCommittedUsd} committed this UTC month (local estimates, not a bill).`,
+        migrationLine(usage),
       ].filter(Boolean).join('\n');
     } catch (err) {
       usageLine = `Local free-key usage ERROR: ${errorText(err)} (the ledger fails closed for daily workers).`;
