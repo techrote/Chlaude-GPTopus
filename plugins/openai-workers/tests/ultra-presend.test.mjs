@@ -135,6 +135,20 @@ test('PRESEND-01: a lookalike message never decides disposition; only the bridge
   assert.equal((await h.ledger()).events.filter(e => e.type === 'native.api_released').length, 0);
 });
 
+test('PRESEND-01: a controller with no transport refuses before it reserves a step', async t => {
+  const f = await bridgeHost(t, { transport: recordingTransport() });
+  const { NativeController } = await import('../ultra/native-controller.mjs'), { ExecutionStore } = await import('../ultra/store.mjs'), { RecruitmentBroker } = await import('../ultra/broker.mjs');
+  const store = new ExecutionStore(`${f.dir}/own-ledger.json`), broker = new RecruitmentBroker(store, { config: { enabled: true } });
+  const controller = new NativeController(broker, { live: true });
+  const common = { toolUseId: 'spawn-1' };
+  const init = await controller.handle('ultra_native_init', { sessionId: 'no-transport', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] }, { trustedHostChannel: true });
+  const base = { sessionId: 'no-transport', capability: init.capability };
+  const admitted = await controller.handle('ultra_native_admit', { ...base, ...common, primaryModel: 'opus', subagentType: 'openai-workers:luna', prompt: JSON.stringify({ task: 'x', ultra: { role: 'implementation', risk: { complexity: 'low', impact: 'low', verifiability: 'high', confidence: 0.95, rationale: 'f' }, budget: { tokens: 40000, usd: 4 } } }) }, { trustedHostChannel: true });
+  await controller.handle('ultra_native_bind', { ...base, ...common, hostAgentId: 'a1', nodeId: admitted.nodeId, bindingTicket: admitted.bindingTicket, hostWorker: 'luna' }, { trustedHostChannel: true });
+  await assert.rejects(() => controller.handle('ultra_native_create', { ...base, hostAgentId: 'a1', requestKey: 'k1', input: 'x', max_output_tokens: 1000 }, { trustedHostChannel: true }), /transport is unavailable/);
+  assert.deepEqual(Object.keys((await store.snapshot(init.missionId)).nodes[admitted.nodeId].native.steps), [], 'no step was reserved');
+});
+
 test('PRESEND-01: local validation inside createTurn is classified as "never sent" (and a missing key already was)', async () => {
   const failure = await createTurn({ worker_type: 'sol', model: 'not a model', instructions: 'x', tools: [], input: 'x' }, { profile: 'standard' }).catch(error => error);
   assert.match(failure.message, /Invalid model name/);

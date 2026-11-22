@@ -86,9 +86,10 @@ export async function dispatch(name, args = {}, options = {}) {
     const env = options.env ?? process.env;
     const { openNativeChannel } = await import('./native-channel.mjs');
     const gateway = await openNativeChannel(env, nativeChannels);
-    return gateway.call(name, args, async channel => {
+    return gateway.call(name, args, async (channel, operation) => {
       const { key, service } = await ultraService(options);
-      if (!service.config.enabled) throw new Error('Owner ULTRA policy is disabled');
+      // A disabled owner policy refuses everything except what winds a session down: diagnostics and cancel.
+      if (!service.config.enabled && !['ultra_native_cancel', 'ultra_native_diagnostics'].includes(operation)) throw new Error('Owner ULTRA policy is disabled');
       // A key that lies inside a readable project root could be returned to a worker or Chat reader; never run native authority on it.
       const { keyFileExposure } = await import('../ultra/service.mjs');
       const exposed = keyFileExposure(service.config, env);

@@ -153,7 +153,7 @@ export class NativeGateway {
   async call(name, args, controllerFor) {
     const { verified, payload } = this.channel.verify(name, args);
     if (name === CHANNEL_HELLO) return this.channel.hello();
-    const controller = this.fixed ?? await controllerFor(this.channel);
+    const controller = this.fixed ?? await controllerFor(this.channel, name);
     controller.bindChannel(this.channel);
     return controller.handle(name, payload, { verified });
   }

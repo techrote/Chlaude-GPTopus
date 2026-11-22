@@ -188,7 +188,7 @@ export class NativeController {
       mission.config = next;
       for (const node of Object.values(mission.nodes)) node.permissions = intersectPermissions(node.permissions, next.permissions);
       const record = { at: this.now(), from, to: policyHash(next), currentOwnerPolicyHash: policyHash(this.broker.config) };
-      (mission.attenuations ??= []).push(record);
+      mission.attenuations = [...(mission.attenuations ?? []), record].slice(-50); // the audit events keep the full history
       event('native.policy_attenuated', m.id, record);
     });
     return this.store.snapshot(m.id);
@@ -293,6 +293,8 @@ export class NativeController {
   }
   async create(m, args) {
     invariant(this.live || this.backend?.offline === true, 'Live native API requests require explicit local authorisation');
+    // Checked before a step is reserved: a missing transport must refuse cleanly, not strand the step in "sending".
+    invariant(typeof this.backend === 'function', 'Native API transport is unavailable');
     const n = this.bound(m, args.hostAgentId);
     invariant(n.status === 'running' && n.lease, 'Native allocation has no running lease');
     invariant(id(args.requestKey), 'Native API request needs a stable host step identity');

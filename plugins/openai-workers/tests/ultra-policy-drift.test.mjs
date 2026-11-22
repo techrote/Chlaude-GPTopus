@@ -75,8 +75,12 @@ test('POLICY-01: lowering a mission budget or fleet allowance is enforced before
 test('POLICY-01: disabling or corrupting the owner policy mid-session fails closed, and the original session is not revived by repairing it', async t => {
   const h = await opened(t);
   await h.writePolicy({ ...CODE_B(h.project), enabled: false });
-  await assert.rejects(() => read(h), /disabled/i);
-  await assert.rejects(() => diagnostics(h), /disabled/i, 'a disabled owner policy refuses every private call');
+  for (const operation of [() => read(h), () => context(h), () => create(h, 'disabled-step')]) await assert.rejects(operation, /disabled/i);
+  assert.equal(h.transport.calls.create.length, 0);
+  assert.ok((await diagnostics(h)).missionId, 'diagnostics stay available so the owner can see the session');
+  const wound = await h.call('ultra_native_cancel', h.s.common);
+  assert.ok(wound.includes('root'), 'cancel stays available so the session can be wound down');
+  await assert.rejects(() => h.call('ultra_native_init', { sessionId: 'new-while-disabled', model: 'opus', version: '2.1.326', platform: 'linux', isHosted: false, surfaces: ['terminal'] }), /disabled/i, 'nothing new opens');
 
   const g = await opened(t);
   await writeFile(join(g.dir, 'ultra-policy.json'), '{ this is not json');

@@ -160,7 +160,7 @@ export function runCommand(spec, { env = process.env, clock = Date.now } = {}) {
 
 /** Bounded, printable evidence text (the review ledger accepts at most 20,000 characters). */
 export function evidenceDetails(spec, result, { limit = 19000 } = {}) {
-  const printable = text => text.replace(/[^\n\t\x20-\x7e -￿]/g, '?');
+  const printable = text => text.replace(/[^\n\t\x20-\x7e\u00a0-\uffff]/g, '?');
   const head = [`Executed by ${RUNNER_ID}`, `command digest: ${spec.digest}`, `argv: ${JSON.stringify(spec.argv)}`, `root: ${spec.root}`, `cwd: ${spec.cwdRelative}`,
     `exit code: ${result.exitCode}${result.timedOut ? ` (killed after ${spec.timeoutMs} ms timeout)` : ''}${result.signal ? ` (signal ${result.signal})` : ''}`,
     `duration: ${result.durationMs} ms`, `output: ${result.outputBytes} bytes produced${result.truncated ? `, only the last ${Buffer.byteLength(result.output)} retained` : ''}`,

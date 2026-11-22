@@ -23,7 +23,7 @@ import { resolveExecutable, minimalEnvironment, commandSpec, runCommand, evidenc
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BASE_RISK = { complexity: 'low', verifiability: 'high', confidence: 1, rationale: 'Synthetic fixture.', blastRadius: 'local', reversibility: 'reversible', testsAvailable: true, independentEvidence: true };
-const RISK = { high: { ...BASE_RISK, impact: 'high', destructive: true }, critical: { ...BASE_RISK, impact: 'critical', destructive: true }, low: { ...BASE_RISK, impact: 'low' }, medium: { ...BASE_RISK, impact: 'medium' } };
+const RISK = { unknown: { ...BASE_RISK, impact: 'unknown' }, high: { ...BASE_RISK, impact: 'high', destructive: true }, critical: { ...BASE_RISK, impact: 'critical', destructive: true }, low: { ...BASE_RISK, impact: 'low' }, medium: { ...BASE_RISK, impact: 'medium' } };
 const NODE = process.execPath;
 const OWNER = { trusted: true, source: 'local-user', authority: 'user' };
 
@@ -38,7 +38,9 @@ async function fixture(t, { impact = 'high', policy = {} } = {}) {
   const mission = await broker.createMission({ id: 'owner_tests', task: 'Synthetic required-test routes', orchestrator: { model: 'opus', trusted: true, source: 'test-host' } });
   const f = { dir, project, env, config, store, broker, mid: mission.id, reviews: new ReviewController(broker), impact };
   const request = await broker.request(f.mid, 'root', { worker: 'luna', role: 'implementation', task: 'Author the synthetic change', risk: RISK[impact] }, 'author');
-  f.author = request.nodeId; await complete(f, f.author);
+  // Unknown-impact work is uncertain: its own recruitment needs the owner's explicit approval first.
+  if (!request.nodeId) await broker.decide(f.mid, request.id, { decision: 'APPROVE', rationale: 'Owner admits the synthetic author.' }, OWNER);
+  f.author = request.nodeId ?? (await store.snapshot(f.mid)).requests[request.id].nodeId; await complete(f, f.author);
   await writeFile(join(dir, 'source.json'), JSON.stringify({ id: 'change.js', content: 'export const change = 1;\n' }));
   await writeFile(join(dir, 'risk.json'), JSON.stringify(RISK[impact]));
   // The production CLI starts the review exactly as the production adapters do: no plan and no principal.
@@ -130,6 +132,24 @@ test('REQ-01: high-impact work reaches code_approved only through the owner CLI:
   assert.equal(w.status, 'code_approved');
   assert.equal(w.approval.requiredTests.tests[0].state, 'satisfied');
   assert.equal(w.approval.planHash, w.requiredTests.planHash);
+});
+
+test('REQ-01: critical- and unknown-impact work reaches code_approved the same way (plan-add, run-test, re-adjudication)', async t => {
+  for (const impact of ['critical', 'unknown']) {
+    const f = await fixture(t, { impact });
+    await toAdjudication(f);
+    let w = await judge(f);
+    assert.deepEqual([w.status, w.requiredTests.mode], ['held', 'unplanned'], `${impact}: held with no route in production before the owner acts`);
+    const planned = await run(f, ['plan-add', f.mid, f.wid, await file(f, 'plan.json', [{ id: 'unit:scope' }])]);
+    assert.equal(planned.error, null, `${impact}: ${planned.error?.message}`);
+    const executed = await run(f, ['run-test', f.mid, f.wid, 'unit:scope', '--root', f.project, ...exit(0)]);
+    assert.equal(executed.error, null, `${impact}: ${executed.error?.message}`);
+    w = await workflow(f);
+    assert.equal(w.requiredTests.state, 'satisfied'); assert.equal(w.status, 'adjudication');
+    w = await judge(f);
+    assert.equal(w.status, 'code_approved', `${impact}: ${w.reason}`);
+    assert.equal(w.approval.requiredTests.tests[0].state, 'satisfied');
+  }
 });
 
 test('REQ-01: a non-executable required test is satisfied only by the owner waiver CLI, with a rationale bound to source and plan', async t => {
