@@ -8,6 +8,8 @@ import { rotationSnapshot } from './rotation.mjs';
 import { traceRequest, traceResponse, writeTrace } from './trace.mjs';
 import * as steer from './steer.mjs';
 import * as direct from './direct-run.mjs';
+import { autoLaunchPanel } from './autolaunch.mjs';
+import { refreshLiveEnv } from './live-env.mjs';
 import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot, quoteRequest,
   markRequestAmbiguous, responseRecord } from './usage.mjs';
 
@@ -127,7 +129,10 @@ export async function dispatch(name, args = {}, options = {}) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Bridge arguments must be an object.');
   // Pre-rename worker names (sol, daily-astrafree, ...) still route to their current worker.
   if (typeof args.worker_type === 'string') args = { ...args, worker_type: canonicalWorker(args.worker_type) };
+  if (!options.env) refreshLiveEnv(); // pick up panel changes made since the last call
   const env = options.env ?? process.env;
+  // First worker spawn: open the config panel once. Skipped for injected test envs unless forced.
+  if (name === 'create' && (!options.env || env.OAI_CONFIG_AUTOLAUNCH === '1')) autoLaunchPanel(env);
   const ledgerOptions = { ...options, env };
   const transport = options.transport ?? { create: createTurn, poll: pollTurn, cancel: cancelTurn };
   // Chat-completions provider workers (NVIDIA Build, LM Studio): no OpenAI key, ledger, price guard, tier or response binding.
@@ -318,7 +323,7 @@ export async function handle(message, write = send) {
   if (message.method === 'initialize') return write({ jsonrpc: '2.0', id, result: {
     protocolVersion: message.params?.protocolVersion ?? '2025-06-18',
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: 'openai-workers-bridge', version: '0.8.0' },
+    serverInfo: { name: 'openai-workers-bridge', version: '0.8.1' },
   } });
   if (message.method === 'ping') return write({ jsonrpc: '2.0', id, result: {} });
   if (message.method === 'tools/list') return write({ jsonrpc: '2.0', id, result: { tools: defs } });

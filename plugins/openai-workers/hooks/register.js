@@ -7,7 +7,7 @@ import { directReply } from './direct-reply.js';
 import { signRequest, parseChannelKey, modKeyPath, isWindowsHost, CHANNEL_STALE, SESSION_CLOSED, CHANNEL_DENIED, CHANNEL_HELLO, HELLO_EPOCH } from './channel.js';
 
 const PLUGIN = 'oai';
-const VERSION = '0.8.0';
+const VERSION = '0.8.1';
 const SERVER = 'plugin:oai:bridge';
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
@@ -156,6 +156,22 @@ async function agentTier(env, type) {
 }
 
 // Read user-scoped effort policy overrides from the hook's literal environment snapshot.
+// The host's env snapshot is fixed at session start. The panel and the bridge keep a fresh copy of the
+// configuration in live-config.json (state dir); overlay it. Missing or malformed file: snapshot unchanged.
+async function withLiveConfig(read, env) {
+  try {
+    const win = isWindowsHost({ platform: undefined, localAppData: env.LOCALAPPDATA, userProfile: env.USERPROFILE, home: env.HOME });
+    const join = (...p) => p.map((x, i) => i ? x.replace(/^[\\/]+/, '') : x.replace(/[\\/]+$/, '')).join('/');
+    const base = win ? (env.LOCALAPPDATA || env.USERPROFILE) : (env.XDG_STATE_HOME || (env.HOME && join(env.HOME, '.local', 'state')));
+    if (!base) return env;
+    const text = await read(join(base, win ? 'ClaudeOpenAIWorkers' : 'claude-openai-workers', 'live-config.json'));
+    const config = typeof text === 'string' && text ? JSON.parse(text)?.values : null;
+    if (!config || typeof config !== 'object') return env;
+    const merged = { ...env };
+    for (const [n, v] of Object.entries(config)) { if (typeof v === 'string' && v !== '') merged[n] = v; else delete merged[n]; }
+    return merged;
+  } catch { return env; }
+}
 async function agentEffortEnv(env, type) {
   const prefix = `OPENAI_WORKER_${envSuffix(type)}_EFFORT_`;
   const names = [TYPES[type].env, ...['MIN', 'MAX', 'DEFAULT', 'NOTE'].map(k => `${prefix}${k}`)];
@@ -758,7 +774,7 @@ export function register(on) {
       OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
       OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
     };
-    envSnapshot = env;
+    envSnapshot = await withLiveConfig(p => $.fs.read(p), env);
     const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     for (const [type, spec] of Object.entries(TYPES)) {
       try {
@@ -953,7 +969,7 @@ export function register(on) {
         OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
         OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
       };
-      envSnapshot = env;
+      envSnapshot = await withLiveConfig(p => $.fs.read(p), env);
       const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
       let messages = await $.session.messages({ agentId: e.agentId });
       if ('deny' in messages) throw new Error(`Claude Code transcript unavailable: ${messages.deny}`);

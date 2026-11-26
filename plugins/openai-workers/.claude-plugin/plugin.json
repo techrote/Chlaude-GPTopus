@@ -1,5 +1,5 @@
 {
   "name": "oai",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "OAI: eight native Claude Code subagents via the OpenAI Responses API, two API keys, Flex/Fast/priority tiers, persistent UTC daily quota ledger, per-worker effort ranges and optional live trace"
 }

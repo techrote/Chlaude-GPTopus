@@ -321,9 +321,19 @@ export function applyChanges(store, changes, { state, now = new Date() } = {}) {
   const diff = Object.fromEntries(Object.entries(normalized).filter(([n, v]) => current[n] !== v));
   if (Object.keys(diff).length) {
     store.write(diff);
+    if (state) writeLiveConfig(state, merged);
     if (state) markPending(state, Object.fromEntries(Object.keys(diff).map(n => [n, { from: current[n], to: diff[n] }])), now);
   }
   return { ok: true, changed: Object.keys(diff), warnings: check.warnings };
+}
+
+/** Fresh non-secret configuration for the mod hooks (their env snapshot is fixed at session start). */
+export function writeLiveConfig(dir, values) {
+  try {
+    const out = {};
+    for (const n of ALLOWED) if (!/KEY|TOKEN|SECRET/i.test(n) && !n.startsWith('OPENAI_ULTRA_')) out[n] = typeof values[n] === 'string' ? values[n] : '';
+    atomicWrite(join(dir, 'live-config.json'), JSON.stringify({ version: 1, at: new Date().toISOString(), values: out }) + '\n');
+  } catch { /* best effort */ }
 }
 
 // ── restart-pending marker ────────────────────────────────────────────────
