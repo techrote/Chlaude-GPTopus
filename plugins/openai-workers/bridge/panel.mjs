@@ -13,7 +13,7 @@ import { stateDir } from '../scripts/oai-config-core.mjs';
 
 const script = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'oai-config.mjs');
 const URL_LINE = /^OAI config panel: (http:\/\/127\.0\.0\.1:\d+\/\?t=[A-Za-z0-9_-]+)\s*$/m;
-const underTest = env => Boolean(env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT);
+const underTest = env => Boolean(env.NODE_TEST_CONTEXT || env.OAI_TEST_SANDBOX || process.env.NODE_TEST_CONTEXT || process.env.OAI_TEST_SANDBOX);
 
 export const panelFile = env => join(stateDir(env), 'panel.json');
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };

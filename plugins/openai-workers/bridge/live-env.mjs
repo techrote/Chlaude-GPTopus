@@ -10,7 +10,7 @@ let last = 0, lastValues = null;
 export function refreshLiveEnv(env = process.env, { ttlMs = 5000, now = Date.now(), store, platform = process.platform } = {}) {
   try {
     if (env.OAI_LIVE_CONFIG === '0') return false;
-    if (!store && env.NODE_TEST_CONTEXT) return false; // never touch the real user environment from `node --test`
+    if (!store && (env.NODE_TEST_CONTEXT || env.OAI_TEST_SANDBOX || process.env.OAI_TEST_SANDBOX)) return false; // never touch the real user environment from `node --test`
     if (now - last < ttlMs) return false;
     // Only where the store IS the source of truth: Windows user env or an explicit json store.
     if (!store && platform !== 'win32' && !env.OAI_CONFIG_STORE) return false;

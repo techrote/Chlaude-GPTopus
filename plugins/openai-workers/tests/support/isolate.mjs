@@ -38,6 +38,9 @@ export function snapshotStateDir(dir) {
 
 const before = snapshotStateDir(realStateDir);
 export const testRoot = mkdtempSync(join(tmpdir(), 'gptopus-test-'));
+// Inherited by every child process (even ones that drop NODE_TEST_CONTEXT): production code that would
+// start a real process or browser (config panel, live user-env reads) checks it and does nothing.
+process.env.OAI_TEST_SANDBOX = '1';
 const home = join(testRoot, 'home');
 mkdirSync(home, { recursive: true });
 Object.assign(process.env, {
