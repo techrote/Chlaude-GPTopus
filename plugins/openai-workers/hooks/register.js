@@ -7,7 +7,7 @@ import { directReply } from './direct-reply.js';
 import { signRequest, parseChannelKey, modKeyPath, isWindowsHost, CHANNEL_STALE, SESSION_CLOSED, CHANNEL_DENIED, CHANNEL_HELLO, HELLO_EPOCH } from './channel.js';
 
 const PLUGIN = 'oai';
-const VERSION = '0.8.2';
+const VERSION = '0.8.3';
 const SERVER = 'plugin:oai:bridge';
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
@@ -631,7 +631,7 @@ export function register(on) {
     const live = agents.filter(a => Object.keys(TYPES).some(type => a.type === owner(type)))
       .map(a => ({ type: a.type, status: a.status, description: a.description ?? a.id }));
     const settings = [];
-    const env = {
+    let env = {
       OAI_STATUS_COLOR: await $.env.get('OAI_STATUS_COLOR'),
       OPENAI_ULTRA_CHANNEL_KEY_FILE: await $.env.get('OPENAI_ULTRA_CHANNEL_KEY_FILE'),
       OPENAI_ULTRA_STATE_DIR: await $.env.get('OPENAI_ULTRA_STATE_DIR'),
@@ -774,7 +774,7 @@ export function register(on) {
       OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
       OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
     };
-    envSnapshot = await withLiveConfig(p => $.fs.read(p), env);
+    envSnapshot = env = await withLiveConfig(p => $.fs.read(p), env);
     const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     for (const [type, spec] of Object.entries(TYPES)) {
       try {
@@ -827,7 +827,7 @@ export function register(on) {
         if (await $.env.get('OPENAI_ULTRA_ENABLED') === '1') throw new Error('ULTRA native session bootstrap has not completed');
         ultraEnabled = false; bootstrapObserved = true;
       }
-      const env = {
+      let env = {
         OPENAI_ULTRA_CHANNEL_KEY_FILE: await $.env.get('OPENAI_ULTRA_CHANNEL_KEY_FILE'),
         OPENAI_ULTRA_STATE_DIR: await $.env.get('OPENAI_ULTRA_STATE_DIR'),
         LOCALAPPDATA: await $.env.get('LOCALAPPDATA'),
@@ -969,7 +969,7 @@ export function register(on) {
         OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
         OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
       };
-      envSnapshot = await withLiveConfig(p => $.fs.read(p), env);
+      envSnapshot = env = await withLiveConfig(p => $.fs.read(p), env);
       const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
       let messages = await $.session.messages({ agentId: e.agentId });
       if ('deny' in messages) throw new Error(`Claude Code transcript unavailable: ${messages.deny}`);

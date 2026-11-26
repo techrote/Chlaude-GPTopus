@@ -134,3 +134,13 @@ test('status renderer: model cell drops the publisher prefix only for long ids',
     workers: PROVIDER_WORKERS.map(name => ({ name, model: WORKER_TYPES[name].model, key: WORKER_TYPES[name].key, provider: WORKER_TYPES[name].provider, tier: '—', effort: effortPolicy(name, {}) })) });
   for (const line of text.split('\n')) assert.equal(visibleLength(line), WIDTH);
 });
+
+test('live-config.json overrides the session-start env snapshot for the model sent (no restart)', async () => {
+  const fake = makeEngine([{ id: 'chat_c9_1', status: 'completed', text: 'ok', estimatedUsd: 0 }], 'oai:lfm2-5turbo24b',
+    { LOCALAPPDATA: 'C:/Users/x/AppData/Local', OPENAI_WORKER_LFM2_5TURBO24B_MODEL: 'old-model' });
+  const reads = [];
+  fake.context.fs.read = async p => { reads.push(p); return JSON.stringify({ version: 1, values: { OPENAI_WORKER_LFM2_5TURBO24B_MODEL: 'kat-coder' } }); };
+  await consume(fake.handlers.get('turn.step')(fake.context, { agentId: 'ag_1', turnId: 't1', index: 0 }, noFallback));
+  assert.ok(reads.some(p => /ClaudeOpenAIWorkers\/live-config\.json$/.test(p)), reads.join());
+  assert.equal(fake.sent.find(s => s.name === 'create').args.model, 'kat-coder');
+});
