@@ -131,8 +131,8 @@ export async function dispatch(name, args = {}, options = {}) {
   if (typeof args.worker_type === 'string') args = { ...args, worker_type: canonicalWorker(args.worker_type) };
   if (!options.env) refreshLiveEnv(); // pick up panel changes made since the last call
   const env = options.env ?? process.env;
-  // First worker spawn: open the config panel once. Skipped for injected test envs unless forced.
-  if (name === 'create' && (!options.env || env.OAI_CONFIG_AUTOLAUNCH === '1')) autoLaunchPanel(env);
+  // First worker spawn: open the config panel once (never for injected envs or under node --test).
+  if (name === 'create' && !options.env) autoLaunchPanel(env);
   const ledgerOptions = { ...options, env };
   const transport = options.transport ?? { create: createTurn, poll: pollTurn, cancel: cancelTurn };
   // Chat-completions provider workers (NVIDIA Build, LM Studio): no OpenAI key, ledger, price guard, tier or response binding.
@@ -323,7 +323,7 @@ export async function handle(message, write = send) {
   if (message.method === 'initialize') return write({ jsonrpc: '2.0', id, result: {
     protocolVersion: message.params?.protocolVersion ?? '2025-06-18',
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: 'openai-workers-bridge', version: '0.8.1' },
+    serverInfo: { name: 'openai-workers-bridge', version: '0.8.2' },
   } });
   if (message.method === 'ping') return write({ jsonrpc: '2.0', id, result: {} });
   if (message.method === 'tools/list') return write({ jsonrpc: '2.0', id, result: { tools: defs } });

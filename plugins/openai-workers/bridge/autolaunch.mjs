@@ -9,13 +9,21 @@ import { stateDir } from '../scripts/oai-config-core.mjs';
 
 const script = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'oai-config.mjs');
 
-export function autoLaunchPanel(env = process.env, { launch = defaultLaunch } = {}) {
+let launchedThisProcess = false;
+export function autoLaunchPanel(env = process.env, { launch } = {}) {
   try {
     if (env.OAI_CONFIG_AUTOLAUNCH === '0') return false;
+    if (!launch) {
+      // Real launches only: never from `node --test` (its isolated temp state dir has no marker, so every
+      // run would open a browser) and at most once per bridge process even if the marker cannot be written.
+      if (env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT || launchedThisProcess) return false;
+      launch = defaultLaunch;
+    }
     const dir = stateDir(env), marker = join(dir, 'panel-autolaunched');
     if (existsSync(marker)) return false;
     mkdirSync(dir, { recursive: true });
     writeFileSync(marker, new Date().toISOString());
+    if (launch === defaultLaunch) launchedThisProcess = true;
     launch();
     return true;
   } catch { return false; }
