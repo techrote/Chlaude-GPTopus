@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "chlaude-gptopus-desktop",
   "display_name": "Chlaude-GPTopus \u2014 OpenAI Workers",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Eight OpenAI workers with separate API keys, durable accounting and opt-in ULTRA governed swarms. Think-only by default; explicit project scopes enable reads and private staged patches.",
   "long_description": "Eight OpenAI workers with standard/free key separation and shared durable usage estimates. Existing think-only delegation remains the default. Opt-in ULTRA adds recursive recruitment, protected review capacity and approval gates. Chat profile B reads owner-selected source roots; separately enabled C creates private staged patches. No general shell or live-project patch executor is supplied. Install and qualify the native plugin separately for supported local Code sessions.",
   "author": {

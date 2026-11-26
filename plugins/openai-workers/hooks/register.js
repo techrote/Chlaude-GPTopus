@@ -7,7 +7,7 @@ import { directReply } from './direct-reply.js';
 import { signRequest, parseChannelKey, modKeyPath, isWindowsHost, CHANNEL_STALE, SESSION_CLOSED, CHANNEL_DENIED, CHANNEL_HELLO, HELLO_EPOCH } from './channel.js';
 
 const PLUGIN = 'oai';
-const VERSION = '0.8.3';
+const VERSION = '0.8.4';
 const SERVER = 'plugin:oai:bridge';
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
@@ -458,6 +458,12 @@ export function register(on) {
       OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT'),
       OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
       OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
+      OPENAI_WORKER_KATCODER2_5_MODEL: await $.env.get('OPENAI_WORKER_KATCODER2_5_MODEL'),
+      OPENAI_WORKER_KATCODER2_5_EFFORT_MIN: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_MIN'),
+      OPENAI_WORKER_KATCODER2_5_EFFORT_MAX: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_MAX'),
+      OPENAI_WORKER_KATCODER2_5_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_DEFAULT'),
+      OPENAI_WORKER_KATCODER2_5_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_NOTE'),
+      OPENAI_WORKER_KATCODER2_5_MAX_STEPS: await $.env.get('OPENAI_WORKER_KATCODER2_5_MAX_STEPS'),
     };
     const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
     if (ultraEnabled) {
@@ -773,6 +779,12 @@ export function register(on) {
       OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT'),
       OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
       OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
+      OPENAI_WORKER_KATCODER2_5_MODEL: await $.env.get('OPENAI_WORKER_KATCODER2_5_MODEL'),
+      OPENAI_WORKER_KATCODER2_5_EFFORT_MIN: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_MIN'),
+      OPENAI_WORKER_KATCODER2_5_EFFORT_MAX: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_MAX'),
+      OPENAI_WORKER_KATCODER2_5_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_DEFAULT'),
+      OPENAI_WORKER_KATCODER2_5_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_NOTE'),
+      OPENAI_WORKER_KATCODER2_5_MAX_STEPS: await $.env.get('OPENAI_WORKER_KATCODER2_5_MAX_STEPS'),
     };
     envSnapshot = env = await withLiveConfig(p => $.fs.read(p), env);
     const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
@@ -968,6 +980,12 @@ export function register(on) {
         OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_DEFAULT'),
         OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_INKLING2MINI_EFFORT_NOTE'),
         OPENAI_WORKER_INKLING2MINI_MAX_STEPS: await $.env.get('OPENAI_WORKER_INKLING2MINI_MAX_STEPS'),
+        OPENAI_WORKER_KATCODER2_5_MODEL: await $.env.get('OPENAI_WORKER_KATCODER2_5_MODEL'),
+        OPENAI_WORKER_KATCODER2_5_EFFORT_MIN: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_MIN'),
+        OPENAI_WORKER_KATCODER2_5_EFFORT_MAX: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_MAX'),
+        OPENAI_WORKER_KATCODER2_5_EFFORT_DEFAULT: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_DEFAULT'),
+        OPENAI_WORKER_KATCODER2_5_EFFORT_NOTE: await $.env.get('OPENAI_WORKER_KATCODER2_5_EFFORT_NOTE'),
+        OPENAI_WORKER_KATCODER2_5_MAX_STEPS: await $.env.get('OPENAI_WORKER_KATCODER2_5_MAX_STEPS'),
       };
       envSnapshot = env = await withLiveConfig(p => $.fs.read(p), env);
       const host = { env: envSnapshot, call: (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), model: () => $.session.model(), version: () => $.session.version(), info: () => $.session.info(), id: () => $.session.id(), surfaces: () => $.session.surfaces(), read: p => $.fs.read(p) };
