@@ -144,3 +144,26 @@ test('live-config.json overrides the session-start env snapshot for the model se
   assert.ok(reads.some(p => /ClaudeOpenAIWorkers\/live-config\.json$/.test(p)), reads.join());
   assert.equal(fake.sent.find(s => s.name === 'create').args.model, 'kat-coder');
 });
+
+test('first worker spawn shows the config panel in the Claude Code browser pane, with system-browser fallback', async () => {
+  const URL1 = 'http://127.0.0.1:4321/?t=abc';
+  for (const paneFails of [false, true]) {
+    const fake = makeEngine([], 'oai:katcoder2-5');
+    const calls = [], toasts = [];
+    fake.context.mcp.call = async (server, name, args) => {
+      calls.push({ server, name, args });
+      if (server === 'Claude_Browser') { if (paneFails) throw new Error('no pane'); return { content: [] }; }
+      return { content: [{ type: 'text', text: JSON.stringify(name === 'panel' ? { url: URL1 } : {}) }] };
+    };
+    fake.context.ui = { toast: async t => { toasts.push(t); } };
+    await fake.handlers.get('session.start')(fake.context, {}, async e => e);
+    const spawn = fake.handlers.get('agent.spawn');
+    await spawn(fake.context, { subagentType: 'oai:katcoder2-5', description: 'x' }, async e => ({ agentId: 'ag_1' }));
+    await spawn(fake.context, { subagentType: 'oai:katcoder2-5', description: 'y' }, async e => ({ agentId: 'ag_2' }));
+    assert.deepEqual(calls[0], { server: 'plugin:oai:bridge', name: 'panel', args: { auto: true } });
+    assert.deepEqual(calls[1], { server: 'Claude_Browser', name: 'preview_start', args: { url: URL1 } });
+    if (paneFails) assert.deepEqual(calls[2].args, { system: true });
+    assert.equal(calls.filter(c => c.name === 'panel' && c.args.auto).length, 1, 'checked once per session');
+    assert.match(toasts[0], paneFails ? /system browser.*\/oai:config/ : /browser pane.*\/oai:config/);
+  }
+});

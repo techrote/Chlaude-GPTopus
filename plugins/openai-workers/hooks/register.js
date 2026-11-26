@@ -7,7 +7,7 @@ import { directReply } from './direct-reply.js';
 import { signRequest, parseChannelKey, modKeyPath, isWindowsHost, CHANNEL_STALE, SESSION_CLOSED, CHANNEL_DENIED, CHANNEL_HELLO, HELLO_EPOCH } from './channel.js';
 
 const PLUGIN = 'oai';
-const VERSION = '0.8.4';
+const VERSION = '0.8.5';
 const SERVER = 'plugin:oai:bridge';
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
@@ -172,6 +172,25 @@ async function withLiveConfig(read, env) {
     return merged;
   } catch { return env; }
 }
+// Config panel: the bridge starts (or reuses) the panel server; the mod shows it in Claude Code's own
+// browser pane, falling back to the system browser where that pane does not exist (terminal, IDE).
+const BROWSER_PANE = 'Claude_Browser';
+async function showPanel(call, openPane, { auto = false } = {}) {
+  const panel = await bridge(call, 'panel', { auto });
+  if (!panel?.url) return { url: null, skipped: panel?.skipped };
+  let where = 'browser pane';
+  try {
+    const shown = await openPane(panel.url);
+    if (shown?.isError) throw new Error('browser pane refused');
+  } catch {
+    await bridge(call, 'panel', { system: true });
+    where = 'system browser';
+  }
+  return { url: panel.url, where, reused: panel.reused };
+}
+const panelText = r => r.url
+  ? `OAI config panel opened in the ${r.where}: ${r.url}\nReopen it any time with /oai:config. Changes apply on the next worker call.`
+  : 'The OAI config panel is not available here.';
 async function agentEffortEnv(env, type) {
   const prefix = `OPENAI_WORKER_${envSuffix(type)}_EFFORT_`;
   const names = [TYPES[type].env, ...['MIN', 'MAX', 'DEFAULT', 'NOTE'].map(k => `${prefix}${k}`)];
@@ -500,6 +519,8 @@ export function register(on) {
     // A refused optional command must never fail the whole bootstrap (that would hold every tool).
     try { await $.command.register({ name: 'oai:s', description: 'Steer a running OpenAI worker verbatim: /oai:s [T3|worker|*] [!][+][?ack ?assess ?conseq] <tip>' }); }
     catch { try { await $.command.register({ name: 'oai-s', description: 'Steer a running OpenAI worker verbatim: /oai-s [T3|worker|*] [!][+][?ack ?assess ?conseq] <tip>' }); } catch {} }
+    try { await $.command.register({ name: 'oai:config', description: 'Open the OAI config panel (workers, efforts, tiers, guardrails, quotas, trace) in the Claude Code browser' }); }
+    catch { try { await $.command.register({ name: 'oai-config', description: 'Open the OAI config panel in the Claude Code browser' }); } catch {} }
     try { await $.command.register({ name: 'oai:run', description: 'Run a worker directly with your exact text, no Claude: /oai:run <worker> [effort] <task> (@file attaches), /oai:run [D3]' }); }
     catch { try { await $.command.register({ name: 'oai-run', description: 'Run a worker directly with your exact text, no Claude: /oai-run <worker> [effort] <task> (@file attaches), /oai-run [D3]' }); } catch {} }
     return next(e);
@@ -526,7 +547,16 @@ export function register(on) {
     } catch (error) { return { text: `ULTRA HOLD: ${errorText(error)}` }; }
   });
 
+  let panelChecked = false;
   on('agent.spawn', async ($, e, next) => {
+    // First worker spawn of this install: show the config panel once (the bridge keeps the marker).
+    if (!panelChecked && !ultraEnabled && Object.keys(TYPES).some(t => e.subagentType === owner(t))) {
+      panelChecked = true;
+      try {
+        const shown = await showPanel((n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), url => $.mcp.call(BROWSER_PANE, 'preview_start', { url }), { auto: true });
+        if (shown.url) await $.ui.toast(`OAI config panel opened in the ${shown.where}. Reopen it with /oai:config.`);
+      } catch { /* never block a worker on the panel */ }
+    }
     if (!ultraEnabled) {
       const type = Object.keys(TYPES).find(t => e.subagentType === owner(t));
       if (!type || await $.env.get('OAI_STEER') !== '1') return next(e);
@@ -609,6 +639,16 @@ export function register(on) {
     try { r = await bridge(call, 'steer', { op: 'send', args: String(e.args ?? ''), workers: Object.keys(TYPES) }); }
     catch (err) { return { text: `Steer failed: ${errorText(err)}` }; }
     return { text: steerReply(r) };
+  });
+  on('command.run', { command: 'oai:config' }, async ($) => {
+    const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
+    try { return { text: panelText(await showPanel(call, url => $.mcp.call(BROWSER_PANE, 'preview_start', { url }))) }; }
+    catch (err) { return { text: `Config panel failed: ${errorText(err)}` }; }
+  });
+  on('command.run', { command: 'oai-config' }, async ($) => {
+    const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
+    try { return { text: panelText(await showPanel(call, url => $.mcp.call(BROWSER_PANE, 'preview_start', { url }))) }; }
+    catch (err) { return { text: `Config panel failed: ${errorText(err)}` }; }
   });
   on('command.run', { command: 'oai:run' }, async ($, e) => {
     const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));

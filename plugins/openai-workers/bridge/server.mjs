@@ -8,7 +8,7 @@ import { rotationSnapshot } from './rotation.mjs';
 import { traceRequest, traceResponse, writeTrace } from './trace.mjs';
 import * as steer from './steer.mjs';
 import * as direct from './direct-run.mjs';
-import { autoLaunchPanel } from './autolaunch.mjs';
+import { panelOp } from './panel.mjs';
 import { refreshLiveEnv } from './live-env.mjs';
 import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot, quoteRequest,
   markRequestAmbiguous, responseRecord } from './usage.mjs';
@@ -46,6 +46,7 @@ const defs = [
     op: { type: 'string', enum: ['reserve', 'sync', 'wait', 'send', 'list', 'hard', 'reply', 'end'] }, agentId: { type: 'string' }, worker: { type: 'string' }, description: { type: 'string' },
     step: { type: 'integer' }, status: { type: 'string' }, callsign: { type: 'string' }, peek: { type: 'boolean' }, args: { type: 'string' }, workers: { type: 'array' }, ms: { type: 'integer' }, tools: { type: 'array' }, text: { type: 'string' }, tipIds: { type: 'array' } }, required: ['op'] } },
   { name: 'run', description: 'INTERNAL plugin transport for /oai:run, refused for model calls.', inputSchema: { type: 'object', properties: { args: { type: 'string' } } } },
+  { name: 'panel', description: 'INTERNAL plugin transport for /oai:config, refused for model calls.', inputSchema: { type: 'object', properties: { auto: { type: 'boolean' }, system: { type: 'boolean' } } } },
   { name: 'cancel', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Request cancellation of an active OpenAI response.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' } }, required: ['id', 'worker_type'] } },
 ];
 const has = (o, key) => Object.prototype.hasOwnProperty.call(o ?? {}, key);
@@ -131,8 +132,6 @@ export async function dispatch(name, args = {}, options = {}) {
   if (typeof args.worker_type === 'string') args = { ...args, worker_type: canonicalWorker(args.worker_type) };
   if (!options.env) refreshLiveEnv(); // pick up panel changes made since the last call
   const env = options.env ?? process.env;
-  // First worker spawn: open the config panel once (never for injected envs or under node --test).
-  if (name === 'create' && !options.env) autoLaunchPanel(env);
   const ledgerOptions = { ...options, env };
   const transport = options.transport ?? { create: createTurn, poll: pollTurn, cancel: cancelTurn };
   // Chat-completions provider workers (NVIDIA Build, LM Studio): no OpenAI key, ledger, price guard, tier or response binding.
@@ -214,6 +213,7 @@ export async function dispatch(name, args = {}, options = {}) {
     }
     case 'steer': return steerOp(args, options.env ?? process.env);
     case 'run': return runOp(args, options);
+    case 'panel': return panelOp({ auto: args.auto === true, system: args.system === true }, env, options.panel);
     case 'page': {
       const str = cache.get(args.id);
       if (str === undefined) throw new Error('Paged response not found (bridge may have restarted).');
@@ -323,7 +323,7 @@ export async function handle(message, write = send) {
   if (message.method === 'initialize') return write({ jsonrpc: '2.0', id, result: {
     protocolVersion: message.params?.protocolVersion ?? '2025-06-18',
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: 'openai-workers-bridge', version: '0.8.4' },
+    serverInfo: { name: 'openai-workers-bridge', version: '0.8.5' },
   } });
   if (message.method === 'ping') return write({ jsonrpc: '2.0', id, result: {} });
   if (message.method === 'tools/list') return write({ jsonrpc: '2.0', id, result: { tools: defs } });

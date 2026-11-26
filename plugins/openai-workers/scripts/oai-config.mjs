@@ -11,7 +11,7 @@
  * See oai-config-core.mjs for storage locations and OAI_CONFIG_STORE / OAI_CONFIG_STATE_DIR.
  */
 import http from 'node:http';
-import { readFileSync, statSync, mkdirSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, statSync, mkdirSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import * as steer from '../bridge/steer.mjs';
 import * as convoStore from '../bridge/convo.mjs';
 import { acceptUpgrade } from './oai-ws.mjs';
@@ -329,6 +329,11 @@ async function main() {
     console.log(`OAI config panel: ${url}`);
     console.log(`Exits after ${opts.idleMinutes} idle minutes or when the page is closed.`);
     if (opts.open) openBrowser(url);
+    // Let the bridge reuse this panel (one per machine) instead of starting another.
+    const record = join(defaultStateDir(), 'panel.json');
+    try { mkdirSync(dirname(record), { recursive: true }); writeFileSync(record, JSON.stringify({ url, pid: process.pid })); } catch {}
+    process.on('exit', () => { try { if (JSON.parse(readFileSync(record, 'utf8')).pid === process.pid) rmSync(record, { force: true }); } catch {} });
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit(0));
   });
   setInterval(() => {
     // Stay up while the console is connected or any worker is running.
