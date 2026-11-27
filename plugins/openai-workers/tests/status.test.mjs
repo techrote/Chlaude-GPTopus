@@ -50,7 +50,7 @@ test('/oai shows the monthly limit and the unreconciled v1-history scope it is d
   assert.match(unlimited, /spend limit not set \(OPENAI_WORKER_MONTHLY_LIMIT_USD\)/);
   assert.match(unlimited, /Ledger upgraded from v1 .*Unreconciled months: 2026-11; not enforced because no monthly limit is set/);
 
-  const limited = await commandText({ ...base, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50' }, now);
+  const limited = await commandText({ ...base, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' }, now);
   assert.match(limited, /Monthly spend limit: \$50 local estimate across both keys; \$0\.02 committed/);
   assert.match(limited, /the current month is BLOCKED until the owner reconciles it/);
   assert.match(limited, /owner action in a local terminal/);

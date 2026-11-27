@@ -1,4 +1,5 @@
 import { WORKER_TYPES as TYPES, effortPolicy, selectWorkerEffort, effortGuidance } from '../bridge/workers.mjs';
+import { guardrails, describeGuardrails, budgetPhase, stopRecord, classifyError, ROUTES, freeToPaidEnabled, WRAP_UP_MESSAGE, tooLarge, capOutputs, compactedInput } from '../bridge/policy.mjs';
 import { OPENAI_TOOLS } from './tools.js';
 import { newRun, nextInput, responseStep, stopStep, finalStep } from './step.js';
 import { ULTRA_NATIVE_SPECS, NATIVE_PREFIX, nativeWorker, isPrivateBridgeTool, hostVersionSupported } from './ultra.js';
@@ -7,7 +8,9 @@ import { directReply } from './direct-reply.js';
 import { signRequest, parseChannelKey, modKeyPath, isWindowsHost, CHANNEL_STALE, SESSION_CLOSED, CHANNEL_DENIED, CHANNEL_HELLO, HELLO_EPOCH } from './channel.js';
 
 const PLUGIN = 'oai';
-const VERSION = '0.8.6';
+/** Entry points that route by policy instead of naming one worker. "oai:astra" = free Astra first, then paid Astra. */
+const ALIASES = { astra: { free: 'astra6free', paid: 'astra6-2', description: 'Astra: ALWAYS the right choice when the owner says "Astra". Uses the free Astra pool (astra6free) while it lasts, then continues automatically on paid Astra (astra6-2) and says so in the result. Never substitute a Claude agent for an OpenAI worker request.' } };
+const VERSION = '0.8.7';
 const SERVER = 'plugin:oai:bridge';
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
@@ -346,6 +349,9 @@ export function register(on) {
       OPENAI_WORKER_SERVICE_TIER: await $.env.get('OPENAI_WORKER_SERVICE_TIER'),
       OPENAI_WORKER_MAX_STEPS: await $.env.get('OPENAI_WORKER_MAX_STEPS'),
       OPENAI_WORKER_MAX_USD: await $.env.get('OPENAI_WORKER_MAX_USD'),
+      OPENAI_WORKER_FREE_TO_PAID_DISABLE: await $.env.get('OPENAI_WORKER_FREE_TO_PAID_DISABLE'),
+      OPENAI_WORKER_TOOL_OUTPUT_CHARS: await $.env.get('OPENAI_WORKER_TOOL_OUTPUT_CHARS'),
+      OPENAI_WORKER_FREE_QUEUE_SECONDS: await $.env.get('OPENAI_WORKER_FREE_QUEUE_SECONDS'),
       OPENAI_WORKER_FLEX_TIMEOUT_MINUTES: await $.env.get('OPENAI_WORKER_FLEX_TIMEOUT_MINUTES'),
       OPENAI_WORKER_SOL6_2_MODEL: await $.env.get('OPENAI_WORKER_SOL6_2_MODEL'),
       OPENAI_WORKER_SOL6_2_SERVICE_TIER: await $.env.get('OPENAI_WORKER_SOL6_2_SERVICE_TIER'),
@@ -515,6 +521,13 @@ export function register(on) {
         prompt: `You are an external OpenAI-backed agent. Your model steps are supplied by ${PLUGIN}. ${guidance}`,
         tools: ultraEnabled ? Object.keys(ULTRA_NATIVE_SPECS) : ['Read', 'Edit', 'Write', 'Bash'] });
     }
+    if (!ultraEnabled) {
+      for (const [name, alias] of Object.entries(ALIASES)) {
+        await $.agent.register({ name, description: `Proactively delegate bounded tasks here when OpenAI or "Astra" is requested. ${alias.description} ${TYPES[alias.free].description} Free pool first (${alias.free}), then paid (${alias.paid}); caps are shown in /oai and /oai:config. Native Claude Code subagent, reasoning via external OpenAI API.`,
+          prompt: `You are an external OpenAI-backed agent (Astra). Your model steps are supplied by ${PLUGIN}.`,
+          tools: ['Read', 'Edit', 'Write', 'Bash'] });
+      }
+    }
     await $.command.register({ name: 'oai', description: 'OpenAI subagent diagnostics (usage: /oai)' });
     // A refused optional command must never fail the whole bootstrap (that would hold every tool).
     try { await $.command.register({ name: 'oai:s', description: 'Steer a running OpenAI worker verbatim: /oai:s [T3|worker|*] [!][+][?ack ?assess ?conseq] <tip>' }); }
@@ -550,7 +563,7 @@ export function register(on) {
   let panelChecked = false;
   on('agent.spawn', async ($, e, next) => {
     // First worker spawn of this install: show the config panel once (the bridge keeps the marker).
-    if (!panelChecked && !ultraEnabled && Object.keys(TYPES).some(t => e.subagentType === owner(t))) {
+    if (!panelChecked && !ultraEnabled && [...Object.keys(TYPES), ...Object.keys(ALIASES)].some(t => e.subagentType === owner(t))) {
       panelChecked = true;
       try {
         const shown = await showPanel((n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p)), url => $.mcp.call(BROWSER_PANE, 'preview_start', { url }), { auto: true });
@@ -558,7 +571,7 @@ export function register(on) {
       } catch { /* never block a worker on the panel */ }
     }
     if (!ultraEnabled) {
-      const type = Object.keys(TYPES).find(t => e.subagentType === owner(t));
+      const type = [...Object.keys(TYPES), ...Object.keys(ALIASES)].find(t => e.subagentType === owner(t));
       if (!type || await $.env.get('OAI_STEER') !== '1') return next(e);
       // Give each worker run a callsign (T3, S1, ...) and show it in the task title so /oai:s can target it.
       const call = (n, p) => modCall(n, p, () => $.mcp.call(SERVER, n, p));
@@ -674,7 +687,7 @@ export function register(on) {
     try { health = await bridge(call, 'health', {}); }
     catch (err) { return { text: `OpenAI bridge not connected: ${errorText(err)}. Check /mcp and node --version.` }; }
     const agents = await $.agent.list();
-    const live = agents.filter(a => Object.keys(TYPES).some(type => a.type === owner(type)))
+    const live = agents.filter(a => [...Object.keys(TYPES), ...Object.keys(ALIASES)].some(type => a.type === owner(type)))
       .map(a => ({ type: a.type, status: a.status, description: a.description ?? a.id }));
     const settings = [];
     let env = {
@@ -688,6 +701,9 @@ export function register(on) {
       OPENAI_WORKER_SERVICE_TIER: await $.env.get('OPENAI_WORKER_SERVICE_TIER'),
       OPENAI_WORKER_MAX_STEPS: await $.env.get('OPENAI_WORKER_MAX_STEPS'),
       OPENAI_WORKER_MAX_USD: await $.env.get('OPENAI_WORKER_MAX_USD'),
+      OPENAI_WORKER_FREE_TO_PAID_DISABLE: await $.env.get('OPENAI_WORKER_FREE_TO_PAID_DISABLE'),
+      OPENAI_WORKER_TOOL_OUTPUT_CHARS: await $.env.get('OPENAI_WORKER_TOOL_OUTPUT_CHARS'),
+      OPENAI_WORKER_FREE_QUEUE_SECONDS: await $.env.get('OPENAI_WORKER_FREE_QUEUE_SECONDS'),
       OPENAI_WORKER_FLEX_TIMEOUT_MINUTES: await $.env.get('OPENAI_WORKER_FLEX_TIMEOUT_MINUTES'),
       OPENAI_WORKER_SOL6_2_MODEL: await $.env.get('OPENAI_WORKER_SOL6_2_MODEL'),
       OPENAI_WORKER_SOL6_2_SERVICE_TIER: await $.env.get('OPENAI_WORKER_SOL6_2_SERVICE_TIER'),
@@ -852,7 +868,10 @@ export function register(on) {
         ...(health.nvidia ? [{ label: 'nvidia (NVIDIA_API_KEY)', configured: Boolean(health.nvidia.configured), source: health.nvidia.source }] : [])],
       workers: settings, usage, usageError,
       notes: usage ? [usage.monthlyLimitUsd == null ? 'The local ledger does not block requests on cost while no monthly limit is set.'
-        : `Monthly spend limit: $${usage.monthlyLimitUsd} local estimate across both keys; $${usage.monthlyCommittedUsd} committed this UTC month (local estimates, not a bill).`, migrationLine(usage)] : [],
+        : `Monthly spend limit: $${usage.monthlyLimitUsd} local estimate across both keys; $${usage.monthlyCommittedUsd} committed this UTC month (local estimates, not a bill).`, migrationLine(usage),
+        ...(usage.monthlyLimitUsd != null ? [usage.monthlyEnforced ? 'Monthly limit is HARD-enforced (OPENAI_WORKER_MONTHLY_ENFORCE=1).' : `Monthly limit is a SOFT cap: crossing it warns, OpenAI enforces the hard cap. Period resets ${usage.monthlyPeriodResetsAt}.`] : []),
+        ...(usage.monthlyWarning ? [`WARNING: committed $${usage.monthlyWarning.committedUsd} has reached the $${usage.monthlyWarning.limitUsd} soft limit (+$${usage.monthlyWarning.reservedUsd} reserved by in-flight requests).`] : []),
+        `Active per-task guardrails: ${Object.keys(TYPES).filter(t => !TYPES[t].provider).map(t => `${t} ${describeGuardrails(guardrails(env, t, TYPES[t]))}`).join(' | ')}`] : [],
       ultra: { enabled: ultraEnabled, state: ultraState }, active: live,
     }) };
   });
@@ -864,14 +883,19 @@ export function register(on) {
       return yield* next(e);
     }
     const agent = (await $.agent.list()).find(a => a.id === e.agentId);
-    const type = agent && Object.keys(TYPES).find(t => agent.type === owner(t));
+    // 'oai:astra' is an entry point that routes free -> paid by policy; the run remembers which worker it currently uses.
+    const alias = agent && Object.keys(ALIASES).find(t => agent.type === owner(t));
+    const run0 = (await $.state.get({ plugin: 'oai', key: 'run', id: e.agentId })).value ?? newRun();
+    let type = alias ? (run0.route ?? ALIASES[alias].free) : agent && (run0.route ?? Object.keys(TYPES).find(t => agent.type === owner(t)));
     if (!type) return yield* next(e);
-    const spec = TYPES[type];
-    const run = (await $.state.get({ plugin: 'oai', key: 'run', id: e.agentId })).value ?? newRun();
+    let spec = TYPES[type];
+    const run = run0;
+    let routedNote = '';
     const seed = `${e.turnId}_${e.index}`;
     let handback = false;
     let result;
     let nextState = run;
+    let carried = {};
     try {
       // Older test/host entry points may first invoke a step without start.
       // Legacy operation is selected only after a successful explicit read.
@@ -889,6 +913,9 @@ export function register(on) {
         OPENAI_WORKER_SERVICE_TIER: await $.env.get('OPENAI_WORKER_SERVICE_TIER'),
         OPENAI_WORKER_MAX_STEPS: await $.env.get('OPENAI_WORKER_MAX_STEPS'),
         OPENAI_WORKER_MAX_USD: await $.env.get('OPENAI_WORKER_MAX_USD'),
+        OPENAI_WORKER_FREE_TO_PAID_DISABLE: await $.env.get('OPENAI_WORKER_FREE_TO_PAID_DISABLE'),
+        OPENAI_WORKER_TOOL_OUTPUT_CHARS: await $.env.get('OPENAI_WORKER_TOOL_OUTPUT_CHARS'),
+        OPENAI_WORKER_FREE_QUEUE_SECONDS: await $.env.get('OPENAI_WORKER_FREE_QUEUE_SECONDS'),
         OPENAI_WORKER_FLEX_TIMEOUT_MINUTES: await $.env.get('OPENAI_WORKER_FLEX_TIMEOUT_MINUTES'),
         OPENAI_WORKER_SOL6_2_MODEL: await $.env.get('OPENAI_WORKER_SOL6_2_MODEL'),
         OPENAI_WORKER_SOL6_2_SERVICE_TIER: await $.env.get('OPENAI_WORKER_SOL6_2_SERVICE_TIER'),
@@ -1054,23 +1081,29 @@ export function register(on) {
         result = stopStep(plan.text);
         nextState = { ...run, handback: null };
       } else {
-        const maxSteps = cap(envValue(env, `OPENAI_WORKER_${envSuffix(type)}_MAX_STEPS`),
-          cap(env.OPENAI_WORKER_MAX_STEPS, 40));
-        // Complimentary-key workers are not subject to the paid worker's default
-        // $4 estimate guardrail. An explicit per-worker limit still works.
-        const freeWorker = spec.key === 'free';
-        // Provider workers (NVIDIA Build, LM Studio) cost nothing: no USD guardrail at all.
-        const maxUsd = spec.provider ? Infinity : cap(envValue(env, `OPENAI_WORKER_${envSuffix(type)}_MAX_USD`),
-          freeWorker ? Infinity : cap(env.OPENAI_WORKER_MAX_USD, 4));
-        if (run.steps >= maxSteps || run.estimatedUsd >= maxUsd) {
-          const costLimit = Number.isFinite(maxUsd) ? `; estimated $${run.estimatedUsd.toFixed(3)}/$${maxUsd}` : '';
-          result = finalStep(`OpenAI worker reached its guardrail (${run.steps}/${maxSteps} steps${costLimit}). Work stopped.`, seed, handback);
-          nextState = { ...run, finished: result.finished, handback: result.handback, pending: [] };
+        // A new prompt for a worker that already stopped RESUMES it (same OpenAI conversation) with a fresh budget window.
+        const resumed = run.finished && Boolean(run.responseId);
+        const base = resumed ? { ...run, stepBase: run.steps, usdBase: run.estimatedUsd, wrapUpSteps: 0, finished: false, stop: null } : run;
+        // Caps are explicit only: per-worker or global env (shown with their source). There is NO default USD cap.
+        const g = guardrails(env, type, spec);
+        const budget = budgetPhase(base, g);
+        carried = { stepBase: base.stepBase, usdBase: base.usdBase, wrapUpSteps: base.wrapUpSteps, route: base.route, compactions: base.compactions };
+        if (budget.phase === 'stop') {
+          const used = `${budget.steps}/${g.maxSteps} steps${Number.isFinite(g.maxUsd) ? `; estimated $${budget.usd.toFixed(3)}/$${g.maxUsd}` : ''}`;
+          const stopped = stopRecord({ status: 'stopped', reason: budget.reason, resumable: true, detail: { steps: budget.steps, maxSteps: g.maxSteps, estimatedUsd: Number(budget.usd.toFixed(4)), maxUsd: Number.isFinite(g.maxUsd) ? g.maxUsd : null, caps: g.sources },
+            message: `OpenAI worker reached its guardrail (${used}). Work stopped after a wrap-up turn. Send it a new message to continue the same task with a fresh budget, or raise the cap in /oai:config.` });
+          result = finalStep(stopped.text, seed, handback);
+          // Pending tool calls stay recorded so a resumed run answers them instead of losing its place.
+          nextState = { ...base, ...carried, finished: result.finished, handback: result.handback, stop: stopped.record };
         } else {
-          const model = envValue(env, spec.env)?.trim() || spec.model;
-          const effortSelection = await agentEffort(env, type, requestedEffort);
+          if (budget.phase === 'wrap_up' && budget.first) plan.input = withSteering(plan.input, [WRAP_UP_MESSAGE]);
+          carried.wrapUpSteps = budget.phase === 'wrap_up' ? (base.wrapUpSteps ?? 0) + 1 : base.wrapUpSteps;
+          let model = envValue(env, spec.env)?.trim() || spec.model;
+          let effortSelection = await agentEffort(env, type, requestedEffort);
           // Service tiers are an OpenAI concept; provider workers never send one.
-          const service_tier = spec.provider ? undefined : await agentTier(env, type);
+          let service_tier = spec.provider ? undefined : await agentTier(env, type);
+          const maxOutputChars = cap(env.OPENAI_WORKER_TOOL_OUTPUT_CHARS, 40000);
+          plan.input = capOutputs(plan.input, maxOutputChars);
           const flexWait = Math.min(120, cap(env.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES, 45));
           let response, nativeContext;
           if (ultraEnabled && spec.provider) {
@@ -1088,6 +1121,9 @@ export function register(on) {
           } else {
             // OpenAI rate limits (TPM/RPM) come back as failed responses: wait as told and retry.
             const hardCheck = () => steerCall(steerHost, { op: 'hard', agentId: e.agentId }).then(r => r?.hard === true);
+            let compactTries = 0, routedNow = false;
+            const prompts = messages.filter(m => m.role === 'user' && !(m.toolResults?.length) && typeof m.text === 'string' && m.text.trim()).map(m => m.text.trim());
+            const results = messages.flatMap(m => m.toolResults ?? []);
             for (let attempt = 0, interrupts = 0; ; attempt++) {
               try {
               response = await query(host.call, { worker_type: type, model, input: plan.input, previous_response_id: plan.previous_response_id,
@@ -1097,11 +1133,32 @@ export function register(on) {
               ...(spec.provider && { agent_id: e.agentId }) }, next.signal,
               spec.provider ? 30 : service_tier === 'flex' ? flexWait : 15, steering ? hardCheck : null);
               } catch (error) {
+                // The free pool is spent (or its queue timed out): continue on the paid worker by policy and SAY so.
+                // A free-key response id cannot continue on the paid key, so the paid run starts from a compact restatement.
+                if (!error?.steerInterrupt && !routedNow && classifyError(error) === 'quota_free_daily' && ROUTES[type]?.paid && type !== ROUTES[type].paid && freeToPaidEnabled(env)) {
+                  const from = type; type = ROUTES[from].paid; spec = TYPES[type]; routedNow = true;
+                  model = envValue(env, spec.env)?.trim() || spec.model;
+                  effortSelection = await agentEffort(env, type, requestedEffort);
+                  service_tier = await agentTier(env, type);
+                  routedNote = `\n[oai: routed ${from} -> ${type} (paid key): ${errorText(error).replace(/^OpenAI bridge create: /, '').slice(0, 200)}]`;
+                  plan.input = compactedInput({ prompts, results, perResult: maxOutputChars, note: `The free worker ${from} ran out of its daily pool; you are ${type} on the paid key and continue the same task.` });
+                  plan.previous_response_id = undefined;
+                  attempt = -1; continue;
+                }
                 // A hard tip cancels the in-flight request; resend the same step with the tip appended.
                 if (!error?.steerInterrupt || interrupts++ >= 3) throw error;
                 const more = await steerCall(steerHost, { op: 'sync', agentId: e.agentId, worker: type, step: run.steps, status: 'running' });
                 steering = { ...steering, tips: [...(steering?.tips ?? []), ...(more?.tips ?? [])] };
                 plan.input = withSteering(plan.input, (more?.tips ?? []).map(t => t.message));
+                attempt = -1; continue;
+              }
+              // One request larger than the model's per-minute limit can never succeed as sent: shrink it (fresh, compacted conversation).
+              const big = tooLarge(response);
+              if (big && compactTries < 2 && !next.signal?.aborted) {
+                const per = compactTries++ === 0 ? 3000 : 800;
+                plan.input = compactedInput({ prompts, results, perResult: per, note: big.limit ? `Provider limit ${big.limit} tokens per request (this request was ${big.requested}).` : '' });
+                plan.previous_response_id = undefined;
+                carried = { ...carried, compactions: (carried.compactions ?? 0) + 1 };
                 attempt = -1; continue;
               }
               const wait = rateLimitWaitMs(response);
@@ -1113,18 +1170,30 @@ export function register(on) {
           const failedUnbilled = response.status !== 'completed' && !response.usage;
           result = failedUnbilled ? finalStep(`${providerName(spec)} request ${response.status}: ${response.reason ?? 'no reason given'}`, seed, handback) : verifiedCost ? responseStep(response, seed, handback, nativeContext && { allowedTools: nativeContext.tools.map(tool => tool.name) }) :
             finalStep(`OpenAI accounting HOLD: response ${response.id ?? '(unknown)'} has unverified usage or pricing. No returned tool call was executed. Existing reservations are retained.\n${response.text ?? ''}`, seed, handback);
+          if (routedNote && result.finished && !result.toolUses.length) result = finalStep(`${result.handback?.message ?? result.answer}${routedNote}`, seed, handback);
+          if (failedUnbilled && result.finished) {
+            const reason = tooLarge(response) ? 'tpm_limit' : /rate limit/i.test(response.reason ?? '') ? 'tpm_limit' : 'api_error';
+            const failed = stopRecord({ status: 'failed', reason, resumable: true, detail: { workerStatus: response.status },
+              message: `${providerName(spec)} request ${response.status}: ${response.reason ?? 'no reason given'}` });
+            result = finalStep(failed.text + routedNote, seed, handback);
+          }
           if (steering?.tips?.some(t => t.ack || t.assess || t.conseq) && response.text)
             await steerCall(steerHost, { op: 'reply', agentId: e.agentId, step: run.steps, text: response.text });
           if (steering && result.finished) await steerCall(steerHost, { op: 'end', agentId: e.agentId });
           nextState = { lastTools: (result.toolUses ?? []).map(u => u.name), effort: run.effort ?? marked.effort, responseId: failedUnbilled ? run.responseId : response.id, pending: result.pending, seenPrompts: plan.seenPrompts,
             steps: run.steps + 1, estimatedUsd: verifiedCost ? run.estimatedUsd + response.estimatedUsd : run.estimatedUsd,
-            usageStatus: verifiedCost ? 'verified' : 'unverified', finished: result.finished, handback: result.handback };
+            usageStatus: verifiedCost ? 'verified' : 'unverified', finished: result.finished, handback: result.handback,
+            ...carried, route: type !== (alias ? ALIASES[alias].free : Object.keys(TYPES).find(t => agent.type === owner(t))) ? type : carried.route };
         }
       }
     } catch (err) {
       // Fail closed. Do not call next(): that would silently consume Anthropic tokens.
-      result = finalStep(`OpenAI worker failed: ${errorText(err)}. No Anthropic model fallback was invoked.`, seed, handback);
-      nextState = { ...run, finished: true, handback: result.handback, pending: [] };
+      const reason = classifyError(err), resumable = ['quota_free_daily', 'tpm_limit', 'monthly_soft_limit', 'api_error'].includes(reason);
+      const failed = stopRecord({ status: 'failed', reason, resumable, detail: { steps: run.steps },
+        message: `OpenAI worker failed: ${errorText(err)}. No Anthropic model fallback was invoked.` });
+      result = finalStep(failed.text + routedNote, seed, handback);
+      // Resumable failures keep their conversation and pending tool calls so a follow-up message continues the task.
+      nextState = { ...run, ...carried, finished: true, handback: result.handback, stop: failed.record, ...(resumable ? {} : { pending: [] }) };
     }
     try {
       await $.state.set({ plugin: 'oai', key: 'run', id: e.agentId }, nextState);

@@ -11,7 +11,7 @@ import * as direct from './direct-run.mjs';
 import { panelOp } from './panel.mjs';
 import { refreshLiveEnv } from './live-env.mjs';
 import { reserveRequest, releaseRequest, accountResponse, accountByResponseId, usageSnapshot, quoteRequest,
-  markRequestAmbiguous, responseRecord } from './usage.mjs';
+  markRequestAmbiguous, responseRecord, settings } from './usage.mjs';
 
 const PAGESIZE = 22000;
 const cache = new Map(); // only large, completed, redacted responses, never keys
@@ -37,7 +37,7 @@ async function ultraService(options = {}) {
 const defs = [
   { name: 'health', description: 'Workers are native subagents: use the Agent tool with subagent_type oai:<worker>. Report whether the bridge has a configured API key (never returns it).', inputSchema: { type: 'object', properties: {} } },
   { name: 'create', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Start a Responses API model step for the plugin.', inputSchema: { type: 'object', properties: {
-    model: { type: 'string' }, worker_type: { type: 'string' }, input: {}, instructions: { type: 'string' }, tools: { type: 'array' }, effort: { type: 'string' }, previous_response_id: { type: 'string' }, max_output_tokens: { type: 'integer' }, request_id: { type: 'string' }, agent_id: { type: 'string' },
+    model: { type: 'string' }, worker_type: { type: 'string' }, input: {}, instructions: { type: 'string' }, tools: { type: 'array' }, effort: { type: 'string' }, previous_response_id: { type: 'string' }, max_output_tokens: { type: 'integer' }, request_id: { type: 'string' }, agent_id: { type: 'string' }, root_id: { type: 'string' }, parent_id: { type: 'string' },
     service_tier: { type: 'string', enum: ['auto', 'default', 'flex', 'fast', 'priority'] } }, required: ['worker_type', 'model', 'input', 'instructions', 'tools'] } },
   { name: 'usage', description: 'Show local free-key daily tokens, reservations and UTC rollover; these are not authoritative API billing counters.', inputSchema: { type: 'object', properties: {} } },
   { name: 'poll', description: 'INTERNAL plugin transport, refused for model calls. To use an OpenAI worker, spawn it with the Agent tool: subagent_type oai:<sol6-2|astra6-2|luna6|luna6fast|luna6flex|sol6-1flex|astra6free|terra5-6free>. Poll an in-progress OpenAI response, up to five seconds.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, worker_type: { type: 'string' }, wait_ms: { type: 'integer' } }, required: ['id', 'worker_type'] } },
@@ -150,7 +150,8 @@ export async function dispatch(name, args = {}, options = {}) {
       // any refusal here (validation, price guard, spending guard, daily allowance, unknown continuation,
       // ledger admission) proves that no POST was sent. The error carries that fact for in-process callers
       // (the native controller releases its step on it); an error that already names a disposition keeps it.
-      let selected, effective, ticket;
+      let selected, effective, ticket, knownContextTokens, queuedMs = 0;
+      const warnings = [];
       try {
         ({ selected, effective } = checkedCreate(args, env));
         // Never accept an agent-supplied claim about invisible Responses history.
@@ -161,10 +162,22 @@ export async function dispatch(name, args = {}, options = {}) {
           if (!previous.settled || !Number.isSafeInteger(previous.contextTokenUpperBound)) throw new Error('Previous response has no verified complete history bound; reconcile it before continuing.');
           if (previous.model !== selected.model) throw new Error('Continuation model differs from the stored response model.');
           inputTokenUpperBound = previous.contextTokenUpperBound + freshQuote.inputTokens;
+          knownContextTokens = Number.isSafeInteger(previous.tokens) ? previous.tokens : undefined;
         }
-        const quote = quoteRequest({ ...effective, inputTokenUpperBound }, ledgerOptions);
-        ticket = await reserveRequest({ workerType: selected.name, model: selected.model, profile: selected.key_profile,
-          serviceTier: effective.service_tier, ...(args.request_id && { requestId: args.request_id }), ...quote }, ledgerOptions);
+        const quote = quoteRequest({ ...effective, inputTokenUpperBound, knownContextTokens }, ledgerOptions);
+        const tree = { ...(typeof args.root_id === 'string' && /^[\w.:-]{1,80}$/.test(args.root_id) && { rootId: args.root_id }),
+          ...(typeof args.parent_id === 'string' && /^[\w.:-]{1,80}$/.test(args.parent_id) && { parentId: args.parent_id }) };
+        const reserveArgs = { workerType: selected.name, model: selected.model, profile: selected.key_profile,
+          serviceTier: effective.service_tier, ...(args.request_id && { requestId: args.request_id }), ...tree, ...quote };
+        // A full free pool whose room is merely RESERVED by in-flight requests queues the request until reservations settle.
+        const waitMs = selected.key_profile === 'free' ? settings(env).freeQueueSeconds * 1000 : 0, deadline = Date.now() + waitMs;
+        for (;;) {
+          try { ticket = await reserveRequest(reserveArgs, { ...ledgerOptions, warnings }); break; }
+          catch (error) {
+            if (error?.quotaReason !== 'free_daily_reserved' || Date.now() + 1500 >= deadline) { if (queuedMs) error.queuedMs = queuedMs; throw error; }
+            await new Promise(r => setTimeout(r, 1500)); queuedMs += 1500;
+          }
+        }
       } catch (error) { throw notSent(error); }
       traceRequest(selected, effective, { env });
       let response;
@@ -180,7 +193,8 @@ export async function dispatch(name, args = {}, options = {}) {
       // The provider answered: whatever fails from here on is NOT a refusal before the send.
       try { await accountResponse(ticket, response, ledgerOptions); }
       catch (error) { await markRequestAmbiguous(ticket, ledgerOptions); throw ambiguous(error); }
-      return pack(response);
+      // Soft limits inform: the warning rides on the response (never changes its status).
+      return pack({ ...response, ...(warnings.length && { monthlyWarning: warnings[0] }), ...(queuedMs && { queuedMs }) });
     }
     case 'poll': {
       const binding = await boundResponse(args, ledgerOptions);
@@ -323,7 +337,7 @@ export async function handle(message, write = send) {
   if (message.method === 'initialize') return write({ jsonrpc: '2.0', id, result: {
     protocolVersion: message.params?.protocolVersion ?? '2025-06-18',
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: 'openai-workers-bridge', version: '0.8.6' },
+    serverInfo: { name: 'openai-workers-bridge', version: '0.8.7' },
   } });
   if (message.method === 'ping') return write({ jsonrpc: '2.0', id, result: {} });
   if (message.method === 'tools/list') return write({ jsonrpc: '2.0', id, result: { tools: defs } });

@@ -37,6 +37,23 @@ const nonnegative = value => typeof value === 'number' && Number.isFinite(value)
 const tokenCount = value => nonnegative(value) && Number.isSafeInteger(value);
 export const utcDay = (instant = new Date()) => new Date(instant).toISOString().slice(0, 10);
 export const utcMonth = (instant = new Date()) => utcDay(instant).slice(0, 7);
+/** Monthly spend period anchor: resets at OPENAI_WORKER_MONTHLY_RESET_DAY (default 27) / _HOUR_UTC (default 1) UTC. */
+export function periodAnchor(env = process.env) {
+  const day = Number(env.OPENAI_WORKER_MONTHLY_RESET_DAY), hour = Number(env.OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC);
+  return { day: Number.isInteger(day) && day >= 1 && day <= 28 ? day : 27, hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 1 };
+}
+/** Key (YYYY-MM of the period START) of the monthly spend period containing `instant`. */
+export function billingPeriod(instant = new Date(), env = process.env) {
+  const { day, hour } = periodAnchor(env), d = new Date(instant);
+  let y = d.getUTCFullYear(), m = d.getUTCMonth();
+  if (d.getTime() < Date.UTC(y, m, day, hour)) { if (--m < 0) { m = 11; y--; } }
+  return `${String(y).padStart(4, '0')}-${String(m + 1).padStart(2, '0')}`;
+}
+/** ISO instant at which the period containing `instant` ends (the next anchor). */
+export function periodResetAt(instant = new Date(), env = process.env) {
+  const { day, hour } = periodAnchor(env), [y, m] = billingPeriod(instant, env).split('-').map(Number);
+  return new Date(Date.UTC(y, m, day, hour)).toISOString();
+}
 export function groupForModel(model) { return PREMIUM_MODELS.has(model) ? 'premium' : TERRA_MODELS.has(model) ? 'terra' : null; }
 
 function integer(raw, fallback, minimum = 0, maximum = 100_000_000) {
@@ -63,6 +80,9 @@ export function settings(env = process.env) {
     maxInflight: integer(env.OPENAI_WORKER_DAILY_MAX_INFLIGHT, 16, 1, 128),
     monthlyAllowanceUsd: env.OPENAI_WORKER_MONTHLY_ALLOWANCE_USD && Number.isFinite(allowance) && allowance > 0 ? allowance : null,
     monthlyLimitUsd: optionalDollars(env.OPENAI_WORKER_MONTHLY_LIMIT_USD),
+    // The monthly limit is advisory (warns) unless the owner opts in to hard enforcement.
+    monthlyEnforce: ['1', 'true', 'on', 'yes'].includes(String(env.OPENAI_WORKER_MONTHLY_ENFORCE ?? '').trim().toLowerCase()),
+    freeQueueSeconds: integer(env.OPENAI_WORKER_FREE_QUEUE_SECONDS, 90, 0, 3600),
   };
 }
 export function usagePath(env = process.env) {
@@ -309,6 +329,15 @@ async function withLedger(fn, options = {}) {
     if (ownerAt(lock)?.token === token) rmSync(lock, { recursive: true, force: true });
   }
 }
+/** Rolling average of recent measured request totals for a free group (null until one request settled). */
+const rollingAverage = (doc, group) => { const r = doc.rolling?.[group]; return r && r.n > 0 && tokenCount(r.avg) ? r.avg : null; };
+/** Per-task-tree totals (root task id -> tokens/USD summed over nodes) plus tree-attributed reservations. */
+function treeTotals(outstanding, doc) {
+  const out = {};
+  for (const [id, t] of Object.entries(doc.trees ?? {}).slice(-50)) out[id] = { tokens: t.tokens, estimatedUsd: Number(t.estimatedUsd.toFixed(7)), requests: t.requests, nodes: structuredClone(t.nodes) };
+  for (const p of outstanding) if (p.rootId) { const t = out[p.rootId] ??= { tokens: 0, estimatedUsd: 0, requests: 0, nodes: {} }; t.reservedTokens = (t.reservedTokens ?? 0) + p.reservedTokens; }
+  return out;
+}
 function dayStats(doc, day, group) { return doc.days[day]?.groups?.[group] ?? blankStats(); }
 function pendingFor(doc, day, group) { return Object.values(doc.pending).filter(p => p.day === day && p.group === group); }
 function sumPending(items, field) { return items.reduce((n, p) => n + (p[field] ?? 0), 0); }
@@ -353,7 +382,10 @@ export function quoteRequest(args, options = {}) {
   // The maximum output price across requested/default service tiers is used
   // for reservations. No cache discount is assumed before evidence arrives.
   const reservationUsd = estimateUsageUsd(args.model, { input, output, cached: 0 }, 'priority');
-  return { reservationTokens, reservationUsd, inputBoundVerified, inputTokens: input, outputTokens: output,
+  // Realistic size for the FREE daily pool: ~3 bytes per token for the new content, the previous response's MEASURED total for
+  // a continuation, and a bounded output allowance. The worst case above stays the paid/USD reservation.
+  const realisticTokens = Math.max(cfg.reserveTokens, (tokenCount(args.knownContextTokens) ? args.knownContextTokens : 0) + Math.ceil(bytes / 3) + Math.min(output, 8000));
+  return { reservationTokens, realisticTokens, reservationUsd, inputBoundVerified, inputTokens: input, outputTokens: output,
     priceStatus: reservationUsd === null ? 'unknown' : 'estimated', authoritativeBilling: false };
 }
 
@@ -366,13 +398,14 @@ export async function reserveRequest(args, options = {}) {
   if (profile !== expectedProfile || !['free', 'standard'].includes(profile)) throw new Error('Worker/key profile mismatch.');
   const group = profile === 'free' ? groupForModel(model) : 'standard';
   if (profile === 'free' && DAILY_GUARDED_AGENTS[workerType] !== group) throw new Error(`${workerType} requires a model in the ${DAILY_GUARDED_AGENTS[workerType]} complimentary-token group; got ${model}.`);
-  const day = utcDay(now), monthKey = day.slice(0, 7);
+  const day = utcDay(now), monthKey = billingPeriod(now, env);
   // Free daily ledger: a continuation's quote carries the whole prior context bound (often ~350K), which would
   // block the day's allowance on one request. Its reservation counts at most FREE_RESERVATION_INPUT_CAP input
   // tokens plus the requested output; settlement still records the measured usage.
   const requested = args.reservationTokens ?? cfg.reserveTokens;
-  const reservedTokens = profile === 'free' && tokenCount(args.inputTokens) && tokenCount(args.outputTokens)
+  let reservedTokens = profile === 'free' && tokenCount(args.inputTokens) && tokenCount(args.outputTokens)
     ? Math.min(requested, Math.max(cfg.reserveTokens, Math.min(args.inputTokens, FREE_RESERVATION_INPUT_CAP) + args.outputTokens)) : requested;
+  if (profile === 'free' && tokenCount(args.realisticTokens)) reservedTokens = Math.min(reservedTokens, Math.max(cfg.reserveTokens, args.realisticTokens));
   if (!tokenCount(reservedTokens) || reservedTokens < cfg.reserveTokens) throw new Error('Invalid or insufficient request token reservation.');
   const fallbackUsd = estimateUsageUsd(model, { input: 0, output: reservedTokens }, args.serviceTier ?? 'priority');
   const reservedUsd = args.reservationUsd === undefined ? fallbackUsd : args.reservationUsd;
@@ -388,29 +421,43 @@ export async function reserveRequest(args, options = {}) {
       // reconcile pending/settled requests rather than blindly POST again.
       throw new Error(`Accounting request already reserved: ${old.ticket}; reconcile before retrying.`);
     }
+    // Rolling average of this group's recent measured requests tightens the reservation further (never below the floor).
+    const avg = profile === 'free' ? rollingAverage(doc, group) : null;
+    if (avg !== null && args.realisticTokens !== undefined) reservedTokens = Math.min(reservedTokens, Math.max(cfg.reserveTokens, Math.ceil(avg * 1.5), Math.min(args.realisticTokens, reservedTokens) >> 1));
     const pending = pendingFor(doc, day, group), used = dayStats(doc, day, group).tokens;
     const reserved = sumPending(pending, 'reservedTokens');
     const limit = profile === 'free' ? Math.floor(cfg.limits[group] * (1 + cfg.overrunPercent / 100)) : Infinity;
-    if (used + reserved + reservedTokens > limit || Object.values(doc.pending).filter(p => p.profile === profile).length >= cfg.maxInflight) {
-      throw new Error(`UTC ${day}: ${workerType} paused at its soft daily allowance: ${used} used + ${reserved} reserved + ${reservedTokens} requested / ${limit} tokens (${cfg.overrunPercent}% headroom). This local free-key group allowance resets at 00:00 UTC.`);
+    const inflight = Object.values(doc.pending).filter(p => p.profile === profile).length;
+    if (used + reserved + reservedTokens > limit || inflight >= cfg.maxInflight) {
+      // 'reserved': room exists once in-flight reservations settle (callers may queue); 'exhausted': genuinely used up.
+      throw Object.assign(new Error(`UTC ${day}: ${workerType} paused at its soft daily allowance: ${used} used + ${reserved} reserved + ${reservedTokens} requested / ${limit} tokens (${cfg.overrunPercent}% headroom). This local free-key group allowance resets at 00:00 UTC.`),
+        { quotaReason: used + reservedTokens <= limit && (reserved > 0 || inflight >= cfg.maxInflight) ? 'free_daily_reserved' : 'free_daily_exhausted',
+          usedTokens: used, reservedTokens: reserved, requestedTokens: reservedTokens, limitTokens: limit, resetAtUtc: `${utcDay(new Date(new Date(`${day}T00:00:00Z`).getTime() + 86400000))}T00:00:00Z` });
     }
     const month = doc.months[monthKey] ?? blankMonth();
     if (cfg.monthlyLimitUsd !== null) {
       const outstanding = Object.values(doc.pending);
       const unreconciled = unreconciledMonth(doc, monthKey);
-      if (unreconciled) {
-        throw new Error(`Local spending guard blocked: historical usage for UTC month ${monthKey} predates complete tracking (v1 ledger migration${unreconciled.migratedAt ? ` at ${unreconciled.migratedAt}` : ''}) and has not been reconciled by the owner. Run scripts/reconcile-usage.mjs status in a local terminal.`);
+      const committed = committedMonthlyUsd(doc, monthKey), outstandingUsd = sumPending(outstanding, 'reservedUsd');
+      if (cfg.monthlyEnforce) {
+        if (unreconciled) {
+          throw new Error(`Local spending guard blocked: historical usage for UTC month ${monthKey} predates complete tracking (v1 ledger migration${unreconciled.migratedAt ? ` at ${unreconciled.migratedAt}` : ''}) and has not been reconciled by the owner. Run scripts/reconcile-usage.mjs status in a local terminal.`);
+        }
+        if (fallbackUsd === null || reservedUsd === null || args.inputBoundVerified !== true || outstanding.some(p => p.reservedUsd === null || p.inputBoundVerified === false) ||
+          month.free.unknownPriceRequests || month.standard.unknownPriceRequests) {
+          throw new Error('Local spending guard requires known price, complete input bound and reconciled historical usage; request blocked.');
+        }
+        // Outstanding requests from earlier months still carry potential cost.
+        if (committed + outstandingUsd + reservedUsd > cfg.monthlyLimitUsd) throw Object.assign(new Error('Local monthly spending limit including new and outstanding reservations would be exceeded.'), { quotaReason: 'monthly_soft_limit' });
+      } else if (committed >= cfg.monthlyLimitUsd) {
+        // Advisory: admit, but tell the caller. Only ACTUAL spend triggers it; reservations are reported separately.
+        options.warnings?.push({ code: 'monthly_soft_limit', committedUsd: Number(committed.toFixed(4)), reservedUsd: Number(outstandingUsd.toFixed(4)), limitUsd: cfg.monthlyLimitUsd, enforced: false,
+          historyIncomplete: unreconciled !== null, periodResetsAt: periodResetAt(now, env),
+          message: `Local monthly limit $${cfg.monthlyLimitUsd} reached (committed $${committed.toFixed(2)}, plus $${outstandingUsd.toFixed(2)} reserved by in-flight requests). Not enforced locally; OpenAI applies the hard cap.` });
       }
-      if (fallbackUsd === null || reservedUsd === null || args.inputBoundVerified !== true || outstanding.some(p => p.reservedUsd === null || p.inputBoundVerified === false) ||
-        month.free.unknownPriceRequests || month.standard.unknownPriceRequests) {
-        throw new Error('Local spending guard requires known price, complete input bound and reconciled historical usage; request blocked.');
-      }
-      const committed = committedMonthlyUsd(doc, monthKey);
-      // Outstanding requests from earlier months still carry potential cost.
-      if (committed + sumPending(outstanding, 'reservedUsd') + reservedUsd > cfg.monthlyLimitUsd) throw new Error('Local monthly spending limit including new and outstanding reservations would be exceeded.');
     }
     const ticket = randomUUID();
-    doc.pending[ticket] = { workerType, model, profile, group, day, createdAt: new Date(now).toISOString(),
+    doc.pending[ticket] = { workerType, model, profile, group, day, period: monthKey, rootId: args.rootId ?? null, parentId: args.parentId ?? null, createdAt: new Date(now).toISOString(),
       reservedTokens, reservedUsd, inputBoundVerified: args.inputBoundVerified ?? false,
       serviceTier: args.serviceTier ?? null, responseId: null, requestId: requestId ?? null, status: 'reserved' };
     if (requestId) doc.requests[requestId] = { identity, ticket, day };
@@ -475,8 +522,14 @@ function settle(doc, ticket, response) {
   const day = doc.days[pending.day] ??= { groups: {}, workers: {}, totalEstimatedUsd: 0 };
   const stats = day.groups[pending.group] ??= blankStats();
   const agent = day.workers[pending.workerType] ??= blankStats();
-  const month = doc.months[pending.day.slice(0, 7)] ??= blankMonth();
+  const month = doc.months[pending.period ?? pending.day.slice(0, 7)] ??= blankMonth();
   addStats(stats, usage.total, usd); addStats(agent, usage.total, usd); addStats(month[pending.profile], usage.total, usd);
+  doc.rolling ??= {}; const roll = doc.rolling[pending.group] ??= { n: 0, avg: 0 };
+  roll.avg = roll.n ? Math.round(roll.avg * 0.8 + usage.total * 0.2) : usage.total; roll.n = Math.min(roll.n + 1, 1000);
+  if (pending.rootId) { doc.trees ??= {}; const t = doc.trees[pending.rootId] ??= { tokens: 0, estimatedUsd: 0, requests: 0, nodes: {} };
+    t.tokens += usage.total; t.estimatedUsd += usd ?? 0; t.requests++;
+    const node = t.nodes[pending.workerType + (pending.parentId ? `<-${pending.parentId}` : '')] ??= { tokens: 0, estimatedUsd: 0, requests: 0 };
+    node.tokens += usage.total; node.estimatedUsd += usd ?? 0; node.requests++; }
   day.totalEstimatedUsd += usd ?? 0;
   doc.processed[id] = { day: pending.day, workerType: pending.workerType, model: pending.model, profile: pending.profile,
     tokens: usage.total, contextTokenUpperBound: Math.max(usage.total, pending.reservedTokens), estimatedUsd: usd, serviceTier: response.serviceTier ?? pending.serviceTier, usageStatus: 'verified' };
@@ -508,7 +561,7 @@ export async function requestRecord(ticket, options = {}) {
   return withLedger(doc => ({ dirty: false, value: doc.pending[ticket] ? structuredClone(doc.pending[ticket]) : null }), options);
 }
 export async function usageSnapshot(options = {}) {
-  const cfg = settings(options.env ?? process.env), now = options.now ?? new Date(), today = utcDay(now), monthKey = utcMonth(now);
+  const cfg = settings(options.env ?? process.env), now = options.now ?? new Date(), today = utcDay(now), monthKey = billingPeriod(now, options.env ?? process.env);
   return withLedger(doc => {
     const groups = {};
     for (const group of ['premium', 'terra']) {
@@ -531,13 +584,20 @@ export async function usageSnapshot(options = {}) {
       groups, profiles, workersToday: structuredClone(doc.days[today]?.workers ?? {}), overrunPercent: cfg.overrunPercent, monthlyEstimatedUsd: Number(month.free.estimatedUsd.toFixed(7)),
       allKeysMonthlyEstimatedUsd: Number(allEstimated.toFixed(7)), monthlyAllowanceUsd: cfg.monthlyAllowanceUsd,
       monthlyLimitUsd: cfg.monthlyLimitUsd, monthlyReservedUsd: sumPending(outstanding, 'reservedUsd'),
+      monthlyEnforced: cfg.monthlyEnforce, monthlyPeriod: monthKey, monthlyPeriodResetsAt: periodResetAt(now, options.env ?? process.env),
+      monthlyWarning: cfg.monthlyLimitUsd !== null && committedMonthlyUsd(doc, monthKey) >= cfg.monthlyLimitUsd
+        ? { committedUsd: Number(committedMonthlyUsd(doc, monthKey).toFixed(4)), reservedUsd: Number(sumPending(outstanding, 'reservedUsd').toFixed(4)), limitUsd: cfg.monthlyLimitUsd, enforced: cfg.monthlyEnforce } : null,
+      freeCapacity: Object.fromEntries(['premium', 'terra'].map(g => { const per = Math.max(cfg.reserveTokens, rollingAverage(doc, g) ?? 40_000);
+        return [g, { typicalRequestTokens: per, concurrentWorkers: Math.min(cfg.maxInflight, Math.floor(groups[g].remainingToSoftLimit / per)) }]; })),
+      trees: treeTotals(outstanding, doc),
+      queueSeconds: cfg.freeQueueSeconds,
       // True only while the CURRENT UTC month's local totals are unreconciled-unknown (see migration for the full scope).
       historicalTotalsMayBeIncomplete: unreconciledMonth(doc, monthKey) !== null, migration: migrationSummary(doc, monthKey),
       monthlyCommittedUsd: Number(committedMonthlyUsd(doc, monthKey).toFixed(7)),
       pendingResponseIds: [...new Set(outstanding.filter(p => p.profile === 'free' && p.responseId).map(p => p.responseId))].slice(0, 50),
       pendingResponses: outstanding.filter(p => p.responseId).map(p => ({ id: p.responseId, profile: p.profile, workerType: p.workerType, status: p.status })).slice(0, 100),
       unresolvedRequests: outstanding.filter(p => ['usage_unknown', 'ambiguous'].includes(p.status)).map(p => ({ requestId: p.requestId, responseId: p.responseId, day: p.day, profile: p.profile, status: p.status })),
-      reminder: 'Local estimates for participating clients only, never authoritative OpenAI billing. Free daily groups exclude standard-key usage. The monthly allowance reference is informational; only the separately configured monthly limit enforces admission. Unknown pre-upgrade history is reconciled only by the local interactive owner script; no worker or MCP tool exposes it (a terminal session is checked, not authenticated).',
+      reminder: 'Local estimates for participating clients only, never authoritative OpenAI billing. Free daily groups exclude standard-key usage. The monthly limit is a soft cap (warns, never refuses) unless OPENAI_WORKER_MONTHLY_ENFORCE=1; OpenAI applies the hard cap. Unknown pre-upgrade history is reconciled only by the local interactive owner script; no worker or MCP tool exposes it (a terminal session is checked, not authenticated).',
     } };
   }, options);
 }

@@ -28,7 +28,7 @@ const NOV = '2026-11-21T01:00:00Z';
 function fixture(t, env = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'usage-reconcile-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return { dir, env: { OPENAI_WORKER_USAGE_DIR: dir, OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10', ...env } };
+  return { dir, env: { OPENAI_WORKER_USAGE_DIR: dir, OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0', ...env } };
 }
 /** A realistic v1 ledger: free-key days only (the standard key was never tracked in v1). */
 function writeV1(env, days = { '2026-11-01': 0.01, '2026-11-02': 0.02 }, pending = {}) {
@@ -41,7 +41,7 @@ function writeV1(env, days = { '2026-11-01': 0.01, '2026-11-02': 0.02 }, pending
   writeFileSync(usagePath(env), raw);
   return raw;
 }
-const limited = (f, iso, usd = '50') => ({ env: { ...f.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: usd }, now: new Date(iso) });
+const limited = (f, iso, usd = '50') => ({ env: { ...f.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: usd, OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' }, now: new Date(iso) });
 const plain = (f, iso) => ({ env: f.env, now: new Date(iso) });
 const ledger = f => JSON.parse(readFileSync(usagePath(f.env), 'utf8'));
 const tty = () => ({ input: Object.assign(new PassThrough(), { isTTY: true }), output: Object.assign(new PassThrough(), { isTTY: true }) });
@@ -134,7 +134,7 @@ test('status shows the unknown period, standard-key blind spot, totals and evide
   assert.match(out.text, /Monthly spend limit: NOT set in this terminal/);
   assert.doesNotMatch(out.text, /blocked by unreconciled history: YES/);
   assert.ok(out.text.includes(`Ledger file: ${usagePath(f.env)}`), 'status names the ledger it resolved');
-  const capped = await cli({ ...f, env: { ...f.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50' } }, NOV, ['status']);
+  const capped = await cli({ ...f, env: { ...f.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' } }, NOV, ['status']);
   assert.match(capped.text, /Monthly spend limit: \$50\.00 .*blocked by unreconciled history: YES/);
   assert.equal(capped.status.digest, out.status.digest, 'display-only context never changes the digest');
   assert.match(out.text, /Status digest: [0-9a-f]{64}/);
@@ -419,7 +419,7 @@ test('concurrent processes during reconciliation neither lose reservations nor s
   const f = fixture(t, { OPENAI_WORKER_DAILY_MAX_INFLIGHT: '64' });
   writeV1(f.env); await upgradeAt(f, NOV);
   const request = await ownerRequest(f, NOV, [{ month: '2026-11', authoritativeUsd: 1 }]);
-  const env = { ...f.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50' };
+  const env = { ...f.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' };
   const source = `import { reserveRequest, quoteRequest } from ${JSON.stringify(usageUrl)};
     const q = quoteRequest({ model: 'gpt-6.2-sol', input: 'synthetic' });
     try { await reserveRequest({ workerType: 'sol6-2', model: 'gpt-6.2-sol', profile: 'standard', ...q }, { now: new Date(${JSON.stringify(NOV)}) }); console.log('ADMITTED'); }
@@ -480,8 +480,8 @@ test('the $88 credit reference stays informational and is never read by limit or
   // Admission: the allowance value changes nothing; only the separate limit enforces.
   for (const allowance of ['1', '88', '1000000']) {
     const env2 = { ...f.env, OPENAI_WORKER_MONTHLY_ALLOWANCE_USD: allowance };
-    assert.ok(await reserveRequest({ ...paid, requestId: `a${allowance}` }, { env: { ...env2, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50' }, now: new Date(NOV) }));
-    await assert.rejects(reserveRequest({ ...paid, requestId: `b${allowance}` }, { env: { ...env2, OPENAI_WORKER_MONTHLY_LIMIT_USD: '7.2' }, now: new Date(NOV) }), /monthly spending limit/);
+    assert.ok(await reserveRequest({ ...paid, requestId: `a${allowance}` }, { env: { ...env2, OPENAI_WORKER_MONTHLY_LIMIT_USD: '50', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' }, now: new Date(NOV) }));
+    await assert.rejects(reserveRequest({ ...paid, requestId: `b${allowance}` }, { env: { ...env2, OPENAI_WORKER_MONTHLY_LIMIT_USD: '7.2', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' }, now: new Date(NOV) }), /monthly spending limit/);
     const snapshot = await usageSnapshot({ env: env2, now: new Date(NOV) });
     assert.equal(snapshot.monthlyAllowanceUsd, Number(allowance)); assert.equal(snapshot.monthlyLimitUsd, null);
   }

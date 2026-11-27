@@ -14,7 +14,7 @@ import { createTurn, mayHaveIncurredUsage } from '../bridge/openai.mjs';
 import { bridgeHost, recordingTransport } from './bridge-host.mjs';
 
 const NOW = new Date('2026-11-21T01:00:00Z');
-const SPEND = { OPENAI_WORKER_MONTHLY_LIMIT_USD: '50' };
+const SPEND = { OPENAI_WORKER_MONTHLY_LIMIT_USD: '50', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' };
 
 /** A realistic v1 ledger: the first v2 write migrates it and leaves the migration month unreconciled. */
 async function writeV1(env) {
@@ -68,7 +68,7 @@ test('PRESEND-01: a refusal does not consume the agent: a new step key works and
 
 test('PRESEND-01: every definitive pre-send refusal releases the step: monthly limit, free daily allowance and ledger admission', async t => {
   const cases = {
-    'local monthly spending limit': { worker: 'luna6', env: { OPENAI_WORKER_MONTHLY_LIMIT_USD: '0.0000001' }, message: /Local monthly spending limit/ },
+    'local monthly spending limit': { worker: 'luna6', env: { OPENAI_WORKER_MONTHLY_LIMIT_USD: '0.0000001', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' }, message: /Local monthly spending limit/ },
     'free-key daily allowance': { worker: 'astra6free', env: { OPENAI_WORKER_PREMIUM_DAILY_TOKENS: '100', OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10' }, message: /soft daily allowance/ },
   };
   for (const [label, { worker, env, message }] of Object.entries(cases)) {

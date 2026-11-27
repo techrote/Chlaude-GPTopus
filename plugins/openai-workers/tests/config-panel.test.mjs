@@ -17,7 +17,7 @@ const NOW = new Date('2026-11-22T10:00:00Z');
 
 test('allowlist covers every env name the mod and bridge read, and never key names', () => {
   const register = readFileSync(new URL('../hooks/register.js', import.meta.url), 'utf8');
-  const sources = register + ['usage.mjs', 'workers.mjs', 'trace.mjs', 'steer.mjs'].map(f => readFileSync(new URL(`../bridge/${f}`, import.meta.url), 'utf8')).join('\n');
+  const sources = register + ['usage.mjs', 'policy.mjs', 'tree.mjs', 'workers.mjs', 'trace.mjs', 'steer.mjs'].map(f => readFileSync(new URL(`../bridge/${f}`, import.meta.url), 'utf8')).join('\n');
   const literal = new Set(sources.match(/\b(?:OPENAI_WORKER|OAI)_[A-Z0-9_]+\b/g));
   // Provider workers (NVIDIA Build, LM Studio) have no service tier and no USD cap, so those names are not configurable.
   for (const w of Object.keys(WORKER_TYPES)) for (const f of WORKER_TYPES[w].provider ? ['MODEL', 'EFFORT_MIN', 'EFFORT_MAX', 'EFFORT_DEFAULT', 'EFFORT_NOTE', 'MAX_STEPS']
@@ -71,7 +71,7 @@ test('validateConfig delegates to the plugin parsers: effort order, model/effort
   assert.equal(eff.workers['sol6-2'].tier, 'priority');
   assert.equal(eff.workers.luna6flex.tier, 'flex');
   assert.equal(eff.workers.astra6free.maxUsd, null);
-  assert.equal(eff.workers['sol6-2'].maxUsd, 4);
+  assert.equal(eff.workers['sol6-2'].maxUsd, null, 'no default per-task USD cap');
 });
 
 test('applyChanges is atomic, writes only the diff and records the pending marker', t => {

@@ -15,7 +15,7 @@ const paid = { workerType: 'sol6-2', model: 'gpt-6.2-sol', profile: 'standard' }
 function fixture(t, env = {}, now = '2026-11-21T01:00:00Z') {
   const dir = mkdtempSync(join(tmpdir(), 'ultra-accounting-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return { env: { OPENAI_WORKER_USAGE_DIR: dir, OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10', ...env }, now: new Date(now) };
+  return { env: { OPENAI_WORKER_USAGE_DIR: dir, OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0', ...env }, now: new Date(now) };
 }
 const final = (id, tokens = 25, usd = 0.01) => ({ id, status: 'completed', usage: { input: tokens, output: 0, total: tokens }, estimatedUsd: usd });
 function nodeProcess(source, env) {
@@ -115,7 +115,7 @@ test('ambiguous reservations never expire into free budget', async t => {
 });
 
 test('unknown prices and incomplete input bounds block configured spending guards', async t => {
-  const opts = fixture(t, { OPENAI_WORKER_MONTHLY_LIMIT_USD: '5' });
+  const opts = fixture(t, { OPENAI_WORKER_MONTHLY_LIMIT_USD: '5', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' });
   await assert.rejects(reserveRequest({ ...paid, model: 'gpt-unpriced', reservationUsd: 0 }, opts), /known price/);
   await assert.rejects(reserveRequest({ ...paid, inputBoundVerified: false }, opts), /complete input bound/);
   assert.equal(quoteRequest({ model: 'gpt-unpriced', input: 'test' }, opts).reservationUsd, null);
@@ -128,11 +128,11 @@ test('monthly allowance is informational and a separate zero limit is enforceabl
   const opts = fixture(t, { OPENAI_WORKER_MONTHLY_ALLOWANCE_USD: '0.001' });
   await accountResponse(await reserveRequest(paid, opts), final('resp_allowance', 1000, 2), opts);
   assert.equal((await usageSnapshot(opts)).allKeysMonthlyEstimatedUsd, 2);
-  await assert.rejects(reserveRequest({ ...paid, inputBoundVerified: true }, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '0' } }), /spending limit/);
+  await assert.rejects(reserveRequest({ ...paid, inputBoundVerified: true }, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '0', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' } }), /spending limit/);
 });
 
 test('both key profiles share a monthly ceiling including the new reservation', async t => {
-  const opts = fixture(t, { OPENAI_WORKER_MONTHLY_LIMIT_USD: '0.015' });
+  const opts = fixture(t, { OPENAI_WORKER_MONTHLY_LIMIT_USD: '0.015', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' });
   const results = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => reserveRequest({ ...(i % 2 ? free : paid), reservationUsd: 0.01, inputBoundVerified: true }, opts)));
   assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
   assert.equal((await usageSnapshot(opts)).monthlyReservedUsd, 0.01);
@@ -163,7 +163,7 @@ test('unknown response cost remains unknown and blocks later guarded admission',
   await accountResponse(await reserveRequest(paid, opts), { ...final('resp_unknown_cost'), estimatedUsd: null }, opts);
   const snapshot = await usageSnapshot(opts);
   assert.equal(snapshot.profiles.standard.unknownPriceRequests, 1);
-  await assert.rejects(reserveRequest(paid, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '10' } }), /known price/);
+  await assert.rejects(reserveRequest(paid, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '10', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' } }), /known price/);
 });
 
 test('model substitution and inconsistent measured counts retain reservation', async t => {
@@ -180,7 +180,7 @@ test('v1 migration preserves available monthly data and admits incomplete histor
   writeFileSync(usagePath(opts.env), JSON.stringify({ version: 1, days: { '2026-11-01': { groups: { premium: stats }, workers: { 'astra6free': stats }, totalEstimatedUsd: 0.01 } }, pending: {}, processed: { resp_migrated: '2026-11-01' } }));
   const snapshot = await usageSnapshot(opts);
   assert.equal(snapshot.monthlyEstimatedUsd, 0.01); assert.equal(snapshot.historicalTotalsMayBeIncomplete, true);
-  await assert.rejects(reserveRequest(paid, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '10' } }), /historical usage/);
+  await assert.rejects(reserveRequest(paid, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: '10', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' } }), /historical usage/);
   await reserveRequest(free, opts);
   assert.equal(JSON.parse(readFileSync(usagePath(opts.env), 'utf8')).version, 2);
 });
@@ -221,7 +221,7 @@ test('corrupt numeric totals and invalid config fail closed', async t => {
   doc.months['2026-11'] = { free: { tokens: -1, requests: 0, estimatedUsd: 0 }, standard: { tokens: 0, requests: 0, estimatedUsd: 0 } };
   writeFileSync(path, JSON.stringify(doc));
   await assert.rejects(reserveRequest(free, opts), /Invalid token usage ledger totals/);
-  await assert.rejects(reserveRequest(free, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: 'banana' } }), /Invalid local monthly spending limit/);
+  await assert.rejects(reserveRequest(free, { ...opts, env: { ...opts.env, OPENAI_WORKER_MONTHLY_LIMIT_USD: 'banana', OPENAI_WORKER_MONTHLY_ENFORCE: '1', OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0' } }), /Invalid local monthly spending limit/);
 });
 
 const paidArgs = { worker_type: 'sol6-2', model: 'gpt-6.2-sol', input: 'inspect', instructions: 'report', tools: [], max_output_tokens: 1024 };

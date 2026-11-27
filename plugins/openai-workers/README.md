@@ -79,7 +79,7 @@ Service tiers and model IDs can still be changed independently:
 
 `OPENAI_WORKER_SERVICE_TIER` sets a default for original workers. `OPENAI_WORKER_<AGENT>_SERVICE_TIER` overrides one. `sol6-1flex`, `astra6free`, `terra5-6free` preserve their named tier presets unless overridden explicitly. `flex` may be unavailable on some models; an invalid combination causes an error instead of automatically falling back to paid processing.
 
-`OPENAI_WORKER_MAX_STEPS` (default 40) remains an optional execution guardrail. The straight API workers also retain a default estimated `$4` per-worker cost guardrail (`OPENAI_WORKER_MAX_USD`); the two daily workers have no default dollar cap but can have one set per worker. These are independent of OpenAI’s complimentary allowance. The daily models default to standard processing and might incur charges once the API's daily entitlement is exhausted. Verify actual usage and model access in [OpenAI usage](https://platform.openai.com/usage).
+`OPENAI_WORKER_MAX_STEPS` (default 40) is the only built-in per-task guardrail. **There is no default per-task dollar cap** (v0.8.7 removed the old hidden `$4`): a USD cap exists only if you set `OPENAI_WORKER_MAX_USD` (all workers) or `OPENAI_WORKER_<WORKER>_MAX_USD` in `/oai:config`. `/oai` lists every active cap with the variable it came from. When a cap is reached the worker first gets a wrap-up turn (save/commit, summarise; up to 3 steps), then stops with a machine-readable status (see below) and keeps its conversation, so a new message resumes it with a fresh budget window. These are independent of OpenAI’s complimentary allowance. The daily models default to standard processing and might incur charges once the API's daily entitlement is exhausted. Verify actual usage and model access in [OpenAI usage](https://platform.openai.com/usage).
 
 ## Web configuration panel
 
@@ -109,6 +109,16 @@ Old worker names (`sol`, `astra`, `luna`, `flex6-1`, `daily-astrafree`, `daily-t
 Ask Claude Code to delegate specifically, for example:
 
 > Run the initial investigation with `oai:terra5-6free` and an independent architectural review with `oai:astra6free`. Use `oai:sol6-1flex` for time-insensitive fixes.
+
+**Astra entry point.** `oai:astra` is the one name to use for "Astra": it runs on the free pool (`astra6free`) while that lasts and then continues on paid Astra (`astra6-2`), stating the switch in the result (`OPENAI_WORKER_FREE_TO_PAID_DISABLE=1` turns the switch off). Requests for OpenAI workers must never be served by Claude agents; the agent descriptions say so.
+
+**Quota behaviour.** Free-pool reservations use a realistic size (measured context + bounded output, tightened by a rolling average) instead of the worst case, so many free workers fit at once; `/oai` shows the expected concurrent capacity. If the pool is only blocked by other workers' in-flight reservations, the request waits (`OPENAI_WORKER_FREE_QUEUE_SECONDS`, default 90) instead of failing. A provider "request too large" (TPM) error is answered by clipping tool outputs (`OPENAI_WORKER_TOOL_OUTPUT_CHARS`) and restarting from a compacted conversation, not by ending the task.
+
+**Monthly limit is a soft cap.** `OPENAI_WORKER_MONTHLY_LIMIT_USD` now warns (a `monthlyWarning` on the result and in `usage`, based on actual spend; reservations are reported separately) and never refuses; OpenAI applies the hard cap. `OPENAI_WORKER_MONTHLY_ENFORCE=1` opts in to refusals. The period resets at 01:00 UTC on the 27th (`OPENAI_WORKER_MONTHLY_RESET_DAY`, `OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC`).
+
+**Statuses.** Failures and stops end with a line `OAI-STATUS {"status":"failed|stopped","reason":"quota_free_daily|monthly_soft_limit|task_budget|step_cap|tpm_limit|api_error|cancelled","resumable":true,...}`. The host still labels the subagent task itself; the line is the reliable signal.
+
+**Worker-spawns-worker (nested delegation).** `bridge/tree.mjs` implements the delegation core: `delegation: {maxConcurrent, types, maxDepth}` grants parsed from the launch prompt, owner ceilings (`OAI_DELEGATION_MAX_DEPTH`, `OAI_DELEGATION_MAX_TOTAL`, `OAI_DELEGATION_TYPES`), atomic global admission where waiting parents hold slots (extra spawns queue, deadlocks are broken), budget attenuation, cascade cancel, file ownership, git-worktree isolation, concise per-node reports and per-tree summaries, and per-root/parent ledger attribution (`usage.trees`). **Not yet wired:** the `spawn_worker`/`poll_worker`/... tools exposed to the workers themselves, because a child needs a host that runs its Read/Edit/Write/Bash calls; until that exists, workers cannot actually spawn children.
 
 The plugin intercepts each native subagent model step, calls OpenAI Responses API in background mode, converts GPT tool calls to Claude Code's `Read`, `Edit`, `Write`, and `Bash` tools (still gated by Claude Code's permissions), and returns the result to Claude. It does not redirect the top-level Claude model or modify default built-in subagents.
 

@@ -93,7 +93,7 @@ test('legacy session registers provider workers with provider-aware descriptions
   const fake = makeEngine([], 'oai:sol6-2');
   await fake.handlers.get('session.start')(fake.context, {}, async e => e);
   const names = fake.registered.map(a => a.name);
-  assert.deepEqual(names.sort(), Object.keys(WORKER_TYPES).sort());
+  assert.deepEqual(names.sort(), [...Object.keys(WORKER_TYPES), 'astra'].sort()); // 'astra' = free->paid entry point
   for (const name of PROVIDER_WORKERS) {
     const agent = fake.registered.find(a => a.name === name), spec = WORKER_TYPES[name];
     assert.match(agent.description, spec.provider === 'nvidia' ? /NVIDIA Build/ : /LM Studio model on this PC/);

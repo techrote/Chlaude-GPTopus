@@ -137,7 +137,7 @@ test('native helper schemas classify only exact known host identities and guarde
 test('native opt-in registers recursive Agent and scoped tools while legacy mode retains its four tools', async t => {
   const off = await fixture(t, { enabled: false });
   // Legacy mode also offers the NVIDIA Build / LM Studio provider workers; protected ULTRA governs the eight OpenAI workers only.
-  assert.equal(off.registeredAgents.length, Object.keys(WORKER_TYPES).length); assert.equal(off.registeredTools.length, 0);
+  assert.equal(off.registeredAgents.length, Object.keys(WORKER_TYPES).length + 1); // + the 'astra' free->paid entry point assert.equal(off.registeredTools.length, 0);
   assert.ok(off.registeredAgents.every(a => a.tools.join(',') === 'Read,Edit,Write,Bash'));
   const on = await fixture(t);
   assert.equal(on.registeredAgents.length, 8); assert.equal(on.registeredTools.length, 13);

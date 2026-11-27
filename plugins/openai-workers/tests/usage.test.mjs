@@ -12,7 +12,7 @@ import { groupForModel, settings, usagePath, reserveRequest, releaseRequest,
 function fixture(t, extra = {}, now = '2026-11-21T01:00:00Z') {
   const directory = mkdtempSync(join(tmpdir(), 'claude-openai-usage-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const env = { OPENAI_WORKER_USAGE_DIR: directory, ...extra };
+  const env = { OPENAI_WORKER_USAGE_DIR: directory, OPENAI_WORKER_MONTHLY_RESET_DAY: '1', OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC: '0', ...extra };
   return { env, now: new Date(now) };
 }
 function response(id, input = 20, output = 5, extra = {}) {
