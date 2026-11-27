@@ -1,6 +1,6 @@
 import { WORKER_TYPES as TYPES, effortPolicy, selectWorkerEffort, effortGuidance } from '../bridge/workers.mjs';
-import { guardrails, describeGuardrails, budgetPhase, stopRecord, classifyError, ROUTES, freeToPaidEnabled, WRAP_UP_MESSAGE, tooLarge, capOutputs, compactedInput } from '../bridge/policy.mjs';
-import { OPENAI_TOOLS } from './tools.js';
+import { guardrails, describeGuardrails, budgetPhase, stopRecord, classifyError, ROUTES, freeToPaidEnabled, WRAP_UP_MESSAGE, tooLarge, capOutputs, compactedInput, repairInput } from '../bridge/policy.mjs';
+import { OPENAI_TOOLS, filterToolArgs } from './tools.js';
 import { newRun, nextInput, responseStep, stopStep, finalStep } from './step.js';
 import { ULTRA_NATIVE_SPECS, NATIVE_PREFIX, nativeWorker, isPrivateBridgeTool, hostVersionSupported } from './ultra.js';
 import { renderStatus } from './status-art.js';
@@ -10,7 +10,7 @@ import { signRequest, parseChannelKey, modKeyPath, isWindowsHost, CHANNEL_STALE,
 const PLUGIN = 'oai';
 /** Entry points that route by policy instead of naming one worker. "oai:astra" = free Astra first, then paid Astra. */
 const ALIASES = { astra: { free: 'astra6free', paid: 'astra6-2', description: 'Astra: ALWAYS the right choice when the owner says "Astra". Uses the free Astra pool (astra6free) while it lasts, then continues automatically on paid Astra (astra6-2) and says so in the result. Never substitute a Claude agent for an OpenAI worker request.' } };
-const VERSION = '0.8.7';
+const VERSION = '0.8.8';
 const SERVER = 'plugin:oai:bridge';
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
@@ -1105,7 +1105,7 @@ export function register(on) {
           const maxOutputChars = cap(env.OPENAI_WORKER_TOOL_OUTPUT_CHARS, 40000);
           plan.input = capOutputs(plan.input, maxOutputChars);
           const flexWait = Math.min(120, cap(env.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES, 45));
-          let response, nativeContext;
+          let response, nativeContext, repairUsd = 0;
           if (ultraEnabled && spec.provider) {
             throw new Error(`${providerName(spec)} workers are not governed by protected ULTRA missions`);
           } else if (ultraEnabled) {
@@ -1165,6 +1165,18 @@ export function register(on) {
               if (wait === null || attempt >= 4 || next.signal?.aborted) break;
               await new Promise(r => setTimeout(r, wait));
             }
+            // Empty replies, rejected/malformed tool calls and output-limit cuts are repaired in place (max 3), never reported as done.
+            for (let fix = 0; fix < 3 && response.id && !next.signal?.aborted; fix++) {
+              const repair = repairInput(response, filterToolArgs);
+              if (!repair) break;
+              const again = await query(host.call, { worker_type: type, model, input: repair.input, previous_response_id: response.id,
+                instructions: await instructions(() => $.session.cwd(), p => $.fs.read(p)), tools: OPENAI_TOOLS, effort: effortSelection.effective,
+                max_output_tokens: effortSelection.effective === 'max' ? 32000 : 16000, ...(service_tier && { service_tier }),
+                ...(spec.provider && { agent_id: e.agentId }) }, next.signal, spec.provider ? 30 : service_tier === 'flex' ? flexWait : 15, null);
+              if (again.status !== 'completed' && again.status !== 'incomplete' && !again.usage) break;
+              if (Number.isFinite(response.estimatedUsd)) repairUsd += response.estimatedUsd;
+              response = again;
+            }
           }
           const verifiedCost = Number.isFinite(response.estimatedUsd) && response.estimatedUsd >= 0;
           const failedUnbilled = response.status !== 'completed' && !response.usage;
@@ -1180,8 +1192,10 @@ export function register(on) {
           if (steering?.tips?.some(t => t.ack || t.assess || t.conseq) && response.text)
             await steerCall(steerHost, { op: 'reply', agentId: e.agentId, step: run.steps, text: response.text });
           if (steering && result.finished) await steerCall(steerHost, { op: 'end', agentId: e.agentId });
-          nextState = { lastTools: (result.toolUses ?? []).map(u => u.name), effort: run.effort ?? marked.effort, responseId: failedUnbilled ? run.responseId : response.id, pending: result.pending, seenPrompts: plan.seenPrompts,
-            steps: run.steps + 1, estimatedUsd: verifiedCost ? run.estimatedUsd + response.estimatedUsd : run.estimatedUsd,
+          nextState = { lastTools: (result.toolUses ?? []).map(u => u.name), effort: run.effort ?? marked.effort, responseId: failedUnbilled ? run.responseId : response.id,
+            // A response that still holds unanswered calls (refused, held, truncated) must stay answerable on resume, or OpenAI rejects it with HTTP 400.
+            pending: result.pending.length || failedUnbilled ? result.pending : (response.calls ?? []).map(c => c.call_id), seenPrompts: plan.seenPrompts,
+            steps: run.steps + 1, estimatedUsd: run.estimatedUsd + repairUsd + (verifiedCost ? response.estimatedUsd : 0),
             usageStatus: verifiedCost ? 'verified' : 'unverified', finished: result.finished, handback: result.handback,
             ...carried, route: type !== (alias ? ALIASES[alias].free : Object.keys(TYPES).find(t => agent.type === owner(t))) ? type : carried.route };
         }

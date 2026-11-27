@@ -337,7 +337,7 @@ export async function handle(message, write = send) {
   if (message.method === 'initialize') return write({ jsonrpc: '2.0', id, result: {
     protocolVersion: message.params?.protocolVersion ?? '2025-06-18',
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: 'openai-workers-bridge', version: '0.8.7' },
+    serverInfo: { name: 'openai-workers-bridge', version: '0.8.8' },
   } });
   if (message.method === 'ping') return write({ jsonrpc: '2.0', id, result: {} });
   if (message.method === 'tools/list') return write({ jsonrpc: '2.0', id, result: { tools: defs } });

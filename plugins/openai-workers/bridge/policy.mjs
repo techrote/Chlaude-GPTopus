@@ -80,6 +80,30 @@ export function tooLarge(response) {
 }
 const clip = (text, max) => { const s = String(text ?? ''); return s.length <= max ? s : `${s.slice(0, Math.floor(max * 0.6))}\n...[${s.length - max} chars omitted by the bridge]...\n${s.slice(-Math.floor(max * 0.3))}`; };
 /** Cap every function_call_output in a Responses input so one huge tool result cannot blow a request. */
+/**
+ * A turn that is not a real answer or a runnable tool call must be repaired, not reported as "completed":
+ * empty replies (reasoning only), malformed/refused tool calls (e.g. truncated JSON on a long Write) and
+ * output-limit truncations. Returns the follow-up input (answering EVERY call of the response, so the
+ * conversation stays continuable) or null when the response is fine.
+ */
+export function repairInput(response, validate) {
+  const calls = response?.calls ?? [];
+  const problems = new Map();
+  for (const c of calls) { try { validate(c.name, c.args); } catch (e) { problems.set(c.call_id, String(e?.message ?? e)); } }
+  const truncated = response?.status === 'incomplete' && /max_output_tokens/.test(response.reason ?? '');
+  const empty = response?.status === 'completed' && !calls.length && !(response.text ?? '').trim();
+  if (!problems.size && !truncated && !empty) return null;
+  const outputs = calls.map(c => ({ type: 'function_call_output', call_id: c.call_id,
+    output: problems.has(c.call_id)
+      ? `ERROR: this tool call was rejected (${problems.get(c.call_id)}). Resend it with valid JSON arguments; write large files in several smaller Write/Edit calls.`
+      : 'ERROR: not executed because another call in the same turn was rejected or cut off. Resend it.' }));
+  const note = truncated ? 'Your previous output hit the output limit and was cut off. Continue the task; keep each tool call small (write large files in several chunks).'
+    : empty ? 'You ended your turn without a final message or a tool call. If the task is complete, state the result now; otherwise continue with tool calls.'
+    : 'Continue the task.';
+  return { input: [...outputs, { role: 'user', content: note }],
+    reason: truncated ? 'truncated' : empty ? 'empty' : 'rejected_call' };
+}
+
 export function capOutputs(input, max = 40_000) {
   if (!Array.isArray(input)) return input;
   return input.map(item => item?.type === 'function_call_output' && typeof item.output === 'string' && item.output.length > max ? { ...item, output: clip(item.output, max) } : item);
