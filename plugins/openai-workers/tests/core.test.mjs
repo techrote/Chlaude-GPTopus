@@ -355,13 +355,13 @@ test('free-key daily threshold pauses only its worker; straight API continues', 
   try {
     Object.assign(process.env, {
       OPENAI_API_KEY: 'sk-paid-fixture', OPENAI_FREE_API_KEY: 'sk-free-fixture',
-      OPENAI_WORKER_USAGE_DIR: directory, OPENAI_WORKER_PREMIUM_DAILY_TOKENS: '17080',
+      OPENAI_WORKER_USAGE_DIR: directory, OPENAI_WORKER_PREMIUM_DAILY_TOKENS: '8100',
       OPENAI_WORKER_DAILY_RESERVE_TOKENS: '10', OPENAI_WORKER_DAILY_OVERRUN_PERCENT: '0',
     });
     globalThis.fetch = async () => {
       calls++;
       return { ok: true, json: async () => ({ id: `resp_limit${calls}`, status: 'completed',
-        usage: { total_tokens: 25, input_tokens: 20, output_tokens: 5 }, output: [] }) };
+        usage: { total_tokens: 8000, input_tokens: 7990, output_tokens: 10 }, output: [] }) };
     };
     const args = { input: 'hello', instructions: 'test', tools: [] };
     await dispatch('create', { ...args, worker_type: 'astra6free', model: 'gpt-6-astra' });
@@ -370,7 +370,7 @@ test('free-key daily threshold pauses only its worker; straight API continues', 
     await dispatch('create', { ...args, worker_type: 'sol6-1flex', model: 'gpt-6.1-sol', service_tier: 'flex' });
     assert.equal(calls, 2, 'straight key must remain available');
     const usage = await dispatch('usage');
-    assert.equal(usage.groups.premium.usedTokens, 25);
+    assert.equal(usage.groups.premium.usedTokens, 8000);
   } finally {
     globalThis.fetch = originalFetch;
     for (const [key, value] of Object.entries(old)) {

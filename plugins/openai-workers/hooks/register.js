@@ -10,7 +10,7 @@ import { signRequest, parseChannelKey, modKeyPath, isWindowsHost, CHANNEL_STALE,
 const PLUGIN = 'oai';
 /** Entry points that route by policy instead of naming one worker. "oai:astra" = free Astra first, then paid Astra. */
 const ALIASES = { astra: { free: 'astra6free', paid: 'astra6-2', description: 'Astra: ALWAYS the right choice when the owner says "Astra". Uses the free Astra pool (astra6free) while it lasts, then continues automatically on paid Astra (astra6-2) and says so in the result. Never substitute a Claude agent for an OpenAI worker request.' } };
-const VERSION = '0.8.8';
+const VERSION = '0.8.9';
 const SERVER = 'plugin:oai:bridge';
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 const SERVICE_TIERS = new Set(['auto', 'default', 'flex', 'fast', 'priority']);
