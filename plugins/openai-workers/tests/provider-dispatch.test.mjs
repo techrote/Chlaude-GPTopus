@@ -21,7 +21,7 @@ const refuseOpenAI = { create: () => { throw new Error('OpenAI transport must no
 
 test('registry: eleven provider workers, eight unchanged OpenAI workers, provider-only settings', () => {
   assert.deepEqual(OPENAI_WORKERS, ['sol6-2', 'astra6-2', 'luna6', 'luna6fast', 'luna6flex', 'sol6-1flex', 'astra6free', 'terra5-6free']);
-  assert.deepEqual(PROVIDER_WORKERS, ['kimik3-1pro', 'mistral4large', 'nemo3-5supervl', 'nemo3-5lightning', 'sprocket0-5', 'lfm2-5mini', 'lfm3heretic', 'lfm3vl', 'lfm2-5turbo8b', 'lfm2-5turbo24b', 'inkling2mini']);
+  assert.deepEqual(PROVIDER_WORKERS, ['kimik3-1pro', 'mistral4large', 'nemo3-5supervl', 'nemo3-5lightning', 'sprocket0-5', 'lfm2-5mini', 'lfm3heretic', 'lfm3vl', 'lfm2-5turbo8b', 'lfm2-5turbo24b', 'inkling2mini', 'katcoder2-5']);
   for (const w of PROVIDER_WORKERS) {
     const s = workerSettings(w, { OPENAI_WORKER_SERVICE_TIER: 'priority' });
     assert.equal(s.service_tier, undefined, `${w} has no service tier`);

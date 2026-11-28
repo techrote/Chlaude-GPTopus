@@ -42,7 +42,7 @@ function mockedMod(worker, vars = {}) {
 test('defaults: Luna Max only, Terra high..max, other workers bounded with short notes', () => {
   assert.deepEqual(Object.keys(DEFAULT_EFFORT_POLICIES).sort(), ['astra6-2', 'astra6free', 'terra5-6free', 'sol6-1flex', 'luna6', 'luna6fast', 'luna6flex', 'sol6-2',
     // chat-completions provider workers (NVIDIA Build, LM Studio)
-    'kimik3-1pro', 'mistral4large', 'nemo3-5supervl', 'nemo3-5lightning', 'sprocket0-5', 'lfm2-5mini', 'lfm3heretic', 'lfm3vl', 'lfm2-5turbo8b', 'lfm2-5turbo24b', 'inkling2mini'].sort());
+    'kimik3-1pro', 'mistral4large', 'nemo3-5supervl', 'nemo3-5lightning', 'sprocket0-5', 'lfm2-5mini', 'lfm3heretic', 'lfm3vl', 'lfm2-5turbo8b', 'lfm2-5turbo24b', 'inkling2mini', 'katcoder2-5'].sort());
   assert.equal(effortPolicy('luna6', {}).min, 'max');
   assert.equal(effortPolicy('luna6', {}).max, 'max');
   assert.equal(effortPolicy('terra5-6free', {}).min, 'high');

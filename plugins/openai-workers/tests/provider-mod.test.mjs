@@ -93,7 +93,7 @@ test('legacy session registers provider workers with provider-aware descriptions
   const fake = makeEngine([], 'oai:sol6-2');
   await fake.handlers.get('session.start')(fake.context, {}, async e => e);
   const names = fake.registered.map(a => a.name);
-  assert.deepEqual(names.sort(), Object.keys(WORKER_TYPES).sort());
+  assert.deepEqual(names.sort(), [...Object.keys(WORKER_TYPES), 'astra'].sort()); // 'astra' = free->paid entry point
   for (const name of PROVIDER_WORKERS) {
     const agent = fake.registered.find(a => a.name === name), spec = WORKER_TYPES[name];
     assert.match(agent.description, spec.provider === 'nvidia' ? /NVIDIA Build/ : /LM Studio model on this PC/);
@@ -133,4 +133,37 @@ test('status renderer: model cell drops the publisher prefix only for long ids',
   const text = renderStatus({ now: new Date('2026-11-22T00:00:00Z'), version: 't', keys: [], usage: null, usageError: 'x', notes: [], ultra: { enabled: false }, active: [],
     workers: PROVIDER_WORKERS.map(name => ({ name, model: WORKER_TYPES[name].model, key: WORKER_TYPES[name].key, provider: WORKER_TYPES[name].provider, tier: '—', effort: effortPolicy(name, {}) })) });
   for (const line of text.split('\n')) assert.equal(visibleLength(line), WIDTH);
+});
+
+test('live-config.json overrides the session-start env snapshot for the model sent (no restart)', async () => {
+  const fake = makeEngine([{ id: 'chat_c9_1', status: 'completed', text: 'ok', estimatedUsd: 0 }], 'oai:lfm2-5turbo24b',
+    { LOCALAPPDATA: 'C:/Users/x/AppData/Local', OPENAI_WORKER_LFM2_5TURBO24B_MODEL: 'old-model' });
+  const reads = [];
+  fake.context.fs.read = async p => { reads.push(p); return JSON.stringify({ version: 1, values: { OPENAI_WORKER_LFM2_5TURBO24B_MODEL: 'kat-coder' } }); };
+  await consume(fake.handlers.get('turn.step')(fake.context, { agentId: 'ag_1', turnId: 't1', index: 0 }, noFallback));
+  assert.ok(reads.some(p => /ClaudeOpenAIWorkers\/live-config\.json$/.test(p)), reads.join());
+  assert.equal(fake.sent.find(s => s.name === 'create').args.model, 'kat-coder');
+});
+
+test('first worker spawn shows the config panel in the Claude Code browser pane, with system-browser fallback', async () => {
+  const URL1 = 'http://127.0.0.1:4321/?t=abc';
+  for (const paneFails of [false, true]) {
+    const fake = makeEngine([], 'oai:katcoder2-5');
+    const calls = [], toasts = [];
+    fake.context.mcp.call = async (server, name, args) => {
+      calls.push({ server, name, args });
+      if (server === 'Claude_Browser') { if (paneFails) throw new Error('no pane'); return { content: [] }; }
+      return { content: [{ type: 'text', text: JSON.stringify(name === 'panel' ? { url: URL1 } : {}) }] };
+    };
+    fake.context.ui = { toast: async t => { toasts.push(t); } };
+    await fake.handlers.get('session.start')(fake.context, {}, async e => e);
+    const spawn = fake.handlers.get('agent.spawn');
+    await spawn(fake.context, { subagentType: 'oai:katcoder2-5', description: 'x' }, async e => ({ agentId: 'ag_1' }));
+    await spawn(fake.context, { subagentType: 'oai:katcoder2-5', description: 'y' }, async e => ({ agentId: 'ag_2' }));
+    assert.deepEqual(calls[0], { server: 'plugin:oai:bridge', name: 'panel', args: { auto: true } });
+    assert.deepEqual(calls[1], { server: 'Claude_Browser', name: 'preview_start', args: { url: URL1 } });
+    if (paneFails) assert.deepEqual(calls[2].args, { system: true });
+    assert.equal(calls.filter(c => c.name === 'panel' && c.args.auto).length, 1, 'checked once per session');
+    assert.match(toasts[0], paneFails ? /system browser.*\/oai:config/ : /browser pane.*\/oai:config/);
+  }
 });

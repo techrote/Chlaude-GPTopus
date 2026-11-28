@@ -33,6 +33,8 @@ export const WORKER_TYPES = Object.freeze({
     description: 'Local LM Studio model on this PC: LFM2.5 24B-A2B Turbo (MoE), the strongest local LFM for multi-step work.' },
   inkling2mini: { model: 'thinkingmachines/inkling-2-mini', provider: 'lmstudio', key: 'none', env: 'OPENAI_WORKER_INKLING2MINI_MODEL', tools: true, thinking: 'always', steerMode: 'think', vision: true,
     description: 'Local LM Studio model on this PC: Inkling 2 Mini, long-context vision reasoning model.' },
+  'katcoder2-5': { model: 'kat-coder-v2.5-dev-reap-50', provider: 'lmstudio', key: 'none', env: 'OPENAI_WORKER_KATCODER2_5_MODEL', tools: true, thinking: 'none', steerMode: 'think', vision: false,
+    description: 'Local LM Studio model on this PC: KAT-Coder V2.5 (REAP-50), agentic coding: edits, refactors and multi-step code tasks.' },
 });
 /** Chat-completions providers. OpenAI workers have no provider field. */
 export const PROVIDERS = Object.freeze(['nvidia', 'lmstudio']);
@@ -64,6 +66,7 @@ export const DEFAULT_EFFORT_POLICIES = Object.freeze({
   'lfm2-5turbo8b': { min: 'none', max: 'max', default: 'medium', note: 'Local reasoning model; effort is advisory (LM Studio controls thinking).' },
   'lfm2-5turbo24b': { min: 'none', max: 'max', default: 'medium', note: 'Local reasoning model; effort is advisory (LM Studio controls thinking).' },
   inkling2mini: { min: 'none', max: 'max', default: 'medium', note: 'Local reasoning model; effort is advisory (LM Studio controls thinking).' },
+  'katcoder2-5': { min: 'none', max: 'max', default: 'none', note: 'Local coding model without separate reasoning; effort has no effect.' },
 });
 const effortRank = value => EFFORTS.indexOf(value);
 const effortEnvPrefix = name => `OPENAI_WORKER_${workerEnvSuffix(name)}_EFFORT_`;

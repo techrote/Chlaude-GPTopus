@@ -37,7 +37,12 @@ export function snapshotStateDir(dir) {
 }
 
 const before = snapshotStateDir(realStateDir);
+// The owner's own worker settings (flex tier, caps, monthly limit...) must never leak into a test run.
+for (const key of Object.keys(process.env)) if (/^(OPENAI_WORKER_|OAI_)/.test(key) && key !== 'OPENAI_WORKER_USAGE_DIR') delete process.env[key];
 export const testRoot = mkdtempSync(join(tmpdir(), 'gptopus-test-'));
+// Inherited by every child process (even ones that drop NODE_TEST_CONTEXT): production code that would
+// start a real process or browser (config panel, live user-env reads) checks it and does nothing.
+process.env.OAI_TEST_SANDBOX = '1';
 const home = join(testRoot, 'home');
 mkdirSync(home, { recursive: true });
 Object.assign(process.env, {

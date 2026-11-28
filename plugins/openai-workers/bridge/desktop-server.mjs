@@ -23,7 +23,7 @@ const MODERN_PROTOCOL = '2026-07-28';
 const LEGACY_PROTOCOLS = Object.freeze(['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']);
 const PROTOCOL_VERSION_META = 'io.modelcontextprotocol/protocolVersion';
 const SERVER_INFO_META = 'io.modelcontextprotocol/serverInfo';
-const SERVER_INFO = Object.freeze({ name: 'chlaude-gptopus-desktop', version: '0.8.0' });
+const SERVER_INFO = Object.freeze({ name: 'chlaude-gptopus-desktop', version: '0.8.9' });
 const SERVER_CAPABILITIES = Object.freeze({ tools: Object.freeze({ listChanged: false }) });
 export const definitions = [
   { name: 'list_openai_workers', description: 'List the eight available OpenAI workers, chosen models, tier and two-key configuration. Never returns secrets.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },

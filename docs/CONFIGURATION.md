@@ -121,7 +121,7 @@ Docs: [OpenAI reasoning efforts](https://developers.openai.com/api/docs/guides/r
 | `OPENAI_WORKER_DAILY_RESERVE_TOKENS` | `12000` | Conservative per in-flight call reservation, can be 0 |
 | `OPENAI_WORKER_DAILY_MAX_INFLIGHT` | `16` | Maximum simultaneous reserved calls per group |
 | `OPENAI_WORKER_MONTHLY_ALLOWANCE_USD` | unset | Informational monthly reference only |
-| `OPENAI_WORKER_MONTHLY_LIMIT_USD` | unset | Enforceable local monthly estimate guard across both keys (`0` = zero spend). After a v1 ledger upgrade it blocks the migration month until the owner runs [`reconcile-usage`](ULTRA_ACCOUNTING.md#owner-reconciliation-after-a-v1-upgrade); later months are unaffected |
+| `OPENAI_WORKER_MONTHLY_LIMIT_USD` | unset | SOFT cap (warns; hard-enforced only with `OPENAI_WORKER_MONTHLY_ENFORCE=1`); period resets 01:00 UTC on the 27th (`OPENAI_WORKER_MONTHLY_RESET_DAY`/`_HOUR_UTC`). Local monthly estimate guard across both keys (`0` = zero spend). After a v1 ledger upgrade it blocks the migration month until the owner runs [`reconcile-usage`](ULTRA_ACCOUNTING.md#owner-reconciliation-after-a-v1-upgrade); later months are unaffected |
 | `OPENAI_WORKER_USAGE_DIR` | OS state directory | Custom folder for `free-usage-ledger.json` |
 
 The script applies the normal settings for both token groups:
@@ -140,7 +140,7 @@ See [Daily usage and billing](QUOTAS_AND_BILLING.md) for the exact accounting se
 | Variable | Default | Behaviour |
 |---|---:|---|
 | `OPENAI_WORKER_MAX_STEPS` | `40` | Maximum OpenAI model steps per subagent run |
-| `OPENAI_WORKER_MAX_USD` | `4` | Estimated cost guardrail for straight-key workers |
+| `OPENAI_WORKER_MAX_USD` | unset (no cap) | Optional per-task estimated cost cap; wrap-up turn, then a resumable `task_budget` stop |
 | `OPENAI_WORKER_<AGENT>_MAX_STEPS` | unset | Per-agent override |
 | `OPENAI_WORKER_<AGENT>_MAX_USD` | unset | Per-agent estimated cost override; daily workers have no default dollar cap |
 | `OPENAI_WORKER_FLEX_TIMEOUT_MINUTES` | `45` | Flex polling deadline, clamped to 120 minutes |

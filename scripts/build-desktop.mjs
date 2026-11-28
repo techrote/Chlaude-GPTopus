@@ -52,12 +52,20 @@ const SOURCES = {
   'server/chat.mjs': 'plugins/openai-workers/bridge/chat.mjs',
   'server/convo.mjs': 'plugins/openai-workers/bridge/convo.mjs',
   'server/rotation.mjs': 'plugins/openai-workers/bridge/rotation.mjs',
+  'server/panel.mjs': 'plugins/openai-workers/bridge/panel.mjs',
+  'server/live-env.mjs': 'plugins/openai-workers/bridge/live-env.mjs',
+  'server/native-channel.mjs': 'plugins/openai-workers/bridge/native-channel.mjs',
+  'server/policy.mjs': 'plugins/openai-workers/bridge/policy.mjs',
+  'server/tree.mjs': 'plugins/openai-workers/bridge/tree.mjs',
+  'scripts/oai-config-core.mjs': 'plugins/openai-workers/scripts/oai-config-core.mjs',
+  'scripts/oai-colour.mjs': 'plugins/openai-workers/scripts/oai-colour.mjs',
   'scripts/read-openai-key.ps1': 'plugins/openai-workers/scripts/read-openai-key.ps1',
 };
 // Preserve source-relative imports for the shared policy/runtime used by both
 // facades. Mirrors are deterministic copies of the same canonical bridge files.
-for (const name of ['workers.mjs', 'usage.mjs', 'openai.mjs', 'server.mjs', 'trace.mjs', 'steer.mjs', 'chat.mjs', 'convo.mjs', 'rotation.mjs', 'direct-run.mjs']) SOURCES[`bridge/${name}`] = `plugins/openai-workers/bridge/${name}`;
+for (const name of ['workers.mjs', 'usage.mjs', 'openai.mjs', 'server.mjs', 'trace.mjs', 'steer.mjs', 'chat.mjs', 'convo.mjs', 'rotation.mjs', 'direct-run.mjs', 'panel.mjs', 'live-env.mjs', 'native-channel.mjs', 'policy.mjs', 'tree.mjs']) SOURCES[`bridge/${name}`] = `plugins/openai-workers/bridge/${name}`;
 for (const name of readdirSync(join(root, 'plugins/openai-workers/ultra')).filter(name => name.endsWith('.mjs')).sort()) SOURCES[`ultra/${name}`] = `plugins/openai-workers/ultra/${name}`;
+SOURCES['hooks/channel.js'] = 'plugins/openai-workers/hooks/channel.js';
 SOURCES['hooks/ultra.js'] = 'plugins/openai-workers/hooks/ultra.js';
 SOURCES['package.json'] = 'plugins/openai-workers/package.json';
 const manifest = JSON.parse(readFileSync(join(root, SOURCES['manifest.json']), 'utf8'));

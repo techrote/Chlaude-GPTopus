@@ -363,7 +363,7 @@ footer .lcd.err{color:color-mix(in oklab,var(--red) 60%,var(--text));text-shadow
   <div id="pending" role="alert">
     <div class="plate">
       <span class="led" aria-hidden="true"></span>
-      <span class="msg">CHANGES PENDING — RESTART CLAUDE CODE</span>
+      <span class="msg">CHANGES SAVED — APPLIED ON THE NEXT WORKER CALL (RESTART ONLY FOR NEW WORKERS / ULTRA)</span>
       <span class="names" id="pendingNames"></span>
       <label class="chk">AUTO-CLEAR <select id="autoClear" aria-label="Auto-clear pending marker"><option value="0">NEVER</option><option value="10">10 MIN</option><option value="30">30 MIN</option><option value="60">1 H</option><option value="240">4 H</option></select></label>
     </div>
@@ -826,7 +826,7 @@ let blinkTimer = null;
 function titleState(on) {
   clearInterval(blinkTimer); blinkTimer = null;
   if (!on) { document.title = 'OAI CONFIG'; return; }
-  document.title = '⚠ RESTART CLAUDE CODE · OAI CONFIG';
+  document.title = '● SAVED · OAI CONFIG';
 
 }
 function applyTips() {

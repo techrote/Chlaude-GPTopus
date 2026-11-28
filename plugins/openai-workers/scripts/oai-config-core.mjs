@@ -39,8 +39,8 @@ function globalParams() {
       help: 'Global OpenAI service tier for workers WITHOUT a built-in tier (sol6-2, astra6-2, luna6). Empty = the API project default.' },
     { name: 'OPENAI_WORKER_MAX_STEPS', group: 'global', label: 'MAX STEPS', kind: 'int', def: 40, bounds: [1, 1000], window: [1, 120], notches: [10, 20, 40, 80, 120], unit: 'steps',
       help: 'Model steps per worker run before the guardrail stops it. Per-worker MAX STEPS overrides this.' },
-    { name: 'OPENAI_WORKER_MAX_USD', group: 'global', label: 'MAX USD/RUN', kind: 'num', def: 4, bounds: [0.01, 1000], window: [0.1, 25], log: true, step: 0.01, notches: [0.5, 1, 2, 4, 10, 20], unit: 'USD',
-      help: 'Estimated spend per paid-key worker run before it is stopped. Free-key workers ignore it (no cap) unless their own MAX USD is set.' },
+    { name: 'OPENAI_WORKER_MAX_USD', group: 'global', label: 'MAX USD/RUN', kind: 'num', def: null, optional: true, bounds: [0.01, 1000], window: [0.1, 25], log: true, step: 0.01, notches: [0.5, 1, 2, 4, 10, 20], unit: 'USD',
+      help: 'OPTIONAL per-task spend cap. Empty = NO cap (the default). When set, a worker gets a wrap-up turn, then stops with status "stopped / task_budget"; send it a message to resume with a fresh budget. Per-worker MAX USD overrides this.' },
     { name: 'OPENAI_WORKER_FLEX_TIMEOUT_MINUTES', group: 'global', label: 'FLEX TIMEOUT', kind: 'int', def: 45, bounds: [1, 120], window: [5, 120], notches: [15, 30, 45, 60, 90, 120], unit: 'min',
       help: 'How long a Flex-tier request may wait. The plugin caps it at 120 minutes.' },
     { name: 'OPENAI_WORKER_PREMIUM_DAILY_TOKENS', group: 'quota', label: 'PREMIUM/DAY', kind: 'int', def: 250000, bounds: [0, 100000000], window: [10000, 5000000], log: true, notches: [100000, 250000, 500000, 1000000], unit: 'tok',
@@ -50,7 +50,13 @@ function globalParams() {
     { name: 'OPENAI_WORKER_DAILY_OVERRUN_PERCENT', group: 'quota', label: 'OVERRUN', kind: 'int', def: 10, bounds: [0, 100], window: [0, 100], notches: [0, 5, 10, 25, 50, 100], unit: '%',
       help: 'Headroom above the daily target before admission stops (soft limit = target x (1 + overrun)).' },
     { name: 'OPENAI_WORKER_MONTHLY_LIMIT_USD', group: 'spend', label: 'MONTHLY LIMIT', kind: 'num', def: null, bounds: [0, 100000], window: [1, 1000], log: true, step: 0.01, notches: [10, 25, 50, 100, 250, 500], unit: 'USD', optional: true,
-      help: 'ENFORCED: local estimated spend across both keys per UTC month; admission stops at this limit. Empty = no cost blocking.' },
+      help: 'SOFT CAP: local estimated spend across both keys per billing period (resets 01:00 UTC on the 27th by default). Crossing it WARNS in results and /oai; OpenAI applies the hard cap. Set MONTHLY ENFORCE to make it refuse requests. Empty = no limit.' },
+    { name: 'OPENAI_WORKER_MONTHLY_ENFORCE', group: 'spend', label: 'MONTHLY ENFORCE', kind: 'toggle', def: '',
+      help: 'Opt-in HARD enforcement of the monthly limit (refuses new requests once committed + reserved spend would exceed it). Off = advisory warning only.' },
+    { name: 'OPENAI_WORKER_MONTHLY_RESET_DAY', group: 'spend', label: 'RESET DAY', kind: 'int', def: 27, bounds: [1, 28], window: [1, 28], notches: [1, 15, 27], unit: 'day',
+      help: 'Day of the month (UTC) on which the monthly spend period resets.' },
+    { name: 'OPENAI_WORKER_MONTHLY_RESET_HOUR_UTC', group: 'spend', label: 'RESET HOUR', kind: 'int', def: 1, bounds: [0, 23], window: [0, 23], notches: [0, 1, 12], unit: 'h UTC',
+      help: 'Hour (UTC) of the reset day at which the monthly spend period resets.' },
     { name: 'OPENAI_WORKER_MONTHLY_ALLOWANCE_USD', group: 'spend', label: 'ALLOWANCE', kind: 'num', def: null, bounds: [0.01, 100000], window: [1, 1000], log: true, step: 0.01, notches: [10, 25, 50, 100, 250, 500], unit: 'USD', optional: true, informational: true,
       help: 'INFORMATIONAL ONLY: shown as a reference in /oai. It never blocks anything; use MONTHLY LIMIT to enforce.' },
     { name: 'OAI_TRACE', group: 'diag', label: 'LIVE TRACE', kind: 'toggle', def: '',
@@ -63,6 +69,18 @@ function globalParams() {
       help: 'Comma-separated tools that trigger the steer pause (Read, Edit, Write, Bash).' },
     { name: 'OAI_STATUS_COLOR', group: 'diag', label: 'STATUS COLOR', kind: 'toggle', def: '',
       help: 'ANSI colour in the /oai status panel.' },
+    { name: 'OPENAI_WORKER_FREE_QUEUE_SECONDS', group: 'quota', label: 'FREE QUEUE', kind: 'int', def: 90, bounds: [0, 3600], window: [0, 600], notches: [0, 30, 90, 300], unit: 's',
+      help: 'When the free daily pool is only blocked by other in-flight reservations, wait up to this long for them to settle instead of failing. 0 = fail at once.' },
+    { name: 'OPENAI_WORKER_FREE_TO_PAID_DISABLE', group: 'quota', label: 'NO FREE→PAID', kind: 'toggle', def: '',
+      help: 'By default, when the free Astra pool is spent the worker continues on paid Astra (astra6-2) and says so in the result. On = do not switch: stop with quota_free_daily instead.' },
+    { name: 'OAI_DELEGATION_MAX_DEPTH', group: 'advanced', label: 'DELEGATION DEPTH', kind: 'int', def: 1, bounds: [0, 6], window: [0, 3], notches: [0, 1, 2], unit: 'levels',
+      help: 'Owner ceiling for worker-spawns-worker delegation depth. Delegation still needs a per-task grant from the orchestrator (delegation: {maxConcurrent, types, maxDepth}).' },
+    { name: 'OAI_DELEGATION_MAX_TOTAL', group: 'advanced', label: 'DELEGATION TOTAL', kind: 'int', def: 6, bounds: [1, 64], window: [1, 24], notches: [3, 6, 12], unit: 'workers',
+      help: 'Owner ceiling for live workers across the whole delegation tree (waiting parents count).' },
+    { name: 'OAI_DELEGATION_TYPES', group: 'advanced', label: 'DELEGATION TYPES', kind: 'text', def: 'astra6free,terra5-6free', max: 200,
+      help: 'Comma-separated worker types a worker may spawn. Free pools first; paid types only when you list them.' },
+    { name: 'OPENAI_WORKER_TOOL_OUTPUT_CHARS', group: 'advanced', label: 'TOOL OUTPUT CAP', kind: 'int', def: 40000, bounds: [2000, 500000], window: [4000, 200000], log: true, notches: [10000, 40000, 100000], unit: 'chars',
+      help: 'Longest single tool result sent to a model; longer results are clipped in the middle. Also bounds context compaction after a provider "request too large" (TPM) error.' },
     { name: 'OPENAI_WORKER_DAILY_RESERVE_TOKENS', group: 'advanced', label: 'RESERVE TOKENS', kind: 'int', def: 12000, bounds: [1, 10000000], window: [1000, 200000], log: true, notches: [12000], unit: 'tok',
       help: 'Tokens reserved per free-key request while it is in flight.' },
     { name: 'OPENAI_WORKER_DAILY_MAX_INFLIGHT', group: 'advanced', label: 'MAX IN-FLIGHT', kind: 'int', def: 16, bounds: [1, 128], window: [1, 64], notches: [4, 8, 16, 32, 64], unit: 'req',
@@ -136,7 +154,7 @@ function workerParams(name) {
     { name: `${p}EFFORT_MAX`, group: g, worker: name, label: 'EFFORT MAX', kind: 'effort', def: '', builtin: pol.max, help: 'Highest reasoning effort; higher requests are lowered.' },
     { name: `${p}MAX_STEPS`, group: g, worker: name, label: 'MAX STEPS', kind: 'int', def: null, optional: true, inherit: 'OPENAI_WORKER_MAX_STEPS', bounds: [1, 1000], window: [1, 120], notches: [10, 20, 40, 80, 120], unit: 'steps',
       help: 'Per-worker step guardrail. Empty = global MAX STEPS.' },
-    { name: `${p}MAX_USD`, group: g, worker: name, label: 'MAX USD', kind: 'num', def: null, optional: true, inherit: spec.key === 'free' ? null : 'OPENAI_WORKER_MAX_USD', bounds: [0.01, 1000], window: [0.1, 25], log: true, step: 0.01, notches: [0.5, 1, 2, 4, 10, 20], unit: 'USD',
+    { name: `${p}MAX_USD`, group: g, worker: name, label: 'MAX USD', kind: 'num', def: null, optional: true, inherit: 'OPENAI_WORKER_MAX_USD', bounds: [0.01, 1000], window: [0.1, 25], log: true, step: 0.01, notches: [0.5, 1, 2, 4, 10, 20], unit: 'USD',
       help: spec.key === 'free' ? 'Per-run spend guardrail. Empty = none (free key).' : 'Per-run spend guardrail. Empty = global MAX USD.' },
     { name: `${p}EFFORT_NOTE`, group: 'advanced', worker: name, label: noteLabel(name), kind: 'text', def: '', builtin: pol.note, max: 240,
       help: 'Task-selection note shown to Claude in the worker description (240 chars max). Empty = built-in.' },
@@ -240,7 +258,7 @@ export function effectiveConfig(values) {
   const cap = (v, fb) => posNum(v) ? Number(v) : fb;
   const out = { workers: {}, global: {} };
   out.global.maxSteps = cap(env.OPENAI_WORKER_MAX_STEPS, 40);
-  out.global.maxUsd = cap(env.OPENAI_WORKER_MAX_USD, 4);
+  out.global.maxUsd = cap(env.OPENAI_WORKER_MAX_USD, null); // no default USD cap
   out.global.flexMinutes = Math.min(120, cap(env.OPENAI_WORKER_FLEX_TIMEOUT_MINUTES, 45));
   try { const s = usageSettings(env); out.global.quota = s; } catch { out.global.quota = null; }
   for (const w of WORKERS) {
@@ -253,7 +271,7 @@ export function effectiveConfig(values) {
         steerMode: ws?.steer_mode ?? null, thinking: ws?.thinking ?? null, error };
       continue;
     }
-    const maxUsd = cap(env[`${p}MAX_USD`], spec.key === 'free' ? null : out.global.maxUsd);
+    const maxUsd = cap(env[`${p}MAX_USD`], out.global.maxUsd);
     out.workers[w] = { model: ws?.model ?? (env[spec.env] || spec.model), tier: ws ? (ws.service_tier ?? 'project default') : null, effort: ws?.effort_policy ?? null,
       maxSteps: cap(env[`${p}MAX_STEPS`], out.global.maxSteps), maxUsd, key: spec.key, priced: Object.hasOwn(LOCAL_PRICE_ESTIMATES, ws?.model ?? spec.model), error };
   }
@@ -321,9 +339,19 @@ export function applyChanges(store, changes, { state, now = new Date() } = {}) {
   const diff = Object.fromEntries(Object.entries(normalized).filter(([n, v]) => current[n] !== v));
   if (Object.keys(diff).length) {
     store.write(diff);
+    if (state) writeLiveConfig(state, merged);
     if (state) markPending(state, Object.fromEntries(Object.keys(diff).map(n => [n, { from: current[n], to: diff[n] }])), now);
   }
   return { ok: true, changed: Object.keys(diff), warnings: check.warnings };
+}
+
+/** Fresh non-secret configuration for the mod hooks (their env snapshot is fixed at session start). */
+export function writeLiveConfig(dir, values) {
+  try {
+    const out = {};
+    for (const n of ALLOWED) if (!/KEY|TOKEN|SECRET/i.test(n) && !n.startsWith('OPENAI_ULTRA_')) out[n] = typeof values[n] === 'string' ? values[n] : '';
+    atomicWrite(join(dir, 'live-config.json'), JSON.stringify({ version: 1, at: new Date().toISOString(), values: out }) + '\n');
+  } catch { /* best effort */ }
 }
 
 // ── restart-pending marker ────────────────────────────────────────────────
